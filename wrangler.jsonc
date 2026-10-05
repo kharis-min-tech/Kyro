@@ -1,0 +1,26 @@
+{
+  // Workers Static Assets config.
+  //
+  // Context: the Cloudflare project `kyrokharis` was created as a Workers
+  // project (not Pages), so its deploy step runs `wrangler deploy`. By
+  // default that command has no idea what to deploy — hence the earlier
+  // "Could not detect a directory containing static files" errors.
+  //
+  // This file tells wrangler two things:
+  //   1. The project name on Cloudflare, so the right service is updated.
+  //   2. That we're deploying a bundle of static files produced by
+  //      `next build` (with output: 'export'), located at dashboard/out.
+  //
+  // Workers Static Assets requires no runtime script — the `assets`
+  // block alone is enough to serve the files. SPA 404-handling returns
+  // index.html for any unknown path, which Next.js's static export
+  // relies on for client-side routing (e.g. navigating from /seating
+  // to /attendance without a full page reload).
+
+  "name": "kyrokharis",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dashboard/out",
+    "not_found_handling": "single-page-application"
+  }
+}
