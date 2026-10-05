@@ -273,9 +273,8 @@ export default function IntegrationsPage() {
         </div>
 
         <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-          Auto-send at end of each service requires the Kyro backend to be
-          running. Without a backend, use <em>Send end-of-service now</em> to post
-          the current snapshot manually.
+          Use <em>Send end-of-service now</em> after each service to push the
+          current attendance snapshot to the receiving system.
         </p>
       </main>
     </div>

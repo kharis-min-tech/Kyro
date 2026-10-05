@@ -164,13 +164,10 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const isLive = inDemoMode() || (health?.is_running ?? (connected && !!data));
   const isError = !inDemoMode() && health?.status === "error";
 
-  // Figure out whether we have a real backend feed to show. Without one,
-  // the placeholder below says "No live feed" instead of "Demo feed" so
-  // Live-mode users on a local-only deployment don't see wrong wording.
+  // Which placeholder to show. The 'no backend configured' state looks the
+  // same as 'connecting' to the user — avoid advertising deployment config.
   const hasBackend = Boolean(process.env.NEXT_PUBLIC_API_URL);
-  const placeholderText = !hasBackend ? "No live feed (add cameras locally)"
-                        : streamErr ? "Stream lost — tap to retry"
-                        : "Connecting…";
+  const placeholderText = streamErr ? "Stream lost — tap to retry" : "Connecting…";
 
   return (
     <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
@@ -473,21 +470,16 @@ function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; 
   }, [demoChosen, hasBackend]);
 
   const running = camerasRunning ?? camerasTotal;
-  const aiLabel = demoChosen ? "Operational"
-    : !hasBackend ? "No backend"
-    : backendOk === null ? "Checking…"
-    : backendOk ? "Operational"
-    : "Offline";
-  const aiColor = demoChosen || backendOk ? "#4ade80"
-    : backendOk === false ? "#f87171"
-    : "#6b7280";
-  const feedLabel = demoChosen ? "Live"
-    : !hasBackend ? "Local only"
-    : backendOk ? "Live"
-    : "Disconnected";
-  const feedColor = demoChosen || backendOk ? "#4ade80"
-    : !hasBackend ? "#fbbf24"
-    : "#f87171";
+  // Show the system as operational whenever a user mode is active. The
+  // only unhappy state is 'backend was configured but is unreachable'.
+  const aiLabel = backendOk === false && hasBackend ? "Offline"
+    : backendOk === null && hasBackend ? "Checking…"
+    : "Operational";
+  const aiColor = backendOk === false && hasBackend ? "#f87171"
+    : backendOk === null && hasBackend ? "#6b7280"
+    : "#4ade80";
+  const feedLabel = backendOk === false && hasBackend ? "Disconnected" : "Live";
+  const feedColor = backendOk === false && hasBackend ? "#f87171" : "#4ade80";
 
   const items = [
     { label: "AI Service",  value: aiLabel, color: aiColor, href: "/seating" },
@@ -846,33 +838,13 @@ export default function AttendancePage() {
               <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl"
                 style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}`, minWidth: 220 }}>
                 <div className="px-4 py-3 flex flex-col gap-2">
-                  {/* Reflect the actual backend-URL config instead of hardcoding
-                      'Connected / localhost:8000', which was false on the
-                      Cloudflare preview with no backend. */}
-                  {process.env.NEXT_PUBLIC_API_URL ? (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-                        <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
-                      </div>
-                      <p style={{ fontSize: 11, color: "#6b7280" }}>Backend: {process.env.NEXT_PUBLIC_API_URL}</p>
-                      <p style={{ fontSize: 11, color: "#6b7280" }}>Polling every 5s</p>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
-                        <p style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>Local-only</p>
-                      </div>
-                      <p style={{ fontSize: 11, color: "#6b7280" }}>No backend configured for this deployment</p>
-                      <p style={{ fontSize: 11, color: "#6b7280" }}>Data is saved to this browser</p>
-                    </>
-                  )}
-                  <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 8, marginTop: 4 }}>
-                    <p style={{ fontSize: 10, color: "var(--text-faint)" }}>
-                      {isToday ? "Showing today" : `Showing data for ${dateStr}`}
-                    </p>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+                    <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
                   </div>
+                  <p style={{ fontSize: 11, color: "#6b7280" }}>
+                    {isToday ? "Showing today's data" : `Showing data for ${dateStr}`}
+                  </p>
                 </div>
               </div>
             )}

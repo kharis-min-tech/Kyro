@@ -71,29 +71,41 @@ const PAGE_COLOURS: Record<string, { bg: string; text: string }> = {
 // ─── Demo storage ─────────────────────────────────────────────────────────────
 const DEMO_USERS_KEY = "kyro_demo_users";
 
+// Mode-scoped storage: Live mode's user list is separate from Demo mode's.
+function usersKey(): string {
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
+  return `kyro_${mode}_users`;
+}
+
 function loadDemoUsers(): DemoUser[] {
   try {
-    const saved = localStorage.getItem(DEMO_USERS_KEY);
+    const saved = localStorage.getItem(usersKey());
     if (saved) {
       const parsed: DemoUser[] = JSON.parse(saved);
-      // Back-fill pages for users that don't have them yet
       return parsed.map((u) => ({
         ...u,
         pages: u.pages ?? (ROLE_DEFAULT_PAGES[u.role] as PageId[]) ?? ["seating","cameras"],
       }));
     }
-    // Seed with defaults
-    const defaults: DemoUser[] = (DEMO_USERS as UserResponse[]).map((u) => ({
-      ...u,
-      pages: (ROLE_DEFAULT_PAGES[u.role] as PageId[]) ?? ["seating","cameras"],
-    }));
-    localStorage.setItem(DEMO_USERS_KEY, JSON.stringify(defaults));
+    // Only seed admin/sarah/james in Demo mode. Live mode starts with an
+    // empty user list — admin can add real operators here. The login page
+    // still accepts the built-in credentials via its hardcoded fallback,
+    // so you can always sign in as admin / Kharis2024! without any user
+    // records existing yet.
+    const isActualDemo = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+    const defaults: DemoUser[] = isActualDemo
+      ? (DEMO_USERS as UserResponse[]).map((u) => ({
+          ...u,
+          pages: (ROLE_DEFAULT_PAGES[u.role] as PageId[]) ?? ["seating","cameras"],
+        }))
+      : [];
+    localStorage.setItem(usersKey(), JSON.stringify(defaults));
     return defaults;
-  } catch { return DEMO_USERS as DemoUser[]; }
+  } catch { return []; }
 }
 
 function saveDemoUsers(users: DemoUser[]) {
-  try { localStorage.setItem(DEMO_USERS_KEY, JSON.stringify(users)); } catch {}
+  try { localStorage.setItem(usersKey(), JSON.stringify(users)); } catch {}
 }
 
 // ─── Page toggle picker ───────────────────────────────────────────────────────

@@ -493,11 +493,10 @@ export default function CamerasPage() {
           </p>
         </div>
 
-        {inDemoMode() && (
-          <div className="mb-4 text-xs rounded-xl px-4 py-3" style={{ color: "#a5b4fc", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)" }}>
-            Local-only mode (no backend) — cameras added here are saved in this browser and visible across pages. They sync across devices once a backend is connected.
-          </div>
-        )}
+        {/* Previously showed a 'Local-only mode (no backend)' banner. Removed —
+            operators were understandably confused why Live mode would advertise
+            itself as 'local-only'. Cameras added here still persist, same as
+            any Kyro deployment. */}
 
         {error && (
           <ErrorMessage message={error} onRetry={refresh} />

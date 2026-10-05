@@ -15,7 +15,7 @@ const HARDCODED_ACCOUNTS = [
 
 function loadDemoAccounts() {
   try {
-    const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
+    const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
     const active = saved.filter((u: any) => u.is_active);
     const names = new Set(active.map((u: any) => u.username));
     const base = HARDCODED_ACCOUNTS.filter((a) => !names.has(a.username));
@@ -63,7 +63,7 @@ function validateDemoLogin(username: string, password: string): ValidationResult
 
   // 1. Custom password set via the Users > Change Password dialog.
   try {
-    const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
+    const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
     const match = saved.find((x: any) => x.username === u && x.is_active);
     if (match?.demo_password) acceptablePasswords.push(String(match.demo_password));
   } catch {}
@@ -154,7 +154,7 @@ export default function LoginPage() {
     // Look up the role for this demo user
     let resolvedRole = "viewer";
     try {
-      const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
+      const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
       const match = saved.find((u: any) => u.username === username && u.is_active);
       if (match) {
         resolvedRole = match.role;
@@ -193,7 +193,7 @@ export default function LoginPage() {
     const trimmedUser = user.trim();
     let resolvedRole = "viewer";
     try {
-      const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
+      const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
       const match = saved.find((u: any) => u.username === trimmedUser && u.is_active);
       if (match) {
         resolvedRole = match.role;

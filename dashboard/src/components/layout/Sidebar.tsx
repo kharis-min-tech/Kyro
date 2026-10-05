@@ -68,7 +68,7 @@ const DIVIDER = "var(--bg-hover)";
 function getStoredPages(username: string, role: string): PageId[] {
   try {
     // Demo mode: read from demo users store
-    const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
+    const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
     const match = saved.find((u: any) => u.username === username && u.is_active);
     if (match?.pages && Array.isArray(match.pages) && match.pages.length > 0) return match.pages as PageId[];
   } catch {}

@@ -19,22 +19,26 @@ const BG     = "var(--bg-base)";
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
 
-const DEMO_SESSIONS_KEY = "kyro_demo_sessions";
+// Mode-scoped storage: Live mode and Demo mode keep SEPARATE session lists
+// so deleting a session in one mode doesn't affect the other. Previously
+// both modes read/wrote the same "kyro_demo_sessions" key.
+function sessionsKey(): string {
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
+  return `kyro_${mode}_sessions`;
+}
 
 function loadDemoSessions(): SessionResponse[] {
   if (typeof window === "undefined") return [];
   try {
-    const saved = localStorage.getItem(DEMO_SESSIONS_KEY);
+    const saved = localStorage.getItem(sessionsKey());
     if (saved) {
       const parsed = JSON.parse(saved) as SessionResponse[];
       if (Array.isArray(parsed)) return parsed;
     }
-    // Only seed the sample DEMO_SESSIONS when the user explicitly picked
-    // Demo mode. In Live mode without a backend, start with an empty list
-    // so operators can create their own real sessions.
+    // Seed sample DEMO_SESSIONS only in Demo mode. Live mode starts empty.
     const isActualDemo = localStorage.getItem("kyro_mode") === "demo";
     const defaults = isActualDemo ? (DEMO_SESSIONS as SessionResponse[]) : [];
-    localStorage.setItem(DEMO_SESSIONS_KEY, JSON.stringify(defaults));
+    localStorage.setItem(sessionsKey(), JSON.stringify(defaults));
     return defaults;
   } catch {
     return [];
@@ -44,7 +48,7 @@ function loadDemoSessions(): SessionResponse[] {
 function saveDemoSessions(sessions: SessionResponse[]) {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(DEMO_SESSIONS_KEY, JSON.stringify(sessions));
+    localStorage.setItem(sessionsKey(), JSON.stringify(sessions));
   } catch {}
 }
 
