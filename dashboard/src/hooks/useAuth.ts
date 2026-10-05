@@ -45,26 +45,28 @@ export function useAuth(): AuthState {
     const signedOut = sessionStorage.getItem("kyro_signed_out");
     if (signedOut) { setHydrated(true); return; }
 
-    const isLive = isLiveMode();
+    const savedRole  = localStorage.getItem("kyro_demo_role") as Role | null;
+    const savedUser  = localStorage.getItem("kyro_demo_last_user");
+    const stored     = localStorage.getItem("kyro_token");
 
-    // Check for active demo session (works regardless of DEMO_MODE env setting)
-    const savedRole = localStorage.getItem("kyro_demo_role") as Role | null;
-    const savedUser = localStorage.getItem("kyro_demo_last_user");
+    // A "demo-style" token is one issued by the login page without a real
+    // backend JWT. These are valid in BOTH demo mode (shows fake data) and
+    // live mode (no backend yet — pages render empty state). Previously
+    // live mode rejected the demo token and the user got logged out
+    // immediately on redirect to /attendance.
+    const isDemoToken = stored === DEMO_TOKEN
+      || (stored !== null && stored.includes("demo_signature_not_verified"));
 
-    if (inDemoMode() && !isLive && savedRole && savedUser) {
+    if (isDemoToken && savedRole && savedUser) {
       const resolvedRole = VALID_ROLES.includes(savedRole) ? savedRole : "admin";
-      // Set DEMO_TOKEN — the demo token constant
-      const demoToken = DEMO_TOKEN;
-      localStorage.setItem("kyro_token", demoToken);
-      setToken(demoToken);
+      setToken(stored);
       setRole(resolvedRole);
       setUsername(savedUser);
       setHydrated(true);
       return;
     }
 
-    // Real mode — read from a real JWT token
-    const stored = localStorage.getItem("kyro_token");
+    // Real JWT (from a connected backend)
     if (stored && !stored.includes("demo_signature_not_verified") && stored.split(".").length === 3) {
       try {
         const payload = JSON.parse(atob(stored.split(".")[1]));
@@ -73,7 +75,6 @@ export function useAuth(): AuthState {
           setRole(decodeRole(stored));
           setUsername(payload.sub ?? "");
         } else {
-          // Expired or invalid — clear it
           localStorage.removeItem("kyro_token");
         }
       } catch {
