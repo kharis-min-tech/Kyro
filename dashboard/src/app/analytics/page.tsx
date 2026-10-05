@@ -38,7 +38,7 @@ function Stat({ label, value, sub, icon: Icon, accent }: {
       </div>
       <div>
         <p className="text-3xl font-bold text-white tabular-nums leading-none">{value}</p>
-        {sub && <p className="text-xs mt-1.5" style={{ color: "#4b5563" }}>{sub}</p>}
+        {sub && <p className="text-xs mt-1.5" style={{ color: "var(--text-faint)" }}>{sub}</p>}
       </div>
     </div>
   );
@@ -79,7 +79,7 @@ function DayDetail({ point, allData, onClose }: { point: AttendancePoint; allDat
         <div className="rounded-xl p-4 flex flex-col gap-1 min-w-0" style={{ background: "var(--bg-base)", border: `1px solid ${BORDER}` }}>
           <p className="text-xs whitespace-nowrap" style={{ color: "#6b7280" }}>Occupancy</p>
           <p className="text-2xl font-bold tabular-nums" style={{ color: "#818cf8" }}>{point.occupancy_pct.toFixed(1)}%</p>
-          <p className="text-xs whitespace-nowrap" style={{ color: "#4b5563" }}>Of seat capacity</p>
+          <p className="text-xs whitespace-nowrap" style={{ color: "var(--text-faint)" }}>Of seat capacity</p>
         </div>
         <div className="rounded-xl p-4 flex flex-col gap-1 min-w-0" style={{ background: "var(--bg-base)", border: `1px solid ${BORDER}` }}>
           <p className="text-xs whitespace-nowrap" style={{ color: "#6b7280" }}>vs last {dayName}</p>
@@ -89,9 +89,9 @@ function DayDetail({ point, allData, onClose }: { point: AttendancePoint; allDat
                 style={{ color: prevDiff > 0 ? "#4ade80" : prevDiff < 0 ? "#f87171" : "#9ca3af" }}>
                 {prevDiff > 0 ? "+" : ""}{prevDiff}
               </p>
-              <p className="text-xs whitespace-nowrap" style={{ color: "#4b5563" }}>Prev: {prev!.attendance.toLocaleString()}</p>
+              <p className="text-xs whitespace-nowrap" style={{ color: "var(--text-faint)" }}>Prev: {prev!.attendance.toLocaleString()}</p>
             </>
-          ) : <p className="text-xs mt-2" style={{ color: "#4b5563" }}>No prior data</p>}
+          ) : <p className="text-xs mt-2" style={{ color: "var(--text-faint)" }}>No prior data</p>}
         </div>
       </div>
       <div className="px-5 pb-5">
@@ -115,7 +115,7 @@ function DayDetail({ point, allData, onClose }: { point: AttendancePoint; allDat
 function TrendChart({ data }: { data: AttendancePoint[] }) {
   if (!data.length) return (
     <div className="rounded-2xl p-5 flex items-center justify-center" style={{ background: CARD_BG, border: `1px solid ${BORDER}`, height: 200 }}>
-      <p className="text-xs" style={{ color: "#4b5563" }}>No data for selected range</p>
+      <p className="text-xs" style={{ color: "var(--text-faint)" }}>No data for selected range</p>
     </div>
   );
   const values = data.map((d) => d.attendance);
@@ -145,7 +145,7 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
         {[0,Math.floor(W/4),Math.floor(W/2),Math.floor(3*W/4),W-1].map((i) => {
           const d = data[i]; if (!d) return null;
           const dt = parseUTC(d.timestamp);
-          return <span key={i} className="text-xs" style={{ color: "#4b5563" }}>{dt.getUTCDate()}/{dt.getUTCMonth()+1}</span>;
+          return <span key={i} className="text-xs" style={{ color: "var(--text-faint)" }}>{dt.getUTCDate()}/{dt.getUTCMonth()+1}</span>;
         })}
       </div>
     </div>
@@ -334,7 +334,7 @@ export default function AnalyticsPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 overflow-auto">
+      <main className="flex-1 pt-14 md:pt-0 overflow-auto">
         <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom:`1px solid ${BORDER}`, background:CARD_BG }}>
           <div>
             <h1 className="text-lg font-bold text-white">Analytics</h1>

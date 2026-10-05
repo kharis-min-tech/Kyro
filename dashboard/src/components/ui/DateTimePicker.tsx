@@ -134,7 +134,7 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick date & tim
                 }}
                 placeholder="HH:MM"
                 className="flex-1 rounded-lg px-2 py-1 text-xs focus:outline-none"
-                style={{ background: "var(--border-subtle)", border: `1px solid ${BORDER}`, color: "#e5e7eb" }} />
+                style={{ background: "var(--border-subtle)", border: `1px solid ${BORDER}`, color: "var(--text-primary)" }} />
             </div>
 
             <div className="flex flex-wrap gap-1 mt-2">

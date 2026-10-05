@@ -41,7 +41,7 @@ export function GlobalSeatAlertOverlay() {
               <button
                 onClick={(e) => { e.stopPropagation(); dismissAlert(alert.alert_id); }}
                 className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
-                style={{ background: "rgba(13,15,26,0.85)", color: "#9ca3af" }}
+                style={{ background: "rgba(13,15,26,0.85)", color: "var(--text-tertiary)" }}
               >
                 <X size={11} />
               </button>

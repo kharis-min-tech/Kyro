@@ -50,11 +50,11 @@ function Legend({ hint }: { hint?: string }) {
         {(["occupied","temporarily_vacant","available","reserved","rota_hold"] as const).map((s) => (
           <div key={s} className="flex items-center gap-1.5 shrink-0">
             <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: COLOURS[s] }} />
-            <span className="text-xs whitespace-nowrap" style={{ color: "#9ca3af" }}>{LABELS[s]}</span>
+            <span className="text-xs whitespace-nowrap" style={{ color: "var(--text-tertiary)" }}>{LABELS[s]}</span>
           </div>
         ))}
       </div>
-      {hint && <p className="text-xs px-4 pb-3" style={{ color: "#4b5563" }}>{hint}</p>}
+      {hint && <p className="text-xs px-4 pb-3" style={{ color: "var(--text-faint)" }}>{hint}</p>}
     </div>
   );
 }
@@ -338,7 +338,7 @@ function CanvasSeatMap({ seats, interactive, onSeatAction, externalOverrides, on
           <button onClick={() => { const p = pivot(); applyZoom(1.25, p.x, p.y); }}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold text-gray-300 hover:text-white"
             style={{ background: "var(--border-subtle)" }}>+</button>
-          <span className="text-xs tabular-nums text-center" style={{ color: "#9ca3af", minWidth: 40 }}>{Math.round(zoom * 100)}%</span>
+          <span className="text-xs tabular-nums text-center" style={{ color: "var(--text-tertiary)", minWidth: 40 }}>{Math.round(zoom * 100)}%</span>
           <button onClick={() => { const p = pivot(); applyZoom(0.8, p.x, p.y); }}
             className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold text-gray-300 hover:text-white"
             style={{ background: "var(--border-subtle)" }}>−</button>
@@ -353,7 +353,7 @@ function CanvasSeatMap({ seats, interactive, onSeatAction, externalOverrides, on
           onMouseUp={onMouseUp} onMouseLeave={onMouseUp} onClick={onClick} />
         {zoom < 0.3 && (
           <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-xs px-3 py-1.5 rounded-full pointer-events-none"
-            style={{ background: "rgba(30,34,53,0.9)", color: "#9ca3af", border: "1px solid var(--border-strong)" }}>
+            style={{ background: "rgba(30,34,53,0.9)", color: "var(--text-tertiary)", border: "1px solid var(--border-strong)" }}>
             Scroll to zoom · Drag to pan
           </div>
         )}

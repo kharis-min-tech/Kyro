@@ -262,7 +262,7 @@ function VenueOverview({
               <Plus size={12} className="text-gray-300" />
             </button>
           </div>
-          <span className="text-xs" style={{ color: "#4b5563" }}>
+          <span className="text-xs" style={{ color: "var(--text-faint)" }}>
             {queueSize > 0 ? "from outside camera · adjust if needed" : "no outside camera — enter manually"}
           </span>
           {queueSize > 0 && totalSeats > 0 && (
@@ -407,7 +407,7 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                   )}
                   {!zone.is_running && (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(75,85,99,0.3)", color: "#9ca3af" }}>Offline</span>
+                      style={{ background: "rgba(75,85,99,0.3)", color: "var(--text-tertiary)" }}>Offline</span>
                   )}
                   {zone.is_running && zone.status === "error" && (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
@@ -935,7 +935,7 @@ export default function LiveCamerasPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 px-4 py-4 sm:px-8 sm:py-8 overflow-auto">
+      <main className="flex-1 pt-14 md:pt-0 px-4 py-4 sm:px-8 sm:py-8 overflow-auto">
 
         {/* Header */}
         <div className="mb-6">

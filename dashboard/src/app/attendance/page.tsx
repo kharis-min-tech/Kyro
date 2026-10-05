@@ -169,7 +169,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
       {inDemoMode() ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center"
           style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}>
-          <span style={{ color: "#4b5563", fontSize: 11 }}>Demo feed</span>
+          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>Demo feed</span>
         </div>
       ) : isLive && !streamErr ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -185,7 +185,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 cursor-pointer"
           style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}
           onClick={() => { setStreamErr(false); setRetryKey((k) => k + 1); }}>
-          <span style={{ color: "#4b5563", fontSize: 11 }}>
+          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
             {streamErr ? "Stream lost — tap to retry" : "Connecting…"}
           </span>
         </div>
@@ -237,7 +237,7 @@ function ZoneTableRow({ camera, idx, role }: { camera: Camera; idx: number; role
             style={{ background: col.bg, color: col.accent }}>
             {col.icon}
           </div>
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#e5e7eb" }}>{camera.zone_name ?? camera.name}</span>
+          <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{camera.zone_name ?? camera.name}</span>
         </div>
       </td>
       <td style={{ padding: "14px 16px", fontWeight: 700, fontSize: 15, color: "#fff" }}>
@@ -273,7 +273,7 @@ function ZoneCard({ camera, idx, role }: { camera: Camera; idx: number; role: st
       <div className="flex items-center gap-2">
         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm shrink-0"
           style={{ background: col.bg, color: col.accent }}>{col.icon}</div>
-        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{camera.zone_name ?? camera.name}</span>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>{camera.zone_name ?? camera.name}</span>
       </div>
       <div>
         <p style={{ fontSize: 28, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{current.toLocaleString()}</p>
@@ -420,7 +420,7 @@ function AIAlertsPanel() {
                 </div>
                 <p className="truncate" style={{ fontSize: 11, color: "#6b7280" }}>{a.sub}</p>
               </div>
-              <span style={{ fontSize: 11, color: "#4b5563", whiteSpace: "nowrap" }}>{a.time}</span>
+              <span style={{ fontSize: 11, color: "var(--text-faint)", whiteSpace: "nowrap" }}>{a.time}</span>
             </Link>
           ))}
         </div>
@@ -463,7 +463,7 @@ function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; 
             className="flex items-center gap-2 transition-opacity hover:opacity-80"
             style={{ textDecoration: "none" }}>
             <div className="flex-1">
-              <p style={{ fontSize: 12, color: "#9ca3af" }}>{item.label}</p>
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{item.label}</p>
               <p style={{ fontSize: 12, fontWeight: 600, color: item.color }}>{item.value}</p>
             </div>
           </Link>
@@ -693,7 +693,7 @@ export default function AttendancePage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 overflow-auto p-3 sm:p-5 flex flex-col gap-5 min-w-0">
+      <main className="flex-1 pt-14 md:pt-0 overflow-auto p-3 sm:p-5 flex flex-col gap-5 min-w-0">
 
         {/* ── Header ── */}
         <div className="flex items-start justify-between gap-4">
@@ -713,7 +713,7 @@ export default function AttendancePage() {
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-colors hover:opacity-80"
               style={{ background: CARD, border: `1px solid ${BORDER}` }}>
               <Calendar size={13} style={{ color: "#6b7280" }} />
-              <span style={{ fontSize: 12, color: "#9ca3af" }}>{dateStr}</span>
+              <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{dateStr}</span>
               <ChevRight size={10} style={{ color: "#6b7280", transform: showDatePicker ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }} />
             </button>
             {showDatePicker && (
@@ -739,7 +739,7 @@ export default function AttendancePage() {
                         onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)"; }}
                         onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
                         <span className="font-medium">{opt.label}</span>
-                        <span className="ml-2" style={{ color: "#4b5563" }}>
+                        <span className="ml-2" style={{ color: "var(--text-faint)" }}>
                           {opt.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                         </span>
                       </button>
@@ -877,7 +877,7 @@ export default function AttendancePage() {
                 Zone Overview
               </p>
               {camsLoading ? (
-                <p style={{ fontSize: 13, color: "#4b5563" }}>Loading…</p>
+                <p style={{ fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
               ) : (
                 <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(indoorCameras.length, 5)}, 1fr)` }}>
                   {indoorCameras.map((cam, i) => (
@@ -899,7 +899,7 @@ export default function AttendancePage() {
                 <thead>
                   <tr style={{ borderBottom: `1px solid ${BORDER}` }}>
                     {["Zone", "Now", "Peak ⓘ", "Trend (Today)"].map((h, i) => (
-                      <th key={h} style={{ padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "#4b5563",
+                      <th key={h} style={{ padding: "10px 16px", fontSize: 11, fontWeight: 600, color: "var(--text-faint)",
                         textAlign: i === 0 ? "left" : "left", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                         {h}
                       </th>
@@ -908,9 +908,9 @@ export default function AttendancePage() {
                 </thead>
                 <tbody>
                   {camsLoading ? (
-                    <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "#4b5563", fontSize: 13 }}>Loading…</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>Loading…</td></tr>
                   ) : indoorCameras.length === 0 ? (
-                    <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "#4b5563", fontSize: 13 }}>No cameras — add one in Cameras</td></tr>
+                    <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: "var(--text-faint)", fontSize: 13 }}>No cameras — add one in Cameras</td></tr>
                   ) : (
                     indoorCameras.map((cam, i) => (
                       <ZoneTableRow key={cam.camera_id} camera={cam} idx={i} role={role as string} />
@@ -961,7 +961,7 @@ export default function AttendancePage() {
                   </>
                 ) : (
                   <div className="flex items-center justify-center py-8 rounded-xl"
-                    style={{ background: "var(--bg-inset)", fontSize: 12, color: "#4b5563" }}>
+                    style={{ background: "var(--bg-inset)", fontSize: 12, color: "var(--text-faint)" }}>
                     No cameras registered
                   </div>
                 )}

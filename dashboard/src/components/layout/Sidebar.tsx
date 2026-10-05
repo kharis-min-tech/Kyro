@@ -220,7 +220,7 @@ export function Sidebar() {
           onClick={() => setMobileOpen((v) => !v)}
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
           className="w-9 h-9 rounded-lg flex items-center justify-center"
-          style={{ color: "#e5e7eb" }}
+          style={{ color: "var(--text-primary)" }}
         >
           {mobileOpen ? <X size={18} /> : <Menu size={18} />}
         </button>

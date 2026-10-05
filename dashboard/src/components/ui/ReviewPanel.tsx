@@ -140,7 +140,7 @@ function DemoSnapshot({ review }: { review: ReviewRequest }) {
         <rect x="4" y="4" width="70" height="14" rx="3" fill="var(--bg-card)" opacity="0.9" />
         <text x="8" y="14" fontSize="8" fill="#a5b4fc" fontFamily="sans-serif">Kyro flagged ↑</text>
       </svg>
-      <div className="absolute bottom-1.5 right-2 text-xs" style={{ color: "#4b5563" }}>Demo view</div>
+      <div className="absolute bottom-1.5 right-2 text-xs" style={{ color: "var(--text-faint)" }}>Demo view</div>
     </div>
   );
 }
@@ -173,7 +173,7 @@ function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: stri
 
   if (loading) return (
     <div className="w-full h-24 rounded-lg flex items-center justify-center" style={{ background: "var(--bg-inset)", border: "1px solid var(--border-strong)" }}>
-      <span className="text-xs" style={{ color: "#4b5563" }}>Loading snapshot…</span>
+      <span className="text-xs" style={{ color: "var(--text-faint)" }}>Loading snapshot…</span>
     </div>
   );
   if (!src) return null;
@@ -700,7 +700,7 @@ export function ReviewPanel({ reviews, cameraId, onDismiss }: ReviewPanelProps) 
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
         {queueLen > 1 && (
           <div className="text-xs px-3 py-1.5 rounded-full"
-            style={{ background: "var(--border-subtle)", color: "#9ca3af", border: "1px solid #374151" }}>
+            style={{ background: "var(--border-subtle)", color: "var(--text-tertiary)", border: "1px solid #374151" }}>
             +{queueLen - 1} more question{queueLen - 1 !== 1 ? "s" : ""} queued
           </div>
         )}

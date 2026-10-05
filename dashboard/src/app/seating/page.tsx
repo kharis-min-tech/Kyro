@@ -167,7 +167,7 @@ function ZonesBadge({ zones }: { zones: ZoneDef[] }) {
     return (
       <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
         <p style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
-        <span style={{ fontSize: 32, fontWeight: 800, color: "#4b5563", lineHeight: 1 }}>0</span>
+        <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text-faint)", lineHeight: 1 }}>0</span>
         <p style={{ fontSize: 11, color: "#6b7280" }}>Draw one in the Seat Editor</p>
       </div>
     );
@@ -176,8 +176,8 @@ function ZonesBadge({ zones }: { zones: ZoneDef[] }) {
     <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
       <p style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
       <div className="flex items-baseline gap-2">
-        <span style={{ fontSize: 32, fontWeight: 800, color: "#e5e7eb", lineHeight: 1 }}>{zones.length}</span>
-        <span style={{ fontSize: 12, color: "#9ca3af" }}>
+        <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>{zones.length}</span>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
           {hold > 0 && `${hold} hold-seats`}{hold > 0 && ignore > 0 && " · "}{ignore > 0 && `${ignore} ignore`}
         </span>
       </div>
@@ -377,7 +377,7 @@ function IntelligenceFeed({ seats, camera, connected }: {
                      background: i === 0 ? "rgba(0,255,136,0.03)" : "transparent" }}>
             <span style={{ fontSize: 10, color: "#374151", fontFamily: "monospace", whiteSpace: "nowrap", marginTop: 1 }}>{e.time}</span>
             <div>
-              <p style={{ fontSize: 12, color: "#9ca3af", fontWeight: 500 }}>{e.msg}</p>
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>{e.msg}</p>
               <p style={{ fontSize: 10, color: "#374151", marginTop: 2, fontFamily: "monospace" }}>{e.sub}</p>
             </div>
           </div>
@@ -443,7 +443,7 @@ function UnitBreakdown({ seats, camera }: { seats: SeatState[]; camera: Camera }
       <div className="px-4 pb-4">
         <button onClick={downloadManifest}
           className="w-full py-2.5 rounded-lg text-xs font-bold tracking-widest uppercase transition-colors hover:opacity-80"
-          style={{ background: "var(--border-subtle)", color: "#9ca3af", border: `1px solid ${BORDER}`, letterSpacing: "0.1em" }}>
+          style={{ background: "var(--border-subtle)", color: "var(--text-tertiary)", border: `1px solid ${BORDER}`, letterSpacing: "0.1em" }}>
           Download Manifest
         </button>
       </div>
@@ -596,7 +596,7 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
       <div className="px-4 py-3 flex flex-col gap-2 overflow-y-auto" style={{ flex: 1 }}>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "var(--bg-inset)" }}>
           <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: DOT_COLOURS[seat.state] ?? "#374151" }} />
-          <span style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+          <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
             {seat.state.replace("_", " ")}
           </span>
           {seat.confidence > 0 && (
@@ -608,7 +608,7 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
             <input autoFocus type="text" placeholder="Reserved for (optional)" value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === "Enter") { onAction({ seatId: seat.seat_id, action: "reserve", reservedFor: name.trim() || undefined }); } if (e.key === "Escape") setReserving(false); }}
-              style={{ background: "var(--bg-inset)", border: `1px solid ${GREEN}40`, color: "#e5e7eb", fontSize: 11, padding: "6px 10px", borderRadius: 6, width: "100%", outline: "none" }} />
+              style={{ background: "var(--bg-inset)", border: `1px solid ${GREEN}40`, color: "var(--text-primary)", fontSize: 11, padding: "6px 10px", borderRadius: 6, width: "100%", outline: "none" }} />
             <div className="flex gap-2">
               <button onClick={() => onAction({ seatId: seat.seat_id, action: "reserve", reservedFor: name.trim() || undefined })}
                 className="flex-1 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider"
@@ -668,7 +668,7 @@ function ResetDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
   if (inDemoMode()) return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.8)" }}>
       <div className="rounded-xl p-6 w-72" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#e5e7eb", marginBottom: 8 }}>Reset All Units?</p>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Reset All Units?</p>
         <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 20 }}>Clears all overrides and resets every seat to its AI state.</p>
         <div className="flex gap-2">
           <button onClick={onConfirm} className="flex-1 py-2 rounded-lg text-xs font-bold uppercase"
@@ -697,10 +697,10 @@ function ResetDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.8)" }}>
       <div className="rounded-xl p-6 w-72" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "#e5e7eb", marginBottom: 8 }}>Reset All Units</p>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Reset All Units</p>
         <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit()}
-          style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "#e5e7eb", fontSize: 11, padding: "8px 10px", borderRadius: 6, width: "100%", marginBottom: 8, outline: "none" }} />
+          style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-primary)", fontSize: 11, padding: "8px 10px", borderRadius: 6, width: "100%", marginBottom: 8, outline: "none" }} />
         {error && <p style={{ fontSize: 10, color: "#ff4d6d", marginBottom: 8 }}>{error}</p>}
         <div className="flex gap-2">
           <button onClick={submit} disabled={busy} className="flex-1 py-2 rounded-lg text-xs font-bold uppercase"
@@ -818,12 +818,12 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       <div className="flex-1 flex flex-col overflow-auto p-6" style={{ background: BG }}>
         <div className="flex items-center gap-3 mb-6">
           <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: GREEN }} />
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: "#e5e7eb" }}>{camera.zone_name ?? camera.name}</h2>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>{camera.zone_name ?? camera.name}</h2>
           <span style={{ fontSize: 10, color: GREEN, fontFamily: "monospace" }}>LIVE DATA STREAM ACTIVE</span>
         </div>
         <div className="rounded-xl p-8 flex flex-col items-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <p style={{ fontSize: 9, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
-          <span style={{ fontSize: 64, fontWeight: 900, color: "#e5e7eb" }}>{current.toLocaleString()}</span>
+          <span style={{ fontSize: 64, fontWeight: 900, color: "var(--text-primary)" }}>{current.toLocaleString()}</span>
         </div>
         <ReviewPanel reviews={reviews} cameraId={camera.camera_id} onDismiss={dismissReview} />
       </div>
@@ -848,7 +848,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       <div className="flex items-center justify-between px-5 py-3 shrink-0" style={{ borderBottom: `1px solid ${BORDER}`, background: CARD }}>
         <div>
           <div className="flex items-center gap-3">
-            <h2 style={{ fontSize: 15, fontWeight: 700, color: "#e5e7eb" }}>
+            <h2 style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)" }}>
               {camera.zone_name ?? camera.name} / {camera.location ?? "Zone"}
             </h2>
           </div>
@@ -895,7 +895,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
               ].map((l) => (
                 <div key={l.label} className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ background: l.colour }} />
-                  <span style={{ fontSize: 10, color: "#4b5563" }}>{l.label}</span>
+                  <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{l.label}</span>
                 </div>
               ))}
             </div>
@@ -903,7 +903,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
               <button onClick={() => setZoom(z => Math.max(0.5, z - 0.25))}
                 className="w-6 h-6 rounded flex items-center justify-center text-sm font-bold"
                 style={{ background: "var(--border-subtle)", color: "#6b7280" }}>−</button>
-              <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "monospace", minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
+              <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "monospace", minWidth: 32, textAlign: "center" }}>{Math.round(zoom * 100)}%</span>
               <button onClick={() => setZoom(z => Math.min(2, z + 0.25))}
                 className="w-6 h-6 rounded flex items-center justify-center text-sm font-bold"
                 style={{ background: "var(--border-subtle)", color: "#6b7280" }}>+</button>
@@ -972,7 +972,7 @@ export default function SeatingPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 pt-14 md:pt-0 flex flex-col overflow-hidden">
         {/* Camera tabs */}
         <div className="flex items-center gap-1 px-4 shrink-0 overflow-x-auto"
           style={{ background: CARD, borderBottom: `1px solid ${BORDER}`, minHeight: 44 }}>

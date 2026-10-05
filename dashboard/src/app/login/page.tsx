@@ -55,24 +55,32 @@ function validateDemoLogin(username: string, password: string): ValidationResult
   const p = password.trim();
   if (!u || !p) return { ok: false, reason: "no_such_user" };
 
+  // Collect EVERY password this username could legitimately have been given,
+  // then accept any match. Avoids the "which source wins" edge cases that
+  // kept rejecting valid credentials when the Users page had seeded a user
+  // without a demo_password.
+  const acceptablePasswords: string[] = [];
+
+  // 1. Custom password set via the Users > Change Password dialog.
   try {
     const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
     const match = saved.find((x: any) => x.username === u && x.is_active);
-    if (match) {
-      // If an admin set a custom password via the Users page we must
-      // honour it. If no custom password was set we fall through to the
-      // hardcoded defaults below (DEMO_USERS seeds users without passwords).
-      if (match.demo_password) {
-        return match.demo_password === p
-          ? { ok: true }
-          : { ok: false, reason: "wrong_password" };
-      }
-    }
+    if (match?.demo_password) acceptablePasswords.push(String(match.demo_password));
   } catch {}
 
+  // 2. The built-in hardcoded password for the three default accounts
+  //    (admin, sarah.usher, james.viewer).
   const builtIn = HARDCODED_ACCOUNTS.find((a) => a.username === u);
-  if (!builtIn) return { ok: false, reason: "no_such_user" };
-  return builtIn.password === p ? { ok: true } : { ok: false, reason: "wrong_password" };
+  if (builtIn) acceptablePasswords.push(builtIn.password);
+
+  // 3. The generic "Demo@1234" fallback that loadDemoAccounts hands to
+  //    seeded-without-password users for demo cards.
+  if (builtIn) acceptablePasswords.push("Demo@1234");
+
+  if (acceptablePasswords.length === 0) return { ok: false, reason: "no_such_user" };
+  return acceptablePasswords.includes(p)
+    ? { ok: true }
+    : { ok: false, reason: "wrong_password" };
 }
 
 type Screen = "landing" | "demo" | "live";
