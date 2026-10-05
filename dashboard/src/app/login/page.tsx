@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
-import { Radio, Zap, Server, ChevronRight, ArrowLeft } from "lucide-react";
+import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon } from "lucide-react";
+import { useTheme } from "@/lib/theme";
 
 const HARDCODED_ACCOUNTS = [
   { username: "admin",        password: "Kharis2024!",  role: "admin",    desc: "Full access — all pages" },
@@ -30,13 +31,38 @@ function loadDemoAccounts() {
   } catch { return HARDCODED_ACCOUNTS; }
 }
 
-function validateDemoLogin(username: string, password: string): boolean {
+interface ValidationResult {
+  ok: boolean;
+  /** Null-safe reason string for a failure; useful for a specific error message. */
+  reason?: "no_such_user" | "wrong_password";
+}
+
+function validateDemoLogin(username: string, password: string): ValidationResult {
+  // Trim both — mobile keyboards (iOS especially) often add a trailing
+  // space after autocomplete, which would silently break an exact-match
+  // compare.
+  const u = username.trim();
+  const p = password.trim();
+  if (!u || !p) return { ok: false, reason: "no_such_user" };
+
   try {
     const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
-    const match = saved.find((u: any) => u.username === username && u.is_active);
-    if (match) return match.demo_password ? password === match.demo_password : password.length >= 1;
+    const match = saved.find((x: any) => x.username === u && x.is_active);
+    if (match) {
+      // If an admin set a custom password via the Users page we must
+      // honour it. If no custom password was set we fall through to the
+      // hardcoded defaults below (DEMO_USERS seeds users without passwords).
+      if (match.demo_password) {
+        return match.demo_password === p
+          ? { ok: true }
+          : { ok: false, reason: "wrong_password" };
+      }
+    }
   } catch {}
-  return HARDCODED_ACCOUNTS.some((a) => a.username === username && a.password === password);
+
+  const builtIn = HARDCODED_ACCOUNTS.find((a) => a.username === u);
+  if (!builtIn) return { ok: false, reason: "no_such_user" };
+  return builtIn.password === p ? { ok: true } : { ok: false, reason: "wrong_password" };
 }
 
 type Screen = "landing" | "demo" | "live";
@@ -46,6 +72,30 @@ const ROLE_COLOURS: Record<string, { bg: string; text: string }> = {
   operator: { bg: "rgba(59,130,246,0.15)", text: "#93c5fd" },
   viewer:   { bg: "rgba(107,114,128,0.15)", text: "#9ca3af" },
 };
+
+// Floating theme toggle for the pre-login screens. The sidebar's toggle
+// isn't shown yet, so without this users can't change theme until they
+// sign in — which doesn't help the first-impression experience.
+function PreLoginThemeToggle() {
+  const { theme, toggle } = useTheme();
+  const isDark = theme === "dark";
+  const Icon   = isDark ? Sun : Moon;
+  return (
+    <button
+      onClick={toggle}
+      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      className="fixed top-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+      style={{
+        background: "var(--bg-card)",
+        border: "1px solid var(--border-subtle)",
+        color: "var(--text-primary)",
+      }}
+    >
+      <Icon size={16} />
+    </button>
+  );
+}
 
 export default function LoginPage() {
   const { login, isLoading, error, isAuthenticated, role } = useAuth();
@@ -71,8 +121,11 @@ export default function LoginPage() {
 
   async function handleDemoLogin(username: string, password: string) {
     setLocalError("");
-    if (!validateDemoLogin(username, password)) {
-      setLocalError("Incorrect credentials");
+    const check = validateDemoLogin(username, password);
+    if (!check.ok) {
+      setLocalError(check.reason === "no_such_user"
+        ? `No account named "${username.trim()}"`
+        : "Wrong password for this account");
       return;
     }
     // Demo login is always local — never hits the real backend
@@ -112,21 +165,25 @@ export default function LoginPage() {
     setLocalError("");
     // Cloudflare Pages has no backend to hit — validate against the same
     // hardcoded accounts as demo, then set up a session locally.
-    if (!validateDemoLogin(user, pass)) {
-      setLocalError("Incorrect credentials");
+    const check = validateDemoLogin(user, pass);
+    if (!check.ok) {
+      setLocalError(check.reason === "no_such_user"
+        ? `No account named "${user.trim()}". Try admin, sarah.usher, or james.viewer.`
+        : "Wrong password for this account.");
       return;
     }
+    const trimmedUser = user.trim();
     let resolvedRole = "viewer";
     try {
       const saved = JSON.parse(localStorage.getItem("kyro_demo_users") ?? "[]");
-      const match = saved.find((u: any) => u.username === user && u.is_active);
+      const match = saved.find((u: any) => u.username === trimmedUser && u.is_active);
       if (match) {
         resolvedRole = match.role;
       } else {
         const hardcoded: Record<string, string> = {
           "admin": "admin", "sarah.usher": "operator", "james.viewer": "viewer",
         };
-        resolvedRole = hardcoded[user] ?? "viewer";
+        resolvedRole = hardcoded[trimmedUser] ?? "viewer";
       }
     } catch {}
 
@@ -136,7 +193,7 @@ export default function LoginPage() {
     localStorage.setItem("kyro_token", DEMO_TOKEN);
     localStorage.setItem("kyro_demo_role", resolvedRole);
     setDemoMode();
-    localStorage.setItem("kyro_demo_last_user", user);
+    localStorage.setItem("kyro_demo_last_user", trimmedUser);
 
     const dest = resolvedRole === "viewer" ? "/seating" : "/attendance";
     window.location.href = dest;
@@ -147,6 +204,7 @@ export default function LoginPage() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center p-6"
         style={{ background: "linear-gradient(160deg, var(--grad-login-a) 0%, var(--bg-base) 50%, var(--grad-login-a) 100%)" }}>
+        <PreLoginThemeToggle />
 
         {/* Logo */}
         <div className="mb-10 flex flex-col items-center gap-3">
@@ -156,7 +214,7 @@ export default function LoginPage() {
           </div>
           <div className="text-center">
             <h1 className="text-3xl font-bold text-white tracking-tight">Kyro</h1>
-            <p className="text-sm mt-1" style={{ color: "#6b7280" }}>Vision Intelligence</p>
+            <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Vision Intelligence</p>
           </div>
         </div>
 
@@ -180,7 +238,7 @@ export default function LoginPage() {
                     No setup needed
                   </span>
                 </div>
-                <p className="text-xs leading-relaxed" style={{ color: "#6b7280" }}>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
                   Explore Kyro with live simulated data — cameras, seat maps, Kyro questions,
                   analytics and more. No backend required.
                 </p>
@@ -206,7 +264,7 @@ export default function LoginPage() {
                     Real data
                   </span>
                 </div>
-                <p className="text-xs leading-relaxed" style={{ color: "#6b7280" }}>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--text-muted)" }}>
                   Connect to your Kyro backend with real cameras, live attendance tracking,
                   and full AI analysis. Sign in with your account.
                 </p>
@@ -216,7 +274,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        <p className="text-xs mt-8" style={{ color: "#374151" }}>
+        <p className="text-xs mt-8" style={{ color: "var(--text-faint)" }}>
           Kyro Vision Intelligence · Church Attendance Platform
         </p>
       </main>
@@ -228,11 +286,12 @@ export default function LoginPage() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center p-6"
         style={{ background: "linear-gradient(160deg, var(--grad-login-a) 0%, var(--bg-base) 50%, var(--grad-login-a) 100%)" }}>
+        <PreLoginThemeToggle />
 
         <div className="w-full max-w-md">
           <button onClick={() => setScreen("landing")}
             className="flex items-center gap-1.5 text-sm mb-6 transition-colors"
-            style={{ color: "#6b7280" }}
+            style={{ color: "var(--text-muted)" }}
             onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
             <ArrowLeft size={15} /> Back
@@ -246,7 +305,7 @@ export default function LoginPage() {
               </div>
               <div>
                 <h2 className="text-xl font-bold text-white">Demo mode</h2>
-                <p className="text-xs" style={{ color: "#6b7280" }}>Choose an account to explore with</p>
+                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Choose an account to explore with</p>
               </div>
             </div>
           </div>
@@ -270,7 +329,7 @@ export default function LoginPage() {
                         <span className="text-xs px-1.5 py-0.5 rounded-full font-medium"
                           style={{ background: col.bg, color: col.text }}>{a.role}</span>
                       </div>
-                      <p className="text-xs truncate" style={{ color: "#6b7280" }}>{a.desc}</p>
+                      <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>{a.desc}</p>
                     </div>
                     <ChevronRight size={15} className="text-gray-600 shrink-0" />
                   </div>
@@ -286,7 +345,7 @@ export default function LoginPage() {
             </p>
           )}
 
-          <p className="text-xs text-center mt-5" style={{ color: "#374151" }}>
+          <p className="text-xs text-center mt-5" style={{ color: "var(--text-faint)" }}>
             Demo data resets when you clear browser storage
           </p>
         </div>
@@ -298,11 +357,12 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex flex-col items-center justify-center p-6"
       style={{ background: "linear-gradient(160deg, var(--grad-login-a) 0%, var(--bg-base) 50%, var(--grad-login-a) 100%)" }}>
+      <PreLoginThemeToggle />
 
       <div className="w-full max-w-sm">
         <button onClick={() => setScreen("landing")}
           className="flex items-center gap-1.5 text-sm mb-6 transition-colors"
-          style={{ color: "#6b7280" }}
+          style={{ color: "var(--text-muted)" }}
           onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
           <ArrowLeft size={15} /> Back
@@ -315,7 +375,7 @@ export default function LoginPage() {
           </div>
           <div>
             <h2 className="text-xl font-bold text-white">Live mode</h2>
-            <p className="text-xs" style={{ color: "#6b7280" }}>Sign in to your Kyro account</p>
+            <p className="text-xs" style={{ color: "var(--text-muted)" }}>Sign in to your Kyro account</p>
           </div>
         </div>
 
@@ -324,7 +384,7 @@ export default function LoginPage() {
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{ color: "#6b7280" }}>Username</label>
+            <label className="text-xs" style={{ color: "var(--text-muted)" }}>Username</label>
             <input type="text" value={user} onChange={(e) => setUser(e.target.value)} required
               autoComplete="username" autoFocus
               className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -332,7 +392,7 @@ export default function LoginPage() {
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs" style={{ color: "#6b7280" }}>Password</label>
+            <label className="text-xs" style={{ color: "var(--text-muted)" }}>Password</label>
             <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} required
               autoComplete="current-password"
               className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
@@ -352,7 +412,7 @@ export default function LoginPage() {
             {isLoading ? "Signing in…" : "Sign in"}
           </button>
 
-          <p className="text-xs text-center" style={{ color: "#374151" }}>
+          <p className="text-xs text-center" style={{ color: "var(--text-faint)" }}>
             Sign in with your Kyro account
           </p>
         </form>
