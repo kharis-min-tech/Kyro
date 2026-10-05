@@ -70,10 +70,33 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Safely parse a fetch Response body as JSON. The backend normally returns
+ * JSON — but if the backend is unreachable (e.g. the Cloudflare-only
+ * deployment has no API endpoint), fetch may still succeed and return an
+ * HTML 404 page instead. Calling .json() on that throws
+ * "SyntaxError: unexpected character at line 1 column 1 of the JSON data"
+ * which bubbles up to the user. This helper swallows that and treats the
+ * response as empty.
+ */
+async function safeJson<T>(res: Response): Promise<T | undefined> {
+  const type = res.headers.get("content-type") ?? "";
+  if (!type.includes("json")) return undefined;
+  try { return (await res.json()) as T; }
+  catch { return undefined; }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
+  // Fail fast when the dashboard has no backend configured — avoid firing
+  // a fetch to the current origin (which on Cloudflare returns the SPA
+  // 404 HTML, which then crashes JSON.parse with that cryptic error).
+  if (!API_URL) {
+    throw new ApiError(503, "Kyro backend is not configured for this deployment");
+  }
+
   const authHeaders = await getAuthHeader();
 
   const headers: Record<string, string> = {
@@ -82,7 +105,13 @@ async function request<T>(
     ...authHeaders,
   };
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : "Network error";
+    throw new ApiError(0, `Kyro backend unreachable: ${msg}`);
+  }
 
   if (!res.ok) {
     // If real token expired in demo mode, clear cache and retry once
@@ -91,20 +120,26 @@ async function request<T>(
       _realTokenPromise = null;
       const freshAuth = await getAuthHeader();
       const retryHeaders = { "Content-Type": "application/json", ...(options.headers as Record<string, string>), ...freshAuth };
-      const retry = await fetch(`${API_URL}${path}`, { ...options, headers: retryHeaders });
+      let retry: Response;
+      try {
+        retry = await fetch(`${API_URL}${path}`, { ...options, headers: retryHeaders });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : "Network error";
+        throw new ApiError(0, `Kyro backend unreachable: ${msg}`);
+      }
       if (!retry.ok) {
-        const body = await retry.json().catch(() => ({}));
-        throw new ApiError(retry.status, body.detail ?? retry.statusText);
+        const body = await safeJson<{ detail?: string }>(retry);
+        throw new ApiError(retry.status, body?.detail ?? retry.statusText);
       }
       if (retry.status === 204 || retry.headers.get("content-length") === "0") return undefined as T;
-      return retry.json();
+      return ((await safeJson<T>(retry)) as T);
     }
-    const body = await res.json().catch(() => ({}));
-    throw new ApiError(res.status, body.detail ?? res.statusText);
+    const body = await safeJson<{ detail?: string }>(res);
+    throw new ApiError(res.status, body?.detail ?? res.statusText);
   }
   // 204 No Content — nothing to parse
   if (res.status === 204 || res.headers.get("content-length") === "0") return undefined as T;
-  return res.json();
+  return ((await safeJson<T>(res)) as T);
 }
 
 // ─── Auth ────────────────────────────────────────────────────────────────────

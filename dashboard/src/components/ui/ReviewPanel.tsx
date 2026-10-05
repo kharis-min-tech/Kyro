@@ -320,14 +320,14 @@ function ReviewCard({
         {review.options.map((opt) => (
           <button key={opt} onClick={() => answer(opt)} disabled={answering}
             className="w-full text-left px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-50"
-            style={{ background: "var(--border-subtle)", color: "#d1d5db" }}
+            style={{ background: "var(--border-subtle)", color: "var(--text-primary)" }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = colours.badge;
               (e.currentTarget as HTMLButtonElement).style.color = colours.text;
             }}
             onMouseLeave={(e) => {
               (e.currentTarget as HTMLButtonElement).style.background = "var(--border-subtle)";
-              (e.currentTarget as HTMLButtonElement).style.color = "#d1d5db";
+              (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
             }}>{opt}</button>
         ))}
       </div>
@@ -527,7 +527,7 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
         <button
           onClick={(e) => { e.stopPropagation(); setOpen((p) => !p); }}
           className="flex items-center gap-2 flex-1 text-sm font-medium text-left"
-          style={{ color: "#fde68a" }}
+          style={{ color: "var(--accent-amber)" }}
         >
           <span className="flex-1">{items.length} unanswered question{items.length !== 1 ? "s" : ""}</span>
           {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
@@ -603,14 +603,14 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
                       <button key={opt} onClick={() => answer(r, opt)}
                         disabled={!!answering}
                         className="w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
-                        style={{ background: "var(--border-subtle)", color: "#d1d5db" }}
+                        style={{ background: "var(--border-subtle)", color: "var(--text-primary)" }}
                         onMouseEnter={(e) => {
                           (e.currentTarget as HTMLButtonElement).style.background = colours.badge;
                           (e.currentTarget as HTMLButtonElement).style.color = colours.text;
                         }}
                         onMouseLeave={(e) => {
                           (e.currentTarget as HTMLButtonElement).style.background = "var(--border-subtle)";
-                          (e.currentTarget as HTMLButtonElement).style.color = "#d1d5db";
+                          (e.currentTarget as HTMLButtonElement).style.color = "var(--text-primary)";
                         }}>
                         {answering === r.review_id ? "Saving…" : opt}
                       </button>
@@ -660,7 +660,7 @@ function ArchivedRestoreBell() {
         right: "1rem",
         background: "var(--bg-card)",
         border: "1px solid rgba(245,158,11,0.5)",
-        color: "#fde68a",
+        color: "var(--accent-amber)",
       }}
       title={`Bring back ${archivedCount} hidden question${archivedCount !== 1 ? "s" : ""}`}
       aria-label={`${archivedCount} hidden question${archivedCount !== 1 ? "s" : ""} — click to restore`}

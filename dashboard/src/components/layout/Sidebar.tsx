@@ -269,7 +269,7 @@ export function Sidebar() {
         <div className="mx-3 mb-1">
           <Link href="/seating"
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all"
-            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", color: "#fde68a" }}>
+            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", color: "var(--accent-amber)" }}>
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
             <span className="flex-1">AI has {pendingReviews} question{pendingReviews !== 1 ? "s" : ""}</span>
             <span style={{ color: "#f59e0b" }}>→</span>

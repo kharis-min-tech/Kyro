@@ -36,6 +36,13 @@
   /* Gradient anchors used on the login screen */
   --grad-login-a:      #070910;
   --grad-login-b:      #0d0f1a;
+
+  /* Readable accent-text variants that adapt per theme (dark base used
+     original pale pastel; light base needs the darker tone for contrast). */
+  --accent-amber:      #fde68a;
+  --accent-indigo:     #a5b4fc;
+  --accent-green:      #86efac;
+  --accent-red:        #fca5a5;
 }
 
 :root[data-theme="light"] {
@@ -65,6 +72,12 @@
   /* Gradient anchors for the login screen */
   --grad-login-a:      #f9fafb;
   --grad-login-b:      #ffffff;
+
+  /* Darker accent-text variants readable on white backgrounds. */
+  --accent-amber:      #a16207;
+  --accent-indigo:     #4338ca;
+  --accent-green:      #047857;
+  --accent-red:        #b91c1c;
 }
 
 /* Body sits on the base background so bare pages still theme correctly. */
@@ -88,13 +101,34 @@ html, body {
 :root[data-theme="light"] .text-gray-600       { color: var(--text-muted)     !important; }
 :root[data-theme="light"] .text-gray-700       { color: var(--text-faint)     !important; }
 
+:root[data-theme="light"] .bg-gray-950         { background-color: var(--bg-base)    !important; }
 :root[data-theme="light"] .bg-gray-900         { background-color: var(--bg-card)    !important; }
 :root[data-theme="light"] .bg-gray-800         { background-color: var(--bg-inset)   !important; }
 :root[data-theme="light"] .bg-gray-700         { background-color: var(--bg-hover)   !important; }
+:root[data-theme="light"] .bg-black            { background-color: var(--bg-base)    !important; }
 
 :root[data-theme="light"] .border-gray-700     { border-color: var(--border-subtle) !important; }
 :root[data-theme="light"] .border-gray-800     { border-color: var(--border-subtle) !important; }
 :root[data-theme="light"] .border-gray-900     { border-color: var(--border-strong) !important; }
+
+/* Hover variants used by seat-editor, cameras, etc. */
+:root[data-theme="light"] .hover\:bg-gray-700:hover,
+:root[data-theme="light"] .hover\:bg-gray-800:hover,
+:root[data-theme="light"] .hover\:bg-gray-900:hover { background-color: var(--bg-hover) !important; }
+
+/* Dark colored card backgrounds used by the layout editor */
+:root[data-theme="light"] .bg-indigo-900\/20,
+:root[data-theme="light"] .bg-indigo-900\/30 { background-color: rgba(99,102,241,0.06) !important; }
+:root[data-theme="light"] .bg-green-900\/20  { background-color: rgba(16,185,129,0.08) !important; }
+:root[data-theme="light"] .bg-red-900\/20    { background-color: rgba(239,68,68,0.08)  !important; }
+:root[data-theme="light"] .bg-amber-900\/20  { background-color: rgba(245,158,11,0.08) !important; }
+
+/* Dark text variants for secondary states */
+:root[data-theme="light"] .text-green-300  { color: #047857 !important; }
+:root[data-theme="light"] .text-red-300    { color: #b91c1c !important; }
+:root[data-theme="light"] .text-indigo-300 { color: #3730a3 !important; }
+:root[data-theme="light"] .text-amber-300  { color: #a16207 !important; }
+:root[data-theme="light"] .text-blue-300   { color: #1e40af !important; }
 
 /* Placeholder text is light in light mode */
 :root[data-theme="light"] input::placeholder,

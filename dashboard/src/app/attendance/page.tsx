@@ -201,7 +201,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
       </div>
       {/* Zone label */}
       <div className="absolute bottom-2 left-2">
-        <span style={{ fontSize: 11, color: "#d1d5db", fontWeight: 600 }}>{camera.zone_name ?? camera.name}</span>
+        <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600 }}>{camera.zone_name ?? camera.name}</span>
       </div>
     </div>
   );
