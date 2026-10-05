@@ -202,7 +202,13 @@ export default function LoginPage() {
     const { DEMO_TOKEN } = await import("@/lib/demo");
     localStorage.setItem("kyro_token", DEMO_TOKEN);
     localStorage.setItem("kyro_demo_role", resolvedRole);
-    setDemoMode();
+    // IMPORTANT: Live login must stay in LIVE mode, not demo. Previously we
+    // called setDemoMode() here so the UI had something to show without a
+    // backend — but that made Live mode display fabricated demo numbers,
+    // which confused operators who wanted to enter real data. In live mode
+    // without a backend, pages show empty/zero state; operators enter real
+    // numbers via the Manual Count page.
+    setLiveMode();
     localStorage.setItem("kyro_demo_last_user", trimmedUser);
 
     const dest = resolvedRole === "viewer" ? "/seating" : "/attendance";

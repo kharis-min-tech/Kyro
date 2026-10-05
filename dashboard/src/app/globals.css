@@ -107,17 +107,99 @@ li, ul, ol, table, tr, td, th {
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
 
-/* ─── Mobile layout: push <main> below the fixed hamburger top bar ──────────
-   On mobile the Sidebar renders a fixed 56px (h-14) bar at the top of the
-   viewport. Its content was being covered because <aside> + <main> are flex
-   siblings in a horizontal row — the mobile top-bar overlay sits ABOVE main
-   with no clearance. This rule gives any <main> that follows an <aside>
-   a top padding on phone widths so the first row of content isn't hidden
-   behind the bar. Login pages render <main> without a sibling <aside>, so
-   they are untouched. */
+/* ─── Mobile responsiveness fixes ───────────────────────────────────────────
+   The dashboard was authored desktop-first with hard-coded min-widths that
+   caused horizontal overflow on phones. These rules target phone widths
+   (<768px) without touching the desktop layout.
+   ─────────────────────────────────────────────────────────────────────── */
+
+/* 1. No horizontal page scroll — ever — on phones. */
+html, body {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* 2. Media never breaks out of its container. */
+img, video, canvas, svg, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
 @media (max-width: 767px) {
-  aside ~ main,
-  aside + main {
-    padding-top: 3.5rem;    /* h-14 — matches the top bar height */
+  /* 3. Push <main> below the fixed hamburger top bar (56px). Login pages
+        don't have a sibling <aside>, so they aren't affected. */
+  aside ~ main, aside + main {
+    padding-top: 3.5rem;
+  }
+
+  /* 4. Any Tailwind min-w-[Npx] on cards/stats forces a row wider than
+        the phone. Soften them to 0 on mobile so cards wrap in their flex
+        parents instead of overflowing. Covers all the common sizes used
+        in the dashboard without having to touch every file. */
+  .min-w-\[80px\],
+  .min-w-\[90px\],
+  .min-w-\[100px\],
+  .min-w-\[120px\],
+  .min-w-\[140px\],
+  .min-w-\[200px\],
+  .min-w-\[240px\] {
+    min-width: 0 !important;
+  }
+
+  /* 5. Any element that becomes a 240px+ wide block via inline styles —
+        same deal: 0 min-width on mobile. Covers inline style={{minWidth: 240}}
+        in a few places (attendance detail cards, etc). */
+  [style*="minWidth: 240"], [style*="minWidth: 220"], [style*="minWidth: 200"] {
+    min-width: 0 !important;
+  }
+
+  /* 6. Prevent text truncation squashing — long usernames, zone names etc.
+        should wrap, not clip. */
+  .truncate {
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  /* 7. Buttons and taps need to be at least 40px tall for a thumb. */
+  button:not(.inline-tiny-btn), a[role="button"], [role="button"] {
+    min-height: 40px;
+  }
+
+  /* 8. Tables scroll horizontally inside their container; the PAGE still
+        doesn't scroll horizontally thanks to rule 1. */
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 9. Fixed-position overlays (dialogs, panels) stay inside the viewport. */
+  [class*="fixed"] {
+    max-width: 100vw;
   }
 }
+
+/* ─── Light-mode text visibility ────────────────────────────────────────────
+   Several components used hardcoded pale greys ("#e5e7eb") inline for
+   headings/body — invisible on a white background. Flip those to the
+   text-primary CSS variable in light mode. We also catch the sidebar
+   active state text, which is forced to #fff via Tailwind text-white
+   but was already covered — these additional overrides target the inline
+   style pathway. */
+:root[data-theme="light"] [style*="color: \"#e5e7eb\""],
+:root[data-theme="light"] [style*="color: '#e5e7eb'"],
+:root[data-theme="light"] [style*="color: #e5e7eb"] {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="light"] [style*="color: \"#fff\""],
+:root[data-theme="light"] [style*="color: '#fff'"],
+:root[data-theme="light"] [style*="color:#fff\""],
+:root[data-theme="light"] [style*="color: \"#ffffff\""],
+:root[data-theme="light"] [style*="color: '#ffffff'"] {
+  color: var(--text-primary) !important;
+}
+
+/* Preserve legibility of colored-background chips (red/green/purple) in
+   light mode — their text colours stay as the pastel tones they already use. */
