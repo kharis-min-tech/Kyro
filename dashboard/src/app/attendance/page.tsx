@@ -164,12 +164,22 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const isLive = inDemoMode() || (health?.is_running ?? (connected && !!data));
   const isError = !inDemoMode() && health?.status === "error";
 
+  // Figure out whether we have a real backend feed to show. Without one,
+  // the placeholder below says "No live feed" instead of "Demo feed" so
+  // Live-mode users on a local-only deployment don't see wrong wording.
+  const hasBackend = Boolean(process.env.NEXT_PUBLIC_API_URL);
+  const placeholderText = !hasBackend ? "No live feed (add cameras locally)"
+                        : streamErr ? "Stream lost — tap to retry"
+                        : "Connecting…";
+
   return (
     <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
-      {inDemoMode() ? (
+      {(!hasBackend) ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center"
           style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}>
-          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>Demo feed</span>
+          {/* Always-white text — background is a dark gradient regardless of
+             the user's chosen light/dark theme. */}
+          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{placeholderText}</span>
         </div>
       ) : isLive && !streamErr ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -185,9 +195,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 cursor-pointer"
           style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}
           onClick={() => { setStreamErr(false); setRetryKey((k) => k + 1); }}>
-          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
-            {streamErr ? "Stream lost — tap to retry" : "Connecting…"}
-          </span>
+          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{placeholderText}</span>
         </div>
       )}
       {/* Live/Offline/Error badge */}
@@ -199,9 +207,9 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
           {isError ? "CAMERA ERROR" : isLive ? "LIVE" : "OFFLINE"}
         </span>
       </div>
-      {/* Zone label */}
+      {/* Zone label — always white because the backing gradient is always dark */}
       <div className="absolute bottom-2 left-2">
-        <span style={{ fontSize: 11, color: "var(--text-primary)", fontWeight: 600 }}>{camera.zone_name ?? camera.name}</span>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.95)", fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>{camera.zone_name ?? camera.name}</span>
       </div>
     </div>
   );
