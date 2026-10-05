@@ -3,15 +3,17 @@
 /**
  * BackendStatusBanner
  *
- * Only shown in Live mode. Pings the backend /health endpoint on an
- * interval; if it's unreachable, shows a fixed-top banner so users
- * understand why data isn't loading (instead of staring at silent
- * network errors in devtools).
+ * Only relevant when a backend URL IS configured but unreachable. On the
+ * Cloudflare-only deployment where NEXT_PUBLIC_API_URL is unset, we don't
+ * show a scary "backend down" banner — there's just no backend by design,
+ * and the pages already fall back to local storage with no user action
+ * needed. Showing an alarm there was misleading.
  */
 
 import { useEffect, useState } from "react";
 import { AlertTriangle } from "lucide-react";
 
+const API_URL           = process.env.NEXT_PUBLIC_API_URL ?? "";
 const CHECK_INTERVAL_MS = 15_000;
 const HEALTH_TIMEOUT_MS = 3_000;
 
@@ -21,11 +23,11 @@ function isLiveMode(): boolean {
 }
 
 async function pingHealth(): Promise<boolean> {
-  const url = (process.env.NEXT_PUBLIC_API_URL ?? "") + "/health";
+  if (!API_URL) return false;
   try {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), HEALTH_TIMEOUT_MS);
-    const res = await fetch(url, { signal: ctrl.signal, cache: "no-store" });
+    const res = await fetch(`${API_URL}/health`, { signal: ctrl.signal, cache: "no-store" });
     clearTimeout(timer);
     return res.ok;
   } catch {
@@ -34,8 +36,8 @@ async function pingHealth(): Promise<boolean> {
 }
 
 export function BackendStatusBanner() {
-  const [live, setLive]   = useState(false);
-  const [down, setDown]   = useState(false);
+  const [live, setLive]           = useState(false);
+  const [down, setDown]           = useState(false);
   const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
@@ -46,7 +48,9 @@ export function BackendStatusBanner() {
   }, []);
 
   useEffect(() => {
-    if (!live) return;
+    // Skip entirely when there's no backend URL configured. Nothing to ping;
+    // nothing to warn about. The user is on a local-only deployment by design.
+    if (!live || !API_URL) return;
     let cancelled = false;
     async function check() {
       const ok = await pingHealth();
@@ -57,7 +61,7 @@ export function BackendStatusBanner() {
     return () => { cancelled = true; clearInterval(t); };
   }, [live]);
 
-  if (!live || !down || dismissed) return null;
+  if (!live || !API_URL || !down || dismissed) return null;
 
   return (
     <div
@@ -76,8 +80,8 @@ export function BackendStatusBanner() {
       <AlertTriangle size={16} style={{ flexShrink: 0 }} />
       <div style={{ flex: 1 }}>
         <strong>Kyro backend is unreachable.</strong>{" "}
-        Live data isn't loading. Check the backend server is running and reachable
-        from this page — or switch to Demo mode to keep exploring.
+        Live data isn&apos;t loading. Check the backend server is running and
+        reachable from this page.
       </div>
       <button
         onClick={() => setDismissed(true)}
