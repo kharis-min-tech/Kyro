@@ -266,6 +266,7 @@ export const zonesApi = {
       zone_type: body.zone_type,
       bbox: toBboxTuple(body.bbox),
       hold_seats_in_rows: body.hold_seats_in_rows ?? [],
+      is_active: true,
     };
     writeDemoZones(cameraId, [...readDemoZones(cameraId), created]);
     return created;
@@ -287,6 +288,7 @@ export const zonesApi = {
       zone_type: body.zone_type,
       bbox: toBboxTuple(body.bbox),
       hold_seats_in_rows: body.hold_seats_in_rows ?? [],
+      is_active: true,
     };
     if (idx >= 0) all[idx] = updated; else all.push(updated);
     writeDemoZones(cameraId, all);
