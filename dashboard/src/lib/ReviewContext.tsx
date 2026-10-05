@@ -33,10 +33,13 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
   const [activeCameraId, setActiveCameraId] = useState("demo-main");
   const { role } = useAuth();
 
-  // In demo mode: run the question generator directly in the provider
-  // so questions fire on every page, not just pages that mount a stream
+  // Only generate fake AI questions when the user explicitly picked Demo
+  // mode. Live mode (even without a backend) should never spawn fake
+  // questions — operators would get bogus 'AI has N questions' badges.
   useEffect(() => {
-    if (!inDemoMode() || isLiveMode()) return;
+    if (typeof window === "undefined") return;
+    const userChoseDemo = localStorage.getItem("kyro_mode") === "demo";
+    if (!userChoseDemo) return;
     if (role !== "admin" && role !== "operator") return;
 
     const URGENT_TYPES   = ["altar_call_question", "front_rush_question"];

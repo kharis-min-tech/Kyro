@@ -340,7 +340,12 @@ function AIAlertsPanel() {
   }, []);
 
   useEffect(() => {
-    if (inDemoMode()) {
+    // Only seed fake AI alerts when the user explicitly picked Demo mode.
+    // Live mode without a backend should show an empty state (no fake
+    // 'Stadium high density' / 'Camera offline' alerts that reference
+    // cameras the operator never added).
+    const userChoseDemo = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+    if (userChoseDemo) {
       const demo = [
         { level: "critical", title: "High Density Detected", sub: "Stadium — Main Bowl", ago: 5,  resolved: false },
         { level: "online",   title: "Camera Back Online",    sub: "Balcony Camera 03",   ago: 12, resolved: false },
@@ -357,6 +362,12 @@ function AIAlertsPanel() {
           resolved: d.resolved,
         };
       }));
+      setLoaded(true);
+      return;
+    }
+    // Live mode without backend: no alerts to fetch, no alerts to show.
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setAlerts([]);
       setLoaded(true);
       return;
     }

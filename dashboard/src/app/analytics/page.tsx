@@ -293,18 +293,27 @@ export default function AnalyticsPage() {
   }, []);
 
   const loadData = useCallback(() => {
-    if (inDemoMode()) {
+    // Only seed fake analytics when the user explicitly picked Demo mode.
+    // In Live mode without a backend, show an empty state — the operator
+    // hasn't recorded any analytics yet and shouldn't see invented data.
+    const userChoseDemo = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+    if (userChoseDemo) {
       const { history: h, arrival: arr, summary: s } = makeDemoAnalytics();
       const live = h.map((d) => ({ ...d, attendance: Math.max(0, d.attendance + Math.round((Math.random()-0.5)*12)) }));
       setHistory(live);
       setSummary({ ...(s as AnalyticsSummary), avg_attendance: Math.round(live.reduce((a,b)=>a+b.attendance,0)/live.length) });
       setArrival(arr.map((b) => ({ ...b, count: Math.max(0, b.count + Math.round((Math.random()-0.5)*5)) })));
       setFiltered(live);
-      // Keep selectedDay in sync by timestamp — don't wipe it on refresh
       setSelectedDay((prev) => {
         if (!prev) return null;
         return live.find((d) => d.timestamp === prev.timestamp) ?? prev;
       });
+      setLoading(false);
+      return;
+    }
+    // Live mode without a backend: nothing to load.
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setHistory([]); setSummary(null); setArrival([]); setFiltered([]);
       setLoading(false);
       return;
     }

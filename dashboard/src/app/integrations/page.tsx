@@ -141,8 +141,17 @@ export default function IntegrationsPage() {
           : "End-of-service payload sent" });
       }
     } catch (e: unknown) {
+      // Browser swallows CORS failures as a bare TypeError without details.
+      // Tell the user exactly what to check instead of a vague "Network error".
       const msg = e instanceof Error ? e.message : "Network error";
-      setResult({ ok: false, msg: `Send failed: ${msg}. Check the URL and that the receiver allows CORS from this origin.` });
+      const corsNote = msg.toLowerCase().includes("failed to fetch")
+        ? " (Most common cause: the receiving server didn't send an "
+          + "'Access-Control-Allow-Origin' header permitting this page. "
+          + "Try pointing the URL at https://webhook.site/#!/view for a "
+          + "quick CORS-friendly test receiver, or configure your receiver "
+          + "to allow this origin.)"
+        : "";
+      setResult({ ok: false, msg: `Send failed: ${msg}.${corsNote}` });
     } finally {
       setSending(null);
     }
