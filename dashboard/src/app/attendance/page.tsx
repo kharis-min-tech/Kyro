@@ -470,21 +470,17 @@ function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; 
   }, [demoChosen, hasBackend]);
 
   const running = camerasRunning ?? camerasTotal;
-  // Show the system as operational whenever a user mode is active. The
-  // only unhappy state is 'backend was configured but is unreachable'.
-  const aiLabel = backendOk === false && hasBackend ? "Offline"
-    : backendOk === null && hasBackend ? "Checking…"
-    : "Operational";
-  const aiColor = backendOk === false && hasBackend ? "#f87171"
-    : backendOk === null && hasBackend ? "#6b7280"
-    : "#4ade80";
-  const feedLabel = backendOk === false && hasBackend ? "Disconnected" : "Live";
-  const feedColor = backendOk === false && hasBackend ? "#f87171" : "#4ade80";
+  // Simple binary status per the operator's request: Live or Offline.
+  // The only 'Offline' trigger is a configured backend that fails its
+  // /health check. Everything else counts as Live.
+  const offline = hasBackend && backendOk === false;
+  const label   = offline ? "Offline" : "Live";
+  const color   = offline ? "#f87171" : "#4ade80";
 
   const items = [
-    { label: "AI Service",  value: aiLabel, color: aiColor, href: "/seating" },
-    { label: "Cameras",     value: `${running} / ${camerasTotal} Online`, color: running === camerasTotal && camerasTotal > 0 ? "#60a5fa" : running === 0 ? "#6b7280" : "#f59e0b", href: "/cameras" },
-    { label: "Data Feed",   value: feedLabel, color: feedColor, href: "/live-cameras" },
+    { label: "AI Service", value: label, color, href: "/seating" },
+    { label: "Cameras",    value: label, color, href: "/cameras" },
+    { label: "Data Feed",  value: label, color, href: "/live-cameras" },
   ];
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -536,6 +532,9 @@ export default function AttendancePage() {
   // Computed after hydration so it respects the user's live/demo choice.
   const [showVsYesterday, setShowVsYesterday] = useState(false);
   const [isDemo, setIsDemo] = useState(false);
+  // Running total of today's Manual Counts across all zones — summed from
+  // localStorage and refreshed whenever the Manual Count page writes.
+  const [manualTotalToday, setManualTotalToday] = useState(0);
 
   useEffect(() => {
     setHydrated(true);
@@ -721,25 +720,37 @@ export default function AttendancePage() {
     : historicalData?.timestamps;
   // Manual counts submitted today should be added to the headline number
   // when the active metric is 'people' or 'entries' (headcount-shaped).
-  // Prevents the frustrating "I entered a manual count and nothing changed"
-  // experience the user flagged.
-  const manualTotalToday = (() => {
-    if (typeof window === "undefined") return 0;
-    if (metric !== "people" && metric !== "entries") return 0;
-    if (!isToday) return 0;
-    try {
-      const raw = localStorage.getItem("kyro_manual_counts");
-      if (!raw) return 0;
-      const all: { count: number; session_id: string }[] = JSON.parse(raw);
-      const today = new Date();
-      const sid = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-      return all.filter((m) => m.session_id === sid).reduce((s, m) => s + (m.count || 0), 0);
-    } catch { return 0; }
-  })();
-
+  // Previously this was computed in an IIFE on each render — in Live mode
+  // without a backend, nothing triggers re-renders, so submitting a
+  // Manual Count did not update the headline. Now driven by state that
+  // refreshes on the kyro_manual_counts_changed custom event + focus.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function readManual() {
+      try {
+        const raw = localStorage.getItem("kyro_manual_counts");
+        if (!raw) { setManualTotalToday(0); return; }
+        const all: { count: number; session_id: string }[] = JSON.parse(raw);
+        const today = new Date();
+        const sid = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        setManualTotalToday(all.filter((m) => m.session_id === sid).reduce((s, m) => s + (m.count || 0), 0));
+      } catch { setManualTotalToday(0); }
+    }
+    readManual();
+    const onChange = () => readManual();
+    window.addEventListener("kyro_manual_counts_changed", onChange);
+    window.addEventListener("storage",                     onChange);
+    window.addEventListener("focus",                       onChange);
+    return () => {
+      window.removeEventListener("kyro_manual_counts_changed", onChange);
+      window.removeEventListener("storage",                     onChange);
+      window.removeEventListener("focus",                       onChange);
+    };
+  }, []);
+  const manualApplies = isToday && (metric === "people" || metric === "entries");
   const displayTotal = (isToday
     ? metricNow
-    : (historicalData?.total ?? 0)) + manualTotalToday;
+    : (historicalData?.total ?? 0)) + (manualApplies ? manualTotalToday : 0);
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
   const metricTitle = isToday

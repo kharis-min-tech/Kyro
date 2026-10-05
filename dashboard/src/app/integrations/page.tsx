@@ -243,15 +243,31 @@ export default function IntegrationsPage() {
               </button>
             </div>
 
+            {/* Result banner — bigger / bolder than the previous version so
+               it's not possible to click Send and think 'nothing happened'. */}
             {result && (
-              <div className={`rounded-lg px-3 py-2 flex items-start gap-2 ${result.ok ? "text-green-300" : "text-red-300"}`}
+              <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${result.ok ? "text-green-300" : "text-red-300"}`}
                 style={{
-                  background: result.ok ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)",
-                  border: `1px solid ${result.ok ? "rgba(16,185,129,0.35)" : "rgba(239,68,68,0.35)"}`,
+                  background: result.ok ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)",
+                  border: `1px solid ${result.ok ? "rgba(16,185,129,0.45)" : "rgba(239,68,68,0.45)"}`,
+                  fontSize: 13,
                 }}>
-                {result.ok ? <CheckCircle size={14} className="mt-0.5 shrink-0" /> : <XCircle size={14} className="mt-0.5 shrink-0" />}
-                <span className="text-xs leading-relaxed">{result.msg}</span>
+                {result.ok ? <CheckCircle size={18} className="mt-0.5 shrink-0" /> : <XCircle size={18} className="mt-0.5 shrink-0" />}
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold mb-0.5">
+                    {result.ok ? "Sent successfully" : "Could not send"}
+                  </p>
+                  <p className="text-xs leading-relaxed opacity-90">{result.msg}</p>
+                </div>
               </div>
+            )}
+
+            {/* Zero-feedback guard: if the user hasn't entered a URL yet
+               show a hint so clicking the disabled button has context. */}
+            {!cfg.url.trim() && (
+              <p className="text-xs" style={{ color: "var(--text-faint)" }}>
+                Enter a webhook URL above, then click <strong>Send a test</strong>.
+              </p>
             )}
           </div>
         </div>
