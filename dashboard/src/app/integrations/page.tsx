@@ -265,7 +265,7 @@ export default function IntegrationsPage() {
 
         <p className="text-xs" style={{ color: "var(--text-faint)" }}>
           Auto-send at end of each service requires the Kyro backend to be
-          running. In Demo mode, use <em>Send end-of-service now</em> to post
+          running. Without a backend, use <em>Send end-of-service now</em> to post
           the current snapshot manually.
         </p>
       </main>

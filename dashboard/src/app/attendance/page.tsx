@@ -240,7 +240,7 @@ function ZoneTableRow({ camera, idx, role }: { camera: Camera; idx: number; role
           <span style={{ fontSize: 13, fontWeight: 500, color: "var(--text-primary)" }}>{camera.zone_name ?? camera.name}</span>
         </div>
       </td>
-      <td style={{ padding: "14px 16px", fontWeight: 700, fontSize: 15, color: "#fff" }}>
+      <td style={{ padding: "14px 16px", fontWeight: 700, fontSize: 15, color: "var(--text-primary)" }}>
         {current.toLocaleString()}
       </td>
       <td style={{ padding: "14px 16px", fontWeight: 700, fontSize: 15, color: col.accent }}>
@@ -276,7 +276,7 @@ function ZoneCard({ camera, idx, role }: { camera: Camera; idx: number; role: st
         <span style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>{camera.zone_name ?? camera.name}</span>
       </div>
       <div>
-        <p style={{ fontSize: 28, fontWeight: 800, color: "#fff", lineHeight: 1 }}>{current.toLocaleString()}</p>
+        <p style={{ fontSize: 28, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>{current.toLocaleString()}</p>
         <p style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>people</p>
       </div>
       <div className="flex items-center gap-1.5">
@@ -696,8 +696,8 @@ export default function AttendancePage() {
       <main className="flex-1 pt-14 md:pt-0 overflow-auto p-3 sm:p-5 flex flex-col gap-5 min-w-0">
 
         {/* ── Header ── */}
-        <div className="flex items-start justify-between gap-4">
-          <div>
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
+          <div className="min-w-0">
             <h1 className="text-xl font-bold text-white flex items-center gap-2">
               Welcome back, {username || "admin"} 👋
             </h1>
@@ -705,7 +705,7 @@ export default function AttendancePage() {
               Here's what's happening across your venues
             </p>
           </div>
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3 sm:shrink-0">
           {/* Date picker dropdown */}
           <div className="relative" ref={datePickerRef}>
             <button
@@ -800,11 +800,12 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        {/* ── Main 2-column layout ── */}
-        <div className="flex gap-5 items-start">
+        {/* ── Main 2-column layout — stacks vertically below lg so phones get
+             the full width for data (left column) with Live Overview below ── */}
+        <div className="flex flex-col lg:flex-row gap-5 lg:items-start">
 
-          {/* Left column — 2/3 width */}
-          <div className="flex flex-col gap-5 min-w-0" style={{ flex: "1 1 0" }}>
+          {/* Left column — flex-1 on desktop, full-width on mobile */}
+          <div className="flex flex-col gap-5 min-w-0 w-full lg:flex-1">
 
             {/* Total count + chart */}
             <div className="rounded-2xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -879,7 +880,12 @@ export default function AttendancePage() {
               {camsLoading ? (
                 <p style={{ fontSize: 13, color: "var(--text-faint)" }}>Loading…</p>
               ) : (
-                <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(indoorCameras.length, 5)}, 1fr)` }}>
+                <div className="grid gap-3" style={{
+                  // Responsive: wraps so each card gets at least 140px on
+                  // mobile instead of being squished into a 60px slot when
+                  // 5 cameras exist.
+                  gridTemplateColumns: `repeat(auto-fill, minmax(140px, 1fr))`,
+                }}>
                   {indoorCameras.map((cam, i) => (
                     <ZoneCard key={cam.camera_id} camera={cam} idx={i} role={role as string} />
                   ))}
@@ -922,8 +928,8 @@ export default function AttendancePage() {
             )}
           </div>
 
-          {/* Right column — fixed 300px */}
-          <div className="flex flex-col gap-4 shrink-0" style={{ width: 300 }}>
+          {/* Right column — full-width on mobile, 300px on desktop */}
+          <div className="flex flex-col gap-4 w-full lg:w-[300px] lg:shrink-0">
 
             {/* Live overview camera carousel */}
             <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
