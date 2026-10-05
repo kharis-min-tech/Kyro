@@ -21,12 +21,22 @@ function loadDemoAccounts() {
     const base = HARDCODED_ACCOUNTS.filter((a) => !names.has(a.username));
     return [
       ...base,
-      ...active.map((u: any) => ({
-        username: u.username,
-        password: u.demo_password ?? "Demo@1234",
-        role: u.role,
-        desc: u.role === "admin" ? "Full access" : u.role === "operator" ? "Operator access" : "Read only",
-      })),
+      ...active.map((u: any) => {
+        // If the saved user is one of the three built-ins (seeded by the
+        // Users page WITHOUT a custom password), prefer the built-in's real
+        // password rather than the generic "Demo@1234" fallback — otherwise
+        // tapping the demo card tries to log in with "Demo@1234" but
+        // validateDemoLogin checks against the built-in's real password
+        // and rejects with "wrong password".
+        const builtIn = HARDCODED_ACCOUNTS.find((a) => a.username === u.username);
+        const password = u.demo_password ?? builtIn?.password ?? "Demo@1234";
+        return {
+          username: u.username,
+          password,
+          role: u.role,
+          desc: u.role === "admin" ? "Full access" : u.role === "operator" ? "Operator access" : "Read only",
+        };
+      }),
     ];
   } catch { return HARDCODED_ACCOUNTS; }
 }

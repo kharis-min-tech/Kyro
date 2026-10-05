@@ -106,3 +106,18 @@ button, input, textarea, select, a, p, h1, h2, h3, h4, h5, h6,
 li, ul, ol, table, tr, td, th {
   transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
 }
+
+/* ─── Mobile layout: push <main> below the fixed hamburger top bar ──────────
+   On mobile the Sidebar renders a fixed 56px (h-14) bar at the top of the
+   viewport. Its content was being covered because <aside> + <main> are flex
+   siblings in a horizontal row — the mobile top-bar overlay sits ABOVE main
+   with no clearance. This rule gives any <main> that follows an <aside>
+   a top padding on phone widths so the first row of content isn't hidden
+   behind the bar. Login pages render <main> without a sibling <aside>, so
+   they are untouched. */
+@media (max-width: 767px) {
+  aside ~ main,
+  aside + main {
+    padding-top: 3.5rem;    /* h-14 — matches the top bar height */
+  }
+}
