@@ -226,6 +226,16 @@ function makeZoneId(): string {
   return "zone-" + Math.random().toString(16).slice(2, 10).padStart(8, "0");
 }
 
+/**
+ * Narrow a plain number[] (what the editor hands us) to the 4-tuple the
+ * ZoneDef type expects. The editor always produces exactly four numbers
+ * (x1, y1, x2, y2) when it draws a rectangle, but the TS compiler can't
+ * know that from the array type alone — hence the cast.
+ */
+function toBboxTuple(b: number[]): [number, number, number, number] {
+  return [b[0] ?? 0, b[1] ?? 0, b[2] ?? 0, b[3] ?? 0];
+}
+
 export const zonesApi = {
   list: async (cameraId: string): Promise<ZoneDef[]> => {
     if (inDemoMode()) return readDemoZones(cameraId);
@@ -254,7 +264,7 @@ export const zonesApi = {
       zone_id: makeZoneId(),
       label: body.label,
       zone_type: body.zone_type,
-      bbox: body.bbox,
+      bbox: toBboxTuple(body.bbox),
       hold_seats_in_rows: body.hold_seats_in_rows ?? [],
     };
     writeDemoZones(cameraId, [...readDemoZones(cameraId), created]);
@@ -275,7 +285,7 @@ export const zonesApi = {
       zone_id: zoneId,
       label: body.label,
       zone_type: body.zone_type,
-      bbox: body.bbox,
+      bbox: toBboxTuple(body.bbox),
       hold_seats_in_rows: body.hold_seats_in_rows ?? [],
     };
     if (idx >= 0) all[idx] = updated; else all.push(updated);
