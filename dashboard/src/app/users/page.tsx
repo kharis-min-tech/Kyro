@@ -6,7 +6,7 @@ import { usersApi } from "@/lib/api";
 import { DEMO_MODE, DEMO_USERS } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { Eye, EyeOff, KeyRound, X, Check, Pencil } from "lucide-react";
 import type { UserResponse } from "@/types";
 
@@ -553,7 +553,7 @@ export default function UsersPage() {
                 <div key={u.id} style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
                   <div className="px-5 py-4 flex items-start gap-4">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                      style={{ background: u.role === "admin" ? "#4f46e5" : u.role === "operator" ? "#0369a1" : "#374151" }}>
+                      style={{ background: u.role === "admin" ? "#4f46e5" : u.role === "operator" ? "#0369a1" : "var(--text-faint)" }}>
                       {(u.display_name || u.username)[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">

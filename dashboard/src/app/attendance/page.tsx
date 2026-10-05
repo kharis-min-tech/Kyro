@@ -21,7 +21,7 @@ function toLocalDateStr(d: Date): string {
 }
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import type { Camera, VenueTotal } from "@/types";
 import {
   TrendingUp, TrendingDown,
@@ -95,7 +95,7 @@ function TotalChart({ history, current, timestamps }: { history: number[]; curre
         {/* Y axis */}
         <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-between", paddingBottom: 20 }}>
           {yLabels.map((v, i) => (
-            <span key={i} style={{ fontSize: 10, color: "#374151", width: 32, textAlign: "right" }}>
+            <span key={i} style={{ fontSize: 10, color: "var(--text-faint)", width: 32, textAlign: "right" }}>
               {v >= 1000 ? `${Math.round(v / 1000)}k` : v}
             </span>
           ))}
@@ -126,7 +126,7 @@ function TotalChart({ history, current, timestamps }: { history: number[]; curre
           {/* X axis labels */}
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
             {timeLabels.map((l) => (
-              <span key={l} style={{ fontSize: 10, color: "#374151" }}>{l}</span>
+              <span key={l} style={{ fontSize: 10, color: "var(--text-faint)" }}>{l}</span>
             ))}
           </div>
         </div>
@@ -393,9 +393,9 @@ function AIAlertsPanel() {
         <Link href="/notifications" style={{ fontSize: 11, color: "#6366f1" }}>View all</Link>
       </div>
       {!loaded ? (
-        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "#374151" }}>Loading alerts…</p>
+        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "var(--text-faint)" }}>Loading alerts…</p>
       ) : alerts.length === 0 ? (
-        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "#374151" }}>No alerts — system nominal</p>
+        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "var(--text-faint)" }}>No alerts — system nominal</p>
       ) : (
         <div className="flex flex-col">
           {alerts.map((a, i) => (
@@ -410,7 +410,7 @@ function AIAlertsPanel() {
                 style={{ background: a.iconBg }}>{a.icon}</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <p style={{ fontSize: 13, fontWeight: 600, color: a.resolved ? "#9ca3af" : "#e5e7eb" }}>{a.title}</p>
+                  <p style={{ fontSize: 13, fontWeight: 600, color: a.resolved ? "#9ca3af" : "var(--text-primary)" }}>{a.title}</p>
                   {a.resolved && (
                     <span style={{ fontSize: 9, fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.12)",
                                    padding: "1px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>
@@ -789,7 +789,7 @@ export default function AttendancePage() {
                   <p style={{ fontSize: 11, color: "#6b7280" }}>Backend: localhost:8000</p>
                   <p style={{ fontSize: 11, color: "#6b7280" }}>Polling every 5s</p>
                   <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 8, marginTop: 4 }}>
-                    <p style={{ fontSize: 10, color: "#374151" }}>
+                    <p style={{ fontSize: 10, color: "var(--text-faint)" }}>
                       {isToday ? "Showing live data" : `Showing data for ${dateStr}`}
                     </p>
                   </div>

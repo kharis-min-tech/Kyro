@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, DEMO_SESSIONS } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { Play, Square, Download, Radio, WifiOff, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
 import type { SessionResponse, Camera } from "@/types";

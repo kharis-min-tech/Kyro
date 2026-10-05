@@ -7,8 +7,8 @@ import type { SeatState } from "@/types";
 const COLOURS: Record<string, string> = {
   occupied:           "#ef4444",
   temporarily_vacant: "#f59e0b",
-  likely_available:   "#374151",
-  available:          "#374151",
+  likely_available: "var(--text-faint)",
+  available: "var(--text-faint)",
   reserved:           "#7c3aed",
   rota_hold:          "#2563eb",
   unknown:            "var(--bg-hover)",
@@ -97,7 +97,7 @@ function ActionMenu({ seat, x, y, onAction, onClose }: {
         <span className="ml-2 text-gray-500">Row {seat.row} · #{seat.number}</span>
       </div>
       <div className="px-3 py-2 flex items-center gap-2" style={{ borderBottom: "1px solid var(--border-strong)" }}>
-        <span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOURS[seat.state] ?? "#374151" }} />
+        <span className="w-2.5 h-2.5 rounded-sm" style={{ background: COLOURS[seat.state] ?? "var(--text-faint)" }} />
         <span className="text-gray-400">{LABELS[seat.state] ?? seat.state}</span>
       </div>
       {reserving ? (
@@ -128,7 +128,7 @@ function ActionMenu({ seat, x, y, onAction, onClose }: {
           {isReserved && (
             <button onClick={() => onAction({ seatId: seat.seat_id, action: "unreserve" })}
               className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-white/5">
-              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#374151" }} />
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--text-faint)" }} />
               <span className="text-gray-200">Remove Reservation</span>
             </button>
           )}
@@ -142,7 +142,7 @@ function ActionMenu({ seat, x, y, onAction, onClose }: {
           {seat.state === "occupied" && (
             <button onClick={() => onAction({ seatId: seat.seat_id, action: "mark_available" })}
               className="w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-white/5">
-              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#374151" }} />
+              <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "var(--text-faint)" }} />
               <span className="text-gray-200">Seat is now free</span>
             </button>
           )}

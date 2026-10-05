@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 const BG      = "var(--bg-base)";
 const CARD_BG = "var(--bg-card)";
@@ -339,7 +339,7 @@ export default function NotificationsPage() {
                     {item.toggle !== undefined && (
                       <button onClick={item.onToggle}
                         className="shrink-0 w-9 h-5 rounded-full transition-colors relative"
-                        style={{ background: item.value ? item.color : "#374151" }}>
+                        style={{ background: item.value ? item.color : "var(--text-faint)" }}>
                         <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all"
                           style={{ left: item.value ? "calc(100% - 18px)" : "2px" }} />
                       </button>

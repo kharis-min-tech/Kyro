@@ -16,7 +16,7 @@ import type { PipelineUpdate, ReviewRequest } from "@/types";
 import { DEMO_MODE, DemoFeed, DEMO_REVIEWS, getNextDemoReviews, registerDemoFeed, resetDemoFeed } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 // Try to get the global review context — safe to call even if provider isn't mounted
 function tryAddToGlobalReview(r: ReviewRequest) {

@@ -11,7 +11,7 @@ import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef
 import { DEMO_MODE } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { Sidebar } from "@/components/layout/Sidebar";
 import type { Camera, SeatState } from "@/types";
 import type { SeatAction } from "@/components/ui/SeatMap";
@@ -166,7 +166,7 @@ function ZonesBadge({ zones }: { zones: ZoneDef[] }) {
   if (zones.length === 0) {
     return (
       <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
-        <p style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
+        <p style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
         <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text-faint)", lineHeight: 1 }}>0</span>
         <p style={{ fontSize: 11, color: "#6b7280" }}>Draw one in the Seat Editor</p>
       </div>
@@ -174,7 +174,7 @@ function ZonesBadge({ zones }: { zones: ZoneDef[] }) {
   }
   return (
     <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
-      <p style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
+      <p style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Zones known</p>
       <div className="flex items-baseline gap-2">
         <span style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>{zones.length}</span>
         <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
@@ -194,9 +194,9 @@ function StatCard({ label, value, sub, valueColour, change }: {
 }) {
   return (
     <div className="rounded-xl p-4 flex flex-col gap-2" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
-      <p style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</p>
+      <p style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>{label}</p>
       <div className="flex items-baseline gap-2">
-        <span style={{ fontSize: 32, fontWeight: 800, color: valueColour ?? "#e5e7eb", lineHeight: 1 }}>{value}</span>
+        <span style={{ fontSize: 32, fontWeight: 800, color: valueColour ?? "var(--text-primary)", lineHeight: 1 }}>{value}</span>
         {sub && <span style={{ fontSize: 13, color: "#6b7280" }}>{sub}</span>}
         {change && (
           <span style={{ fontSize: 11, color: GREEN, fontWeight: 600 }}>{change}</span>
@@ -215,7 +215,7 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
 }) {
   const [coords, setCoords] = useState({ x: 0, y: 0 });
   if (seats.length === 0) return (
-    <div className="flex items-center justify-center h-48" style={{ color: "#374151", fontSize: 13 }}>
+    <div className="flex items-center justify-center h-48" style={{ color: "var(--text-faint)", fontSize: 13 }}>
       No seat layout active
     </div>
   );
@@ -240,7 +240,7 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
       <div className="flex justify-center mb-3">
         <div className="px-16 py-1.5 rounded-lg text-center"
           style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
-          <span style={{ fontSize: 9, color: "#374151", letterSpacing: "0.2em", textTransform: "uppercase" }}>Stage</span>
+          <span style={{ fontSize: 9, color: "var(--text-faint)", letterSpacing: "0.2em", textTransform: "uppercase" }}>Stage</span>
         </div>
       </div>
 
@@ -310,7 +310,7 @@ function IntelligenceFeed({ seats, camera, connected }: {
     if (reserved > 0) {
       entries.push({ time: new Date(Date.now() - 60000).toTimeString().slice(0, 5), msg: `${reserved} reserved seat${reserved !== 1 ? "s" : ""} loaded`, sub: "ADMIN-EVENT: RESERVATIONS", colour: "#9b5de5" });
     }
-    entries.push({ time: new Date(Date.now() - 3 * 60000).toTimeString().slice(0, 5), msg: "Routine sweep completed. 0 anomalies detected.", sub: "SYSTEM-STATUS: OK", colour: "#374151" });
+    entries.push({ time: new Date(Date.now() - 3 * 60000).toTimeString().slice(0, 5), msg: "Routine sweep completed. 0 anomalies detected.", sub: "SYSTEM-STATUS: OK", colour: "var(--text-faint)" });
     setEvents(entries);
     // Seed prev state
     const prev: Record<string, string> = {};
@@ -366,19 +366,19 @@ function IntelligenceFeed({ seats, camera, connected }: {
   return (
     <div className="rounded-xl overflow-hidden flex flex-col" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
       <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Intelligence Feed</span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Intelligence Feed</span>
       </div>
       <div className="flex flex-col overflow-y-auto" style={{ maxHeight: 200 }}>
         {events.length === 0 ? (
-          <p className="px-4 py-4" style={{ fontSize: 11, color: "#374151" }}>Waiting for data…</p>
+          <p className="px-4 py-4" style={{ fontSize: 11, color: "var(--text-faint)" }}>Waiting for data…</p>
         ) : events.map((e, i) => (
           <div key={i} className="flex items-start gap-3 px-4 py-3"
             style={{ borderLeft: `2px solid ${e.colour}`, borderBottom: i < events.length - 1 ? `1px solid ${BORDER}` : "none",
                      background: i === 0 ? "rgba(0,255,136,0.03)" : "transparent" }}>
-            <span style={{ fontSize: 10, color: "#374151", fontFamily: "monospace", whiteSpace: "nowrap", marginTop: 1 }}>{e.time}</span>
+            <span style={{ fontSize: 10, color: "var(--text-faint)", fontFamily: "monospace", whiteSpace: "nowrap", marginTop: 1 }}>{e.time}</span>
             <div>
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", fontWeight: 500 }}>{e.msg}</p>
-              <p style={{ fontSize: 10, color: "#374151", marginTop: 2, fontFamily: "monospace" }}>{e.sub}</p>
+              <p style={{ fontSize: 10, color: "var(--text-faint)", marginTop: 2, fontFamily: "monospace" }}>{e.sub}</p>
             </div>
           </div>
         ))}
@@ -422,7 +422,7 @@ function UnitBreakdown({ seats, camera }: { seats: SeatState[]; camera: Camera }
   return (
     <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
       <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <span style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Unit Breakdown</span>
+        <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Unit Breakdown</span>
       </div>
       <div className="px-4 py-4 flex flex-col gap-4">
         {tiers.map((t) => (
@@ -430,7 +430,7 @@ function UnitBreakdown({ seats, camera }: { seats: SeatState[]; camera: Camera }
             <div className="flex items-center justify-between mb-1.5">
               <span style={{ fontSize: 10, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>{t.label}</span>
               <div className="flex items-center gap-2">
-                <span style={{ fontSize: 10, color: "#374151" }}>{t.count}</span>
+                <span style={{ fontSize: 10, color: "var(--text-faint)" }}>{t.count}</span>
                 <span style={{ fontSize: 11, fontWeight: 700, color: t.colour }}>{t.pct}%</span>
               </div>
             </div>
@@ -545,9 +545,9 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
       <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <div>
           <p style={{ fontSize: 13, fontWeight: 700, color: GREEN, fontFamily: "monospace" }}>UNIT {seat.seat_id}</p>
-          <p style={{ fontSize: 10, color: "#374151" }}>Row {seat.row} · #{seat.number} · {seat.section ?? "Main"}</p>
+          <p style={{ fontSize: 10, color: "var(--text-faint)" }}>Row {seat.row} · #{seat.number} · {seat.section ?? "Main"}</p>
         </div>
-        <button onClick={onClose} style={{ color: "#374151" }} className="hover:text-white"><X size={14} /></button>
+        <button onClick={onClose} style={{ color: "var(--text-faint)" }} className="hover:text-white"><X size={14} /></button>
       </div>
 
       {/* Camera feed — compact height */}
@@ -595,12 +595,12 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
 
       <div className="px-4 py-3 flex flex-col gap-2 overflow-y-auto" style={{ flex: 1 }}>
         <div className="flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: "var(--bg-inset)" }}>
-          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: DOT_COLOURS[seat.state] ?? "#374151" }} />
+          <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: DOT_COLOURS[seat.state] ?? "var(--text-faint)" }} />
           <span style={{ fontSize: 11, color: "var(--text-tertiary)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>
             {seat.state.replace("_", " ")}
           </span>
           {seat.confidence > 0 && (
-            <span style={{ fontSize: 10, color: "#374151", marginLeft: "auto" }}>{Math.round(seat.confidence * 100)}%</span>
+            <span style={{ fontSize: 10, color: "var(--text-faint)", marginLeft: "auto" }}>{Math.round(seat.confidence * 100)}%</span>
           )}
         </div>
         {reserving ? (
@@ -822,7 +822,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           <span style={{ fontSize: 10, color: GREEN, fontFamily: "monospace" }}>LIVE DATA STREAM ACTIVE</span>
         </div>
         <div className="rounded-xl p-8 flex flex-col items-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <p style={{ fontSize: 9, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
+          <p style={{ fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
           <span style={{ fontSize: 64, fontWeight: 900, color: "var(--text-primary)" }}>{current.toLocaleString()}</span>
         </div>
         <ReviewPanel reviews={reviews} cameraId={camera.camera_id} onDismiss={dismissReview} />
@@ -858,7 +858,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <div style={{ fontSize: 9, color: "#374151", textAlign: "right" }}>
+          <div style={{ fontSize: 9, color: "var(--text-faint)", textAlign: "right" }}>
             <div>SYSTEM LATENCY</div>
             <div style={{ color: GREEN, fontFamily: "monospace", fontWeight: 700 }}>12ms</div>
           </div>
@@ -884,7 +884,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
         <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           {/* Legend bar */}
           <div className="flex items-center gap-5 px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <span style={{ fontSize: 9, fontWeight: 700, color: "#374151", textTransform: "uppercase", letterSpacing: "0.12em" }}>Spatial Monitor</span>
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Spatial Monitor</span>
             <div className="flex items-center gap-4 flex-1">
               {[
                 { label: `Occupied ${occupied}`,    colour: "#ff4d6d" },
@@ -977,9 +977,9 @@ export default function SeatingPage() {
         <div className="flex items-center gap-1 px-4 shrink-0 overflow-x-auto"
           style={{ background: CARD, borderBottom: `1px solid ${BORDER}`, minHeight: 44 }}>
           {loading ? (
-            <span style={{ fontSize: 11, color: "#374151" }}>Loading…</span>
+            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>Loading…</span>
           ) : cameras.length === 0 ? (
-            <span style={{ fontSize: 11, color: "#374151" }}>No cameras — add one in Cameras</span>
+            <span style={{ fontSize: 11, color: "var(--text-faint)" }}>No cameras — add one in Cameras</span>
           ) : cameras.map((cam) => {
             const active = activeId === cam.camera_id;
             return (
@@ -1000,7 +1000,7 @@ export default function SeatingPage() {
         {active ? (
           <CameraSeatView camera={active} />
         ) : (
-          <div className="flex-1 flex items-center justify-center" style={{ color: "#374151", fontSize: 13 }}>
+          <div className="flex-1 flex items-center justify-center" style={{ color: "var(--text-faint)", fontSize: 13 }}>
             No cameras registered
           </div>
         )}

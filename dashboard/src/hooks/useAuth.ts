@@ -5,7 +5,7 @@ import { authApi, ApiError } from "@/lib/api";
 import { DEMO_MODE, DEMO_TOKEN } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 type Role = "admin" | "operator" | "viewer" | "usher" | "counter";
 

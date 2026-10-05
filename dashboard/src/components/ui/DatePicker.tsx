@@ -118,7 +118,7 @@ export function InlineCalendar({ value, onChange, max, showFooter = true, onClea
                   : isSelected ? "#fff"
                   : !isCurr ? "#374151"
                   : isWeekend ? "#818cf8"
-                  : "#e5e7eb",
+                  : "var(--text-primary)",
                 fontWeight: isSelected || isToday ? 600 : 400,
                 border: isToday && !isSelected ? "1px solid #374151" : "1px solid transparent",
                 cursor: disabled ? "not-allowed" : "pointer",

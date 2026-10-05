@@ -6,7 +6,7 @@ import { DEMO_MODE, DEMO_CAMERAS } from "@/lib/demo";
 import type { Camera } from "@/types";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 const DEMO_OVERRIDES_KEY = "kyro_demo_camera_overrides";
 const DEMO_ADDED_KEY     = "kyro_demo_cameras_added";

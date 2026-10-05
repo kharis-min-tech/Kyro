@@ -17,7 +17,7 @@ const API_URL   = process.env.NEXT_PUBLIC_API_URL ?? "";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO === "true";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";

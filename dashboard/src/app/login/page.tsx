@@ -219,6 +219,17 @@ export default function LoginPage() {
     setLiveMode();
     localStorage.setItem("kyro_demo_last_user", trimmedUser);
 
+    // Clear stale AI-question / archived-review state on fresh Live login.
+    // Otherwise questions accumulated during an earlier Demo-mode session
+    // show up as a scary "AI has 10 questions" notification in the sidebar
+    // even when no cameras exist.
+    try {
+      localStorage.removeItem("kyro_unanswered_reviews");
+      localStorage.removeItem("kyro_archived_reviews");
+      localStorage.removeItem("kyro_pending_reviews");
+      window.dispatchEvent(new Event("kyro_unanswered_changed"));
+    } catch {}
+
     const dest = resolvedRole === "viewer" ? "/seating" : "/attendance";
     window.location.href = dest;
   }
@@ -344,7 +355,7 @@ export default function LoginPage() {
                   style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                      style={{ background: a.role === "admin" ? "#4f46e5" : a.role === "operator" ? "#0369a1" : "#374151" }}>
+                      style={{ background: a.role === "admin" ? "#4f46e5" : a.role === "operator" ? "#0369a1" : "var(--text-faint)" }}>
                       {a.username[0].toUpperCase()}
                     </div>
                     <div className="flex-1 min-w-0">

@@ -9,7 +9,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, makeDemoAnalytics } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { AttendancePoint, AnalyticsSummary, HourlyBucket } from "@/types";
@@ -201,7 +201,7 @@ function WeeklyBreakdown({ data }: { data: AttendancePoint[] }) {
               <div className="flex-1 rounded-full overflow-hidden" style={{ height:6, background:"var(--border-subtle)" }}>
                 <div className="h-full rounded-full" style={{ width:`${pct}%`, background:pct>80?"#818cf8":pct>40?"#4f46e5":"var(--border-strong)" }}/>
               </div>
-              <span className="text-xs tabular-nums w-8 text-right" style={{ color:avgs[i]>0?"#9ca3af":"#374151" }}>
+              <span className="text-xs tabular-nums w-8 text-right" style={{ color:avgs[i]>0?"#9ca3af": "var(--text-faint)" }}>
                 {avgs[i]>0?avgs[i]:"—"}
               </span>
             </div>
@@ -242,7 +242,7 @@ function RecentSessions({ data, onSelect, selectedTs }: {
                          background: sel?"rgba(99,102,241,0.1)":"transparent", cursor:"pointer" }}
                 onMouseEnter={(e)=>{ if(!sel)(e.currentTarget as HTMLElement).style.background="var(--border-subtle)"; }}
                 onMouseLeave={(e)=>{ (e.currentTarget as HTMLElement).style.background=sel?"rgba(99,102,241,0.1)":"transparent"; }}>
-                <td className="px-5 py-3 font-medium" style={{ color:sel?"#818cf8":"#e5e7eb" }}>{day}/{mon}/{yr}</td>
+                <td className="px-5 py-3 font-medium" style={{ color:sel?"#818cf8": "var(--text-primary)" }}>{day}/{mon}/{yr}</td>
                 <td className="px-5 py-3" style={{ color:"#6b7280" }}>{DAYS_LONG[dow]}</td>
                 <td className="px-5 py-3 text-right font-semibold text-white tabular-nums">{d.attendance.toLocaleString()}</td>
                 <td className="px-5 py-3 text-right tabular-nums" style={{ color:"#6366f1" }}>{d.occupancy_pct.toFixed(1)}%</td>

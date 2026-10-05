@@ -13,10 +13,15 @@ export function isLiveMode(): boolean {
   return localStorage.getItem("kyro_mode") === "live";
 }
 
-/** Returns true if the app should use fake/demo data right now. */
+/** Returns true if the app should use fake/demo data right now.
+ *  Also true when no backend URL is configured for the deployment (e.g.
+ *  Cloudflare-only preview) — in that case Live mode has nothing to talk
+ *  to, so we fall back to local storage data just like demo mode. */
 export function inDemoMode(): boolean {
   if (typeof window === "undefined") return false;
-  return localStorage.getItem("kyro_mode") === "demo";
+  if (localStorage.getItem("kyro_mode") === "demo") return true;
+  if (!process.env.NEXT_PUBLIC_API_URL) return true;
+  return false;
 }
 
 export function setLiveMode() {

@@ -20,7 +20,7 @@ import { camerasApi } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
+const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import type { Camera, VenueTotal, ZoneLive } from "@/types";
 import {
   Video, WifiOff, Users, ArrowUpRight, ArrowDownLeft,
