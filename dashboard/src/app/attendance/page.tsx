@@ -440,25 +440,48 @@ function AIAlertsPanel() {
 // ─── System status panel ──────────────────────────────────────────────────────
 function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; camerasRunning?: number }) {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const hasBackend = Boolean(process.env.NEXT_PUBLIC_API_URL);
+  const demoChosen = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 
   useEffect(() => {
-    if (inDemoMode()) { setBackendOk(true); return; }
+    // In user-chosen Demo mode the status widget should look lively.
+    // In Live mode WITHOUT a backend configured, don't lie — mark the
+    // service offline. Only ping /health when there's actually a backend
+    // URL to ping.
+    if (demoChosen) { setBackendOk(true); return; }
+    if (!hasBackend) { setBackendOk(false); return; }
     const check = async () => {
       try {
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/health`);
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/health`);
         setBackendOk(res.ok);
       } catch { setBackendOk(false); }
     };
     check();
     const t = setInterval(check, 30_000);
     return () => clearInterval(t);
-  }, []);
+  }, [demoChosen, hasBackend]);
 
   const running = camerasRunning ?? camerasTotal;
+  const aiLabel = demoChosen ? "Operational"
+    : !hasBackend ? "No backend"
+    : backendOk === null ? "Checking…"
+    : backendOk ? "Operational"
+    : "Offline";
+  const aiColor = demoChosen || backendOk ? "#4ade80"
+    : backendOk === false ? "#f87171"
+    : "#6b7280";
+  const feedLabel = demoChosen ? "Live"
+    : !hasBackend ? "Local only"
+    : backendOk ? "Live"
+    : "Disconnected";
+  const feedColor = demoChosen || backendOk ? "#4ade80"
+    : !hasBackend ? "#fbbf24"
+    : "#f87171";
+
   const items = [
-    { label: "AI Service",  value: backendOk === null ? "Checking…" : backendOk ? "Operational" : "Offline", color: backendOk ? "#4ade80" : backendOk === false ? "#f87171" : "#6b7280", href: "/seating" },
+    { label: "AI Service",  value: aiLabel, color: aiColor, href: "/seating" },
     { label: "Cameras",     value: `${running} / ${camerasTotal} Online`, color: running === camerasTotal && camerasTotal > 0 ? "#60a5fa" : running === 0 ? "#6b7280" : "#f59e0b", href: "/cameras" },
-    { label: "Data Feed",   value: backendOk ? "Live" : "Disconnected", color: backendOk ? "#4ade80" : "#f87171", href: "/live-cameras" },
+    { label: "Data Feed",   value: feedLabel, color: feedColor, href: "/live-cameras" },
   ];
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -515,7 +538,11 @@ export default function AttendancePage() {
     setHydrated(true);
     const demo = inDemoMode();
     setIsDemo(demo);
-    setShowVsYesterday(demo);
+    // "vs yesterday" shown ONLY in explicit user-chosen Demo mode. In
+    // Live mode (even without a backend) we have no yesterday data to
+    // compare against, so hide the fake +12.45% badge.
+    const userChoseDemo = localStorage.getItem("kyro_mode") === "demo";
+    setShowVsYesterday(userChoseDemo);
   }, []);
   useEffect(() => {
     if (!hydrated || inDemoMode()) return;
@@ -689,9 +716,27 @@ export default function AttendancePage() {
   const chartTimestamps = isToday && !inDemoMode() && historicalData
     ? [...historicalData.timestamps, Date.now()]
     : historicalData?.timestamps;
-  const displayTotal = isToday
+  // Manual counts submitted today should be added to the headline number
+  // when the active metric is 'people' or 'entries' (headcount-shaped).
+  // Prevents the frustrating "I entered a manual count and nothing changed"
+  // experience the user flagged.
+  const manualTotalToday = (() => {
+    if (typeof window === "undefined") return 0;
+    if (metric !== "people" && metric !== "entries") return 0;
+    if (!isToday) return 0;
+    try {
+      const raw = localStorage.getItem("kyro_manual_counts");
+      if (!raw) return 0;
+      const all: { count: number; session_id: string }[] = JSON.parse(raw);
+      const today = new Date();
+      const sid = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+      return all.filter((m) => m.session_id === sid).reduce((s, m) => s + (m.count || 0), 0);
+    } catch { return 0; }
+  })();
+
+  const displayTotal = (isToday
     ? metricNow
-    : (historicalData?.total ?? 0);
+    : (historicalData?.total ?? 0)) + manualTotalToday;
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
   const metricTitle = isToday
@@ -788,17 +833,33 @@ export default function AttendancePage() {
             </button>
             {showLiveMenu && (
               <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl"
-                style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}`, minWidth: 200 }}>
+                style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}`, minWidth: 220 }}>
                 <div className="px-4 py-3 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-                    <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
-                  </div>
-                  <p style={{ fontSize: 11, color: "#6b7280" }}>Backend: localhost:8000</p>
-                  <p style={{ fontSize: 11, color: "#6b7280" }}>Polling every 5s</p>
+                  {/* Reflect the actual backend-URL config instead of hardcoding
+                      'Connected / localhost:8000', which was false on the
+                      Cloudflare preview with no backend. */}
+                  {process.env.NEXT_PUBLIC_API_URL ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+                        <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
+                      </div>
+                      <p style={{ fontSize: 11, color: "#6b7280" }}>Backend: {process.env.NEXT_PUBLIC_API_URL}</p>
+                      <p style={{ fontSize: 11, color: "#6b7280" }}>Polling every 5s</p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                        <p style={{ fontSize: 12, color: "#fbbf24", fontWeight: 600 }}>Local-only</p>
+                      </div>
+                      <p style={{ fontSize: 11, color: "#6b7280" }}>No backend configured for this deployment</p>
+                      <p style={{ fontSize: 11, color: "#6b7280" }}>Data is saved to this browser</p>
+                    </>
+                  )}
                   <div style={{ borderTop: `1px solid ${BORDER}`, paddingTop: 8, marginTop: 4 }}>
                     <p style={{ fontSize: 10, color: "var(--text-faint)" }}>
-                      {isToday ? "Showing live data" : `Showing data for ${dateStr}`}
+                      {isToday ? "Showing today" : `Showing data for ${dateStr}`}
                     </p>
                   </div>
                 </div>

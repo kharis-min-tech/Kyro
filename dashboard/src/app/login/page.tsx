@@ -219,14 +219,33 @@ export default function LoginPage() {
     setLiveMode();
     localStorage.setItem("kyro_demo_last_user", trimmedUser);
 
-    // Clear stale AI-question / archived-review state on fresh Live login.
-    // Otherwise questions accumulated during an earlier Demo-mode session
-    // show up as a scary "AI has 10 questions" notification in the sidebar
-    // even when no cameras exist.
+    // Fresh Live login — wipe every bit of local demo-ish state so the
+    // operator sees a true empty slate (no fake past sessions, no fake
+    // AI alerts, no fake cameras, no fake seat layouts). We leave
+    // kyro_demo_users alone because operators need admin / sarah.usher /
+    // james.viewer to log in — and the stored passwords may be custom.
     try {
-      localStorage.removeItem("kyro_unanswered_reviews");
-      localStorage.removeItem("kyro_archived_reviews");
-      localStorage.removeItem("kyro_pending_reviews");
+      [
+        "kyro_unanswered_reviews",
+        "kyro_archived_reviews",
+        "kyro_pending_reviews",
+        "kyro_demo_sessions",
+        "kyro_demo_layouts",
+        "kyro_demo_cameras_added",
+        "kyro_demo_cameras_overrides",
+        "kyro_demo_cameras_deleted",
+        "kyro_demo_rota",
+        // reserved seats + seat overrides per camera
+      ].forEach((k) => localStorage.removeItem(k));
+      // Clear per-camera reserved-seat and seat-override keys too
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        if (k.startsWith("kyro_demo_reserved_") || k.startsWith("kyro_seat_overrides_")
+            || k.startsWith("kyro_demo_zones_")) {
+          localStorage.removeItem(k);
+        }
+      }
       window.dispatchEvent(new Event("kyro_unanswered_changed"));
     } catch {}
 
