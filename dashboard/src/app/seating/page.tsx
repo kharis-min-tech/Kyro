@@ -44,8 +44,12 @@ function useZones(cameraId: string | null): ZoneDef[] {
 
   useEffect(() => {
     if (!cameraId) return;
+    // Capture a non-null local so the inner handlers can call zonesApi.list
+    // without TypeScript widening cameraId back to string | null across the
+    // closure boundary (which breaks the Cloudflare Pages prod build).
+    const cid = cameraId;
     let cancelled = false;
-    zonesApi.list(cameraId)
+    zonesApi.list(cid)
       .then((z) => { if (!cancelled) setZones(z ?? []); })
       .catch(() => { if (!cancelled) setZones([]); });
 
@@ -54,12 +58,12 @@ function useZones(cameraId: string | null): ZoneDef[] {
     //   • cross-tab storage events (browser fires these to OTHER tabs), and
     //   • same-tab "kyro_zones_changed" custom event (dispatched by
     //     zonesApi.create/update/delete — see lib/api.ts).
-    const key = `kyro_demo_zones_${cameraId}`;
-    function reload() { zonesApi.list(cameraId).then((z) => setZones(z ?? [])).catch(() => {}); }
+    const key = `kyro_demo_zones_${cid}`;
+    function reload() { zonesApi.list(cid).then((z) => setZones(z ?? [])).catch(() => {}); }
     function onStorage(e: StorageEvent) { if (e.key === key) reload(); }
     function onCustom(e: Event) {
       const detail = (e as CustomEvent).detail as { cameraId?: string } | undefined;
-      if (!detail?.cameraId || detail.cameraId === cameraId) reload();
+      if (!detail?.cameraId || detail.cameraId === cid) reload();
     }
     window.addEventListener("storage", onStorage);
     window.addEventListener("kyro_zones_changed", onCustom);
