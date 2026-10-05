@@ -13,15 +13,25 @@ export function isLiveMode(): boolean {
   return localStorage.getItem("kyro_mode") === "live";
 }
 
-/** Returns true if the app should use fake/demo data right now.
- *  Also true when no backend URL is configured for the deployment (e.g.
- *  Cloudflare-only preview) — in that case Live mode has nothing to talk
- *  to, so we fall back to local storage data just like demo mode. */
+/** Returns true if the app should use the LOCAL STORAGE path for data
+ *  operations instead of calling the backend. True when the user picked
+ *  demo mode OR when no backend URL is configured for the deployment
+ *  (Cloudflare-only preview) — in both cases there's no backend to talk
+ *  to, so pages fall back to local storage. */
 export function inDemoMode(): boolean {
   if (typeof window === "undefined") return false;
   if (localStorage.getItem("kyro_mode") === "demo") return true;
   if (!process.env.NEXT_PUBLIC_API_URL) return true;
   return false;
+}
+
+/** Returns true ONLY if the user explicitly picked Demo mode on the
+ *  login screen. Use this when deciding whether to SEED fake demo data
+ *  (e.g. DEMO_CAMERAS). Live mode without a backend should start empty,
+ *  not pre-populated with fake Balcony / Overflow cameras. */
+export function isUserChosenDemo(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem("kyro_mode") === "demo";
 }
 
 export function setLiveMode() {

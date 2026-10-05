@@ -14,8 +14,21 @@ const DEMO_DELETED_KEY   = "kyro_demo_cameras_deleted";
 
 // ─── Demo helpers ─────────────────────────────────────────────────────────────
 
+/**
+ * Load cameras for the local-only data path.
+ *
+ * In user-chosen Demo mode: start from the seeded DEMO_CAMERAS (fake
+ * Balcony / Overflow / Stadium so there's something to click around with),
+ * then apply overrides / additions / deletions.
+ *
+ * In Live mode without a backend: start EMPTY. Don't pre-populate with
+ * fake cameras — the user picked Live for a reason, and seeing fake
+ * cameras in Live mode is exactly what makes it feel 'pushed to demo'.
+ * They can add their own via the Cameras page.
+ */
 function loadDemoCameras(): Camera[] {
-  const base = DEMO_CAMERAS as Camera[];
+  const seedDemo = localStorage.getItem("kyro_mode") === "demo";
+  const base: Camera[] = seedDemo ? (DEMO_CAMERAS as Camera[]) : [];
   try {
     const overrides: Record<string, Partial<Camera>> = JSON.parse(localStorage.getItem(DEMO_OVERRIDES_KEY) ?? "{}");
     const extra: Camera[]    = JSON.parse(localStorage.getItem(DEMO_ADDED_KEY)   ?? "[]");

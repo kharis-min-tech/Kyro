@@ -22,20 +22,22 @@ const BORDER = "var(--border-subtle)";
 const DEMO_SESSIONS_KEY = "kyro_demo_sessions";
 
 function loadDemoSessions(): SessionResponse[] {
-  if (typeof window === "undefined") return DEMO_SESSIONS as SessionResponse[];
+  if (typeof window === "undefined") return [];
   try {
     const saved = localStorage.getItem(DEMO_SESSIONS_KEY);
     if (saved) {
       const parsed = JSON.parse(saved) as SessionResponse[];
-      // Validate it's an array — guards against corrupted data
       if (Array.isArray(parsed)) return parsed;
     }
-    // First visit — seed with defaults
-    const defaults = DEMO_SESSIONS as SessionResponse[];
+    // Only seed the sample DEMO_SESSIONS when the user explicitly picked
+    // Demo mode. In Live mode without a backend, start with an empty list
+    // so operators can create their own real sessions.
+    const isActualDemo = localStorage.getItem("kyro_mode") === "demo";
+    const defaults = isActualDemo ? (DEMO_SESSIONS as SessionResponse[]) : [];
     localStorage.setItem(DEMO_SESSIONS_KEY, JSON.stringify(defaults));
     return defaults;
   } catch {
-    return DEMO_SESSIONS as SessionResponse[];
+    return [];
   }
 }
 
