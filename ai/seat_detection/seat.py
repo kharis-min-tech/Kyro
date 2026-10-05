@@ -36,8 +36,13 @@ class OccupancyState(str, Enum):
 
 
 # Vacancy timeout defaults (seconds)
-_DEFAULT_VACANCY_TIMEOUT      = 300.0    # 5 min — short absence before "Away" timer starts
-_DEFAULT_LONG_ABSENCE_TIMEOUT = 1800.0   # 30 min — long absence before seat becomes free
+_DEFAULT_VACANCY_TIMEOUT      = 120.0    # 2 min — short absence before "Away" timer starts
+_DEFAULT_LONG_ABSENCE_TIMEOUT = 300.0    # 5 min — long absence before seat becomes free
+# Rationale: when a person moves to a different seat and stays there, the
+# original seat should free up within a few minutes — otherwise ushers
+# see ghost seats held for the entire service. 2–5 min is the band the
+# operations team specified. The matching value in the dashboard demo
+# simulator lives at SEAT_VACANT_GRACE_MS in dashboard/src/lib/demo.ts.
 
 
 @dataclass

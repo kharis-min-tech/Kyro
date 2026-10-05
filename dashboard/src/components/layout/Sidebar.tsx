@@ -10,7 +10,7 @@ import { DEMO_MODE } from "@/lib/demo";
 import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
-  Moon, Sun, Menu, X,
+  Moon, Sun, Menu, X, Hash, Webhook,
 } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 
@@ -36,6 +36,7 @@ const inDemoMode = () => typeof window !== "undefined" && localStorage.getItem("
 
 const ALL_NAV = [
   { id: "attendance",    href: "/attendance",    label: "AI Count",      Icon: Radio        },
+  { id: "manual-count",  href: "/manual-count",  label: "Manual Count",  Icon: Hash         },
   { id: "live-cameras",  href: "/live-cameras",  label: "Live Cameras",  Icon: Cctv         },
   { id: "seating",       href: "/seating",       label: "Seat Map",      Icon: Armchair     },
   { id: "cameras",       href: "/cameras",       label: "Cameras",       Icon: Camera       },
@@ -43,6 +44,7 @@ const ALL_NAV = [
   { id: "sessions",      href: "/sessions",      label: "Sessions",      Icon: ClipboardList},
   { id: "analytics",     href: "/analytics",     label: "Analytics",     Icon: BarChart2    },
   { id: "layout-editor", href: "/layout-editor", label: "Seat Editor",   Icon: PencilRuler  },
+  { id: "integrations",  href: "/integrations",  label: "Integrations",  Icon: Webhook      },
   { id: "notifications", href: "/notifications", label: "Notifications", Icon: Bell         },
   { id: "users",         href: "/users",         label: "Users",         Icon: Users        },
 ] as const;
@@ -51,8 +53,8 @@ type PageId = typeof ALL_NAV[number]["id"];
 
 const ROLE_DEFAULT_PAGES: Record<string, PageId[]> = {
   admin:    ALL_NAV.map((p) => p.id),
-  operator: ["attendance","live-cameras","seating","cameras","rota","sessions","analytics","notifications"],
-  viewer:   ["seating","cameras"],
+  operator: ["attendance","manual-count","live-cameras","seating","cameras","rota","sessions","analytics","notifications"],
+  viewer:   ["seating","cameras","manual-count"],
 };
 
 const ROLE_LABELS: Record<string, string> = {

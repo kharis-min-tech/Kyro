@@ -239,6 +239,14 @@ export function resetDemoFeed(cameraId: string) {
 // ---------------------------------------------------------------------------
 // Live fake pipeline state generator
 // ---------------------------------------------------------------------------
+// How long a seat stays `temporarily_vacant` after a person leaves before
+// it's eligible to become `available`. Prevents the "person moved one row
+// over" case from immediately showing the original seat as free while the
+// person is still shuffling to settle — ushers were marking seats taken
+// again seconds later. Backend's seat-occupancy pipeline must match this
+// grace period for consistency. Range: 2-5 min — tuned to 3.
+const SEAT_VACANT_GRACE_MS = 3 * 60 * 1000;
+
 export class DemoFeed {
   private _current: number;
   private _peak:    number;
@@ -247,6 +255,10 @@ export class DemoFeed {
   private _tick     = 0;
   private _seats:   DemoSeatState[];
   private _cameraId: string;
+  // Per-seat timestamp of when it went `temporarily_vacant`. Used to gate
+  // the transition to `available` — a seat held by the grace period above
+  // can't flip to free yet, even if the simulator wants it to.
+  private _vacantSince: Record<string, number> = {};
 
   constructor(cameraId: string, initialCount: number) {
     this._cameraId = cameraId;
@@ -325,11 +337,29 @@ export class DemoFeed {
       } else if (s.state === "available" && this._current < cap * 0.9) {
         s.state = "occupied";
         s.occupying_track_id = Math.floor(Math.random() * 50 + 1);
+        delete this._vacantSince[s.seat_id];
       } else if (s.state === "occupied" && Math.random() < 0.1) {
+        // Person left or moved — hold the seat for the grace period
+        // before anything else can claim it.
         s.state = "temporarily_vacant";
         s.occupying_track_id = null;
-      } else if (s.state === "temporarily_vacant" && Math.random() < 0.15) {
-        s.state = Math.random() > 0.5 ? "occupied" : "available";
+        this._vacantSince[s.seat_id] = Date.now();
+      } else if (s.state === "temporarily_vacant") {
+        const elapsed = Date.now() - (this._vacantSince[s.seat_id] ?? 0);
+        if (elapsed < SEAT_VACANT_GRACE_MS) {
+          // Still within the grace period — the person might have moved
+          // one seat over but could easily come back. Keep it held.
+          // (The person coming back is modelled as a fresh "available →
+          // occupied" transition on their new seat, not here.)
+        } else if (Math.random() < 0.15) {
+          // Grace period elapsed and the simulator picked this seat.
+          // Now it can genuinely become free, or someone else can take it.
+          s.state = Math.random() > 0.5 ? "occupied" : "available";
+          delete this._vacantSince[s.seat_id];
+          if (s.state === "occupied") {
+            s.occupying_track_id = Math.floor(Math.random() * 50 + 1);
+          }
+        }
       }
     }
 

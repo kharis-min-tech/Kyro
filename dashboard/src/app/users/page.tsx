@@ -18,6 +18,7 @@ const BORDER = "var(--border-subtle)";
 
 const ALL_PAGES = [
   { id: "attendance",    label: "AI Count"      },
+  { id: "manual-count",  label: "Manual Count"  },
   { id: "live-cameras",  label: "Live Cameras"  },
   { id: "seating",       label: "Seat Map"      },
   { id: "cameras",       label: "Cameras"       },
@@ -25,6 +26,7 @@ const ALL_PAGES = [
   { id: "sessions",      label: "Sessions"      },
   { id: "analytics",     label: "Analytics"     },
   { id: "layout-editor", label: "Seat Editor"   },
+  { id: "integrations",  label: "Integrations"  },
   { id: "notifications", label: "Notifications" },
   { id: "users",         label: "Users"         },
 ] as const;
@@ -34,8 +36,8 @@ type PageId = typeof ALL_PAGES[number]["id"];
 // Role is derived from pages — admin needs layout-editor or users, operator needs
 // any "operator" page, otherwise viewer. The sidebar still uses role for nav gating.
 function pagesToRole(pages: PageId[]): "admin" | "operator" | "viewer" {
-  if (pages.includes("layout-editor") || pages.includes("users")) return "admin";
-  const opPages: PageId[] = ["attendance","live-cameras","rota","sessions","analytics","notifications"];
+  if (pages.includes("layout-editor") || pages.includes("users") || pages.includes("integrations")) return "admin";
+  const opPages: PageId[] = ["attendance","manual-count","live-cameras","rota","sessions","analytics","notifications"];
   if (pages.some((p) => opPages.includes(p))) return "operator";
   return "viewer";
 }
@@ -43,8 +45,8 @@ function pagesToRole(pages: PageId[]): "admin" | "operator" | "viewer" {
 // Default pages per role (for initial state when editing an existing user)
 const ROLE_DEFAULT_PAGES: Record<string, PageId[]> = {
   admin:    ALL_PAGES.map((p) => p.id),
-  operator: ["attendance","live-cameras","seating","cameras","rota","sessions","analytics","notifications"],
-  viewer:   ["seating","cameras"],
+  operator: ["attendance","manual-count","live-cameras","seating","cameras","rota","sessions","analytics","notifications"],
+  viewer:   ["seating","cameras","manual-count"],
 };
 
 // ─── Extended user type with stored pages ─────────────────────────────────────
@@ -53,6 +55,7 @@ type DemoUser = UserResponse & { pages?: PageId[]; demo_password?: string };
 // ─── Page colours ─────────────────────────────────────────────────────────────
 const PAGE_COLOURS: Record<string, { bg: string; text: string }> = {
   "attendance":    { bg: "rgba(99,102,241,0.15)",  text: "#a5b4fc" },
+  "manual-count":  { bg: "rgba(99,102,241,0.15)",  text: "#a5b4fc" },
   "live-cameras":  { bg: "rgba(34,197,94,0.12)",   text: "#86efac" },
   "seating":       { bg: "rgba(124,58,237,0.15)",  text: "#c4b5fd" },
   "cameras":       { bg: "rgba(59,130,246,0.15)",  text: "#93c5fd" },
@@ -60,6 +63,7 @@ const PAGE_COLOURS: Record<string, { bg: string; text: string }> = {
   "sessions":      { bg: "rgba(16,185,129,0.12)",  text: "#6ee7b7" },
   "analytics":     { bg: "rgba(249,115,22,0.12)",  text: "#fdba74" },
   "layout-editor": { bg: "rgba(236,72,153,0.12)",  text: "#f9a8d4" },
+  "integrations":  { bg: "rgba(59,130,246,0.15)",  text: "#93c5fd" },
   "notifications": { bg: "rgba(234,179,8,0.12)",   text: "#fef08a" },
   "users":         { bg: "rgba(239,68,68,0.12)",   text: "#fca5a5" },
 };
