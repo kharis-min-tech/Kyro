@@ -166,6 +166,17 @@ img, video, canvas, svg, iframe {
     padding-top: 3.5rem;
   }
 
+  /* 3b. Several pages set <main className="... overflow-auto"> which
+        creates a secondary scroll container. On a phone that fights the
+        page's natural body scroll — iOS Safari in particular refuses to
+        scroll a nested container past the viewport without an explicit
+        max-height. Simplest: let the body scroll on mobile. Desktop keeps
+        its scroll-main-only behaviour so the sidebar stays put. */
+  main.overflow-auto, main[class*=" overflow-auto"] {
+    overflow: visible !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
   /* 4. Any Tailwind min-w-[Npx] on cards/stats forces a row wider than
         the phone. Soften them to 0 on mobile so cards wrap in their flex
         parents instead of overflowing. Covers all the common sizes used

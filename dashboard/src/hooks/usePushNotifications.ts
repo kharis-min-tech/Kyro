@@ -151,10 +151,19 @@ export function usePushNotifications(): PushState {
         if (existing) {
           setSubscribed(true);
           setPermission("granted"); // if they have a sub, permission must be granted
-          // Silently re-register with backend in case it was missed
-          registerWithBackend(existing, {
-            warnThreshold: 0.80, critThreshold: 0.90, notifyOffline: true,
-          }).catch(() => {});
+          if (API_URL) {
+            // Silently re-register with backend in case it was missed
+            registerWithBackend(existing, {
+              warnThreshold: 0.80, critThreshold: 0.90, notifyOffline: true,
+            }).catch(() => {});
+          }
+        } else if (!API_URL && localStorage.getItem("kyro_push_subscribed") === "1"
+                   && Notification.permission === "granted") {
+          // No backend: there's no Web Push subscription to find, but the
+          // user previously enabled notifications in this browser (we
+          // stored a flag). Honour that state so the Notifications page
+          // doesn't show them as 'disabled' after a reload.
+          setSubscribed(true);
         } else {
           setSubscribed(false);
         }
@@ -173,6 +182,24 @@ export function usePushNotifications(): PushState {
       const perm = await Notification.requestPermission();
       setPermission(perm as PermissionState);
       if (perm !== "granted") throw new Error("Permission denied — please allow notifications");
+
+      // No backend configured: skip Web Push subscription entirely. We'll
+      // show in-app / PWA notifications via the Notification API when
+      // things happen within Kyro. (Locked-phone/closed-app notifications
+      // need a server to send them — that requires a backend.)
+      if (!API_URL) {
+        setSubscribed(true);
+        localStorage.setItem("kyro_push_subscribed", "1");
+        try {
+          await reg.showNotification("Notifications enabled", {
+            body: "Kyro will alert you here while the app is open. Lock-screen alerts need a backend.",
+            icon:  "/icon-192.png",
+            badge: "/icon-badge.png",
+            tag:   "kyro-welcome",
+          });
+        } catch { /* best effort */ }
+        return;
+      }
 
       const vapidKey = await fetchVapidKey();
       const pushSub = await reg.pushManager.subscribe({
@@ -213,7 +240,9 @@ export function usePushNotifications(): PushState {
       const reg    = await getRegistration();
       const pushSub = await reg.pushManager.getSubscription();
       if (pushSub) {
-        await unregisterFromBackend(pushSub.endpoint);
+        if (API_URL) {
+          await unregisterFromBackend(pushSub.endpoint).catch(() => {});
+        }
         await pushSub.unsubscribe();
       }
       setSubscribed(false);
@@ -229,7 +258,34 @@ export function usePushNotifications(): PushState {
     setLoading(true);
     setError(null);
     try {
-      const reg    = await getRegistration();
+      const reg = await getRegistration();
+
+      // No backend: show a LOCAL notification via the service worker.
+      // This appears on the phone as a real system notification (lock-screen
+      // too if the PWA is installed), providing immediate proof that
+      // notifications work in this browser/device — even without a backend
+      // to send Web Push. The only difference vs. real Web Push: this only
+      // fires while the Kyro tab/PWA is open; real Web Push can wake a
+      // closed app.
+      if (!API_URL) {
+        if (Notification.permission !== "granted") {
+          throw new Error("Permission denied — click Turn on first");
+        }
+        // `vibrate` and `requireInteraction` are valid Notification options
+        // on real browsers but omitted from the DOM lib's NotificationOptions
+        // type. Cast to pass through without widening the signature.
+        const opts: NotificationOptions & { vibrate?: number[]; requireInteraction?: boolean } = {
+          body: "Nice — notifications are working on this device.",
+          icon:  "/icon-192.png",
+          badge: "/icon-badge.png",
+          tag:   "kyro-test",
+          vibrate: [200, 100, 200],
+          requireInteraction: false,
+        };
+        await reg.showNotification("Kyro test notification", opts);
+        return;
+      }
+
       const pushSub = await reg.pushManager.getSubscription();
       if (!pushSub) throw new Error("Not subscribed — click Turn on first");
 
@@ -240,7 +296,6 @@ export function usePushNotifications(): PushState {
       );
 
       if (!res.ok) {
-        // Retry once with fresh token
         if (res.status === 401) {
           localStorage.removeItem("kyro_real_token");
           const freshHeaders = await authHeader();
