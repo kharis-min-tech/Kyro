@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -614,9 +616,39 @@ export default function AttendancePage() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showLiveMenu, setShowLiveMenu] = useState(false);
   const [showMetricMenu, setShowMetricMenu] = useState(false);
-  const datePickerRef = useRef<HTMLDivElement>(null);
-  const liveMenuRef   = useRef<HTMLDivElement>(null);
-  const metricMenuRef = useRef<HTMLDivElement>(null);
+  const datePickerRef   = useRef<HTMLDivElement>(null);
+  const dateTriggerRef  = useRef<HTMLButtonElement>(null);
+  const datePanelRef    = useRef<HTMLDivElement>(null);
+  const liveMenuRef     = useRef<HTMLDivElement>(null);
+  const metricMenuRef   = useRef<HTMLDivElement>(null);
+  // Where the date panel is placed when open — computed from the
+  // trigger's viewport position so it never slips off the screen.
+  // Previously the panel used `absolute right-0` on a flex-wrap row;
+  // on narrow phones the trigger sits far left, so right-aligning a
+  // 320px panel pushed its left edge below 0 and it vanished off-screen.
+  const [datePos, setDatePos] = useState({ top: 0, left: 0 });
+
+  useEffect(() => {
+    if (!showDatePicker || typeof window === "undefined") return;
+    function reposition() {
+      if (!dateTriggerRef.current) return;
+      const r = dateTriggerRef.current.getBoundingClientRect();
+      const panelWidth = Math.min(320, window.innerWidth - 24);
+      // Prefer aligning the panel's right edge with the trigger's right edge
+      // (nice visual), but keep both the left and right sides inside the
+      // viewport with a 12px safety margin.
+      const idealLeft = r.right - panelWidth;
+      const left = Math.max(12, Math.min(idealLeft, window.innerWidth - panelWidth - 12));
+      setDatePos({ top: r.bottom + 6, left });
+    }
+    reposition();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    return () => {
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+    };
+  }, [showDatePicker]);
   type Metric = "people" | "occupancy" | "entries" | "exits";
   const [metric, setMetric] = useState<Metric>("people");
   // Historical analytics for the selected date — now fetched for TODAY
@@ -646,7 +678,13 @@ export default function AttendancePage() {
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       const t = e.target as Node;
-      if (datePickerRef.current && !datePickerRef.current.contains(t)) setShowDatePicker(false);
+      // The date panel now portals to <body>, so a click inside it is
+      // outside the trigger ref — check the panel ref separately before
+      // deciding to close.
+      if (datePickerRef.current && !datePickerRef.current.contains(t)
+          && datePanelRef.current && !datePanelRef.current.contains(t)) {
+        setShowDatePicker(false);
+      }
       if (liveMenuRef.current   && !liveMenuRef.current.contains(t))   setShowLiveMenu(false);
       if (metricMenuRef.current && !metricMenuRef.current.contains(t)) setShowMetricMenu(false);
     }
@@ -780,6 +818,7 @@ export default function AttendancePage() {
           {/* Date picker dropdown */}
           <div className="relative" ref={datePickerRef}>
             <button
+              ref={dateTriggerRef}
               onClick={() => { setShowDatePicker((p) => !p); setShowLiveMenu(false); setShowMetricMenu(false); }}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-colors hover:opacity-80"
               style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -787,10 +826,13 @@ export default function AttendancePage() {
               <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{dateStr}</span>
               <ChevRight size={10} style={{ color: "#6b7280", transform: showDatePicker ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }} />
             </button>
-            {showDatePicker && (
+            {showDatePicker && typeof window !== "undefined" && createPortal(
               <div
-                className="absolute top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl right-0"
+                ref={datePanelRef}
+                className="fixed z-[9999] rounded-xl overflow-hidden shadow-2xl"
                 style={{
+                  top: datePos.top,
+                  left: datePos.left,
                   background: "var(--bg-card)",
                   border: `1px solid ${BORDER}`,
                   // Mobile: cap width so it never slips off the viewport.
@@ -845,7 +887,8 @@ export default function AttendancePage() {
                     }}
                   />
                 </div>
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
