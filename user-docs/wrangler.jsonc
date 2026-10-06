@@ -1,0 +1,14 @@
+{
+  // The user guide is a separate, static-only Cloudflare Worker. Having its
+  // own config here stops wrangler from picking up the dashboard's
+  // ../wrangler.jsonc (which carries the API script, KV and cron).
+  "name": "kyro-user-documentation",
+  "account_id": "a94432b07dae8050b83efdec72a492a3",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./.vitepress/dist",
+    "not_found_handling": "404-page"
+  },
+  // No schedule for the guide.
+  "triggers": { "crons": [] }
+}

@@ -6,6 +6,7 @@ The help guide for Kyro's users: church staff, ushers and admins. Built with [Vi
 npm install
 npm run dev        # preview at http://localhost:5173
 npm run build      # static site in .vitepress/dist
+npx wrangler deploy  # publish to https://kyro-user-documentation.itadmin-a94.workers.dev
 ```
 
 ## Updating screenshots
