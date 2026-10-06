@@ -19,7 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
-import { Users, Minus, Plus, CheckCircle, AlertTriangle, Trash2, Pencil } from "lucide-react";
+import { Users, Minus, Plus, CheckCircle, AlertTriangle, Trash2, Pencil, ClipboardCheck, Lock } from "lucide-react";
 
 // Mode-scoped so a Demo-mode count never surfaces in a Live webhook send
 // or headline total. attendance/page.tsx and integrations/page.tsx compute
@@ -40,6 +40,19 @@ interface ManualCount {
   counted_at: number;        // epoch seconds
   session_id: string;        // which service this belongs to
   camera_also_counting: boolean;
+  // Approval flow — a count enters as a draft; at the end of service the
+  // operator reviews everything and approves the final total. Only
+  // approved counts feed the attendance headline and the integrations
+  // webhook payload. Legacy records without the field are treated as
+  // approved so pre-existing counts don't silently vanish from totals.
+  approved?: boolean;
+  approved_at?: number;      // epoch seconds
+  approved_by?: string;
+}
+
+/** True when the record counts toward the final service total. */
+function isApproved(h: ManualCount): boolean {
+  return h.approved !== false; // undefined (legacy) → approved
 }
 
 function currentSessionId(): string {
@@ -75,6 +88,7 @@ export default function ManualCountPage() {
   const [confirming, setConfirming] = useState(false);
   const [editingId,  setEditingId]  = useState<string | null>(null);
   const [status,     setStatus]     = useState<{ ok: boolean; msg: string } | null>(null);
+  const [approving,  setApproving]  = useState(false);
 
   useEffect(() => {
     setHistory(loadCounts());
@@ -105,6 +119,13 @@ export default function ManualCountPage() {
       counted_at: Math.floor(Date.now() / 1000),
       session_id: sessionId,
       camera_also_counting: !!cameraCountingThisZone,
+      // Enters as a draft. Headline total and webhook payload ignore
+      // drafts; the operator approves them once at the end of service.
+      // Editing an approved count demotes it back to draft so the number
+      // can't quietly change after approval without a fresh sign-off.
+      approved: false,
+      approved_at: undefined,
+      approved_by: undefined,
     };
     all.unshift(record);
     saveCounts(all);
@@ -129,6 +150,31 @@ export default function ManualCountPage() {
     setEditingId(h.id);
     setZone(h.zone);
     setCount(h.count);
+  }
+
+  // Rows for today's service only — ordering: drafts first (because they
+  // need attention), then approved.
+  const todayHistory = history.filter((h) => h.session_id === sessionId);
+  const drafts       = todayHistory.filter((h) => !isApproved(h));
+  const approved     = todayHistory.filter((h) =>  isApproved(h));
+  const draftsTotal  = drafts.reduce((s, h) => s + (h.count || 0), 0);
+  const approvedTotal = approved.reduce((s, h) => s + (h.count || 0), 0);
+
+  function approveAll() {
+    const stamp = Math.floor(Date.now() / 1000);
+    const by    = countedBy.trim() || (typeof window !== "undefined"
+      ? (localStorage.getItem("kyro_demo_last_user") ?? "operator")
+      : "operator");
+    const all = loadCounts().map((h) =>
+      h.session_id === sessionId && !isApproved(h)
+        ? { ...h, approved: true, approved_at: stamp, approved_by: by }
+        : h
+    );
+    saveCounts(all);
+    setHistory(all);
+    setApproving(false);
+    setStatus({ ok: true, msg: `Approved ${drafts.length} count${drafts.length !== 1 ? "s" : ""} for this service — total ${draftsTotal + approvedTotal}` });
+    setTimeout(() => setStatus(null), 4000);
   }
 
   return (
@@ -269,23 +315,39 @@ export default function ManualCountPage() {
           </div>
         )}
 
-        {/* History */}
-        <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-          <div className="px-5 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-            <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-              {history.length} count{history.length !== 1 ? "s" : ""} today
-            </p>
-          </div>
-          {history.length === 0 ? (
-            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
-              No manual counts yet. Fill out the form above to add one.
-            </p>
-          ) : (
-            history.map((h, i) => (
+        {/* Drafts section — appears whenever there's at least one unapproved
+            count for today. Clicking "Approve final count" sums all drafts
+            + already-approved and locks them as the service's final total. */}
+        {drafts.length > 0 && (
+          <div className="rounded-2xl overflow-hidden"
+            style={{ background: CARD, border: "1px solid rgba(245,158,11,0.35)" }}>
+            <div className="px-5 py-3 flex items-center justify-between gap-3"
+              style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(245,158,11,0.06)" }}>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#f59e0b" }}>
+                  {drafts.length} draft{drafts.length !== 1 ? "s" : ""} awaiting approval
+                </p>
+                <p className="text-xs mt-0.5" style={{ color: "var(--text-muted)" }}>
+                  Not yet counted toward the service total — approve at the end of service.
+                </p>
+              </div>
+              <button onClick={() => setApproving(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white shrink-0"
+                style={{ background: "#16a34a" }}>
+                <ClipboardCheck size={13} /> Approve final count
+              </button>
+            </div>
+            {drafts.map((h, i) => (
               <div key={h.id} className="px-5 py-4 flex items-center gap-4"
                 style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-white">{h.zone}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-white">{h.zone}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
+                      DRAFT
+                    </span>
+                  </div>
                   <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
                     by {h.counted_by} · {fmtTime(h.counted_at)}
                   </p>
@@ -309,15 +371,142 @@ export default function ManualCountPage() {
                   </button>
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ))}
+          </div>
+        )}
+
+        {/* Approved section — the final locked counts for today's service.
+            Showing these separately makes it obvious which numbers are
+            feeding the attendance headline and the webhook payload. */}
+        {approved.length > 0 && (
+          <div className="rounded-2xl overflow-hidden"
+            style={{ background: CARD, border: "1px solid rgba(16,185,129,0.3)" }}>
+            <div className="px-5 py-3 flex items-center justify-between gap-3"
+              style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(16,185,129,0.06)" }}>
+              <p className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "#16a34a" }}>
+                <Lock size={11} /> Approved — total {approvedTotal.toLocaleString()}
+              </p>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>Counts toward service total</p>
+            </div>
+            {approved.map((h, i) => (
+              <div key={h.id} className="px-5 py-4 flex items-center gap-4"
+                style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold text-white">{h.zone}</p>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                      style={{ background: "rgba(16,185,129,0.15)", color: "#16a34a" }}>
+                      APPROVED
+                    </span>
+                  </div>
+                  <p className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+                    by {h.counted_by}
+                    {h.approved_by && h.approved_at
+                      ? ` · approved by ${h.approved_by} at ${fmtTime(h.approved_at)}`
+                      : ""}
+                  </p>
+                </div>
+                <div className="text-2xl font-bold text-white tabular-nums">{h.count}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {/* Edit demotes back to draft (see commit record); keep the
+                      option available so a late correction is possible, but
+                      the operator must re-approve. */}
+                  <button onClick={() => edit(h)}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}
+                    aria-label="Edit (will revert to draft)" title="Editing resets this count to a draft">
+                    <Pencil size={13} />
+                  </button>
+                  <button onClick={() => removeOne(h.id)}
+                    className="w-9 h-9 rounded-lg flex items-center justify-center text-red-400"
+                    style={{ background: "rgba(239,68,68,0.08)" }}
+                    aria-label="Delete">
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {todayHistory.length === 0 && (
+          <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <p className="text-sm text-center py-8" style={{ color: "var(--text-muted)" }}>
+              No manual counts yet. Fill out the form above to add one.
+            </p>
+          </div>
+        )}
 
         <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-          Counts live in this browser. When Kyro is connected to the backend
-          they&apos;ll sync automatically across devices.
+          Drafts are saved as you enter them but only approved counts count toward
+          the service total. When Kyro is connected to the backend, both sync
+          automatically across devices.
         </p>
       </main>
+
+      {/* Approve-all modal — the end-of-service sign-off that locks today's
+          drafts and lets them feed the attendance headline + webhook send. */}
+      {approving && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)" }}>
+          <div className="rounded-2xl w-full max-w-md shadow-2xl"
+            style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <div className="px-6 pt-6 pb-2">
+              <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#16a34a" }}>
+                End of service — approve final count
+              </p>
+              <p className="text-lg font-bold text-white mt-1">
+                {drafts.length} new count{drafts.length !== 1 ? "s" : ""} ready to approve
+              </p>
+              <p className="text-sm mt-1" style={{ color: "var(--text-tertiary)" }}>
+                Session: {sessionId}
+              </p>
+              <div className="mt-4 rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+                {drafts.map((d, i) => (
+                  <div key={d.id} className="flex items-center justify-between px-3 py-2"
+                    style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
+                    <span className="text-sm text-white truncate">{d.zone}</span>
+                    <span className="text-sm font-bold text-white tabular-nums">{d.count}</span>
+                  </div>
+                ))}
+                {approved.length > 0 && (
+                  <div className="flex items-center justify-between px-3 py-2"
+                    style={{ borderTop: `1px solid ${BORDER}`, background: "rgba(16,185,129,0.05)" }}>
+                    <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      Already approved · {approved.length} count{approved.length !== 1 ? "s" : ""}
+                    </span>
+                    <span className="text-sm font-bold tabular-nums" style={{ color: "#16a34a" }}>{approvedTotal}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between px-3 py-2.5"
+                  style={{ borderTop: `1px solid ${BORDER}`, background: "var(--bg-inset)" }}>
+                  <span className="text-sm font-semibold text-white">Service total after approval</span>
+                  <span className="text-xl font-bold tabular-nums" style={{ color: "#16a34a" }}>
+                    {(draftsTotal + approvedTotal).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+              <p className="text-xs mt-3" style={{ color: "var(--text-faint)" }}>
+                Once approved, these counts feed the attendance headline and the
+                integrations webhook. Editing an approved count later resets it
+                back to draft and asks you to approve again.
+              </p>
+            </div>
+            <div className="flex gap-2 p-4 border-t" style={{ borderColor: BORDER }}>
+              <button onClick={() => setApproving(false)}
+                className="flex-1 py-2.5 rounded-lg text-sm text-gray-300"
+                style={{ background: "var(--bg-hover)" }}>
+                Not yet
+              </button>
+              <button onClick={approveAll}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-1.5"
+                style={{ background: "#16a34a" }}>
+                <ClipboardCheck size={14} /> Approve
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation modal */}
       {confirming && (

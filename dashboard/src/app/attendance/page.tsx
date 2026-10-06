@@ -793,10 +793,16 @@ export default function AttendancePage() {
         const mode = localStorage.getItem("kyro_mode") ?? "demo";
         const raw = localStorage.getItem(`kyro_${mode}_manual_counts`);
         if (!raw) { setManualTotalToday(0); return; }
-        const all: { count: number; session_id: string }[] = JSON.parse(raw);
+        const all: { count: number; session_id: string; approved?: boolean }[] = JSON.parse(raw);
         const today = new Date();
         const sid = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-        setManualTotalToday(all.filter((m) => m.session_id === sid).reduce((s, m) => s + (m.count || 0), 0));
+        // Only approved counts (or legacy records with no `approved` field)
+        // contribute to the headline. Drafts awaiting end-of-service
+        // sign-off are deliberately excluded so the number can't change
+        // mid-service without a review.
+        setManualTotalToday(all
+          .filter((m) => m.session_id === sid && m.approved !== false)
+          .reduce((s, m) => s + (m.count || 0), 0));
       } catch { setManualTotalToday(0); }
     }
     readManual();

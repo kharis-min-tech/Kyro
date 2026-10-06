@@ -76,8 +76,11 @@ function buildPayload(forTest: boolean): Record<string, unknown> {
     try {
       const raw = localStorage.getItem(`kyro_${mode}_manual_counts`);
       if (!raw) return [];
-      const all: { zone: string; count: number; session_id: string }[] = JSON.parse(raw);
-      return all.filter((m) => m.session_id === today);
+      const all: { zone: string; count: number; session_id: string; approved?: boolean }[] = JSON.parse(raw);
+      // Only approved counts (or legacy records without the field) ride
+      // the webhook. Drafts stay out of the payload until the operator
+      // signs off at the end of service.
+      return all.filter((m) => m.session_id === today && m.approved !== false);
     } catch { return []; }
   })();
   const manualTotal = manual.reduce((a, m) => a + m.count, 0);
