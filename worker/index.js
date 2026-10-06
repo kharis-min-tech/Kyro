@@ -154,7 +154,19 @@ const TEST_MESSAGE = {
   body:  "Nice — push notifications are working on this device.",
   tag:   "kyro-test",
   url:   "/notifications",
+  ttl:   3600,
 };
+
+// Sent ~20s after the request so the user can lock the phone / close the
+// app first and see it arrive on the lock screen.
+const LOCKED_TEST_MESSAGE = {
+  title: "🔒 Kyro reached your lock screen",
+  body:  "This arrived while Kyro was closed — you won't miss alerts.",
+  tag:   "kyro-locked-test",
+  url:   "/notifications",
+  ttl:   3600,
+};
+const LOCKED_TEST_DELAY_MS = 20_000; // waitUntil allows ~30s after the response
 
 const DEMO_MESSAGES = [
   { title: "⚠️ Main Floor filling up",  body: "82% of capacity (246 / 300)", level: "warning",  camera_id: "cam_main",     tag: "demo-1" },
@@ -196,13 +208,21 @@ async function pushSend(request, env, ctx) {
 
   const vapid = vapidFromEnv(env);
 
+  if (body.kind === "locked-test") {
+    ctx.waitUntil((async () => {
+      await new Promise((r) => setTimeout(r, LOCKED_TEST_DELAY_MS));
+      await sendWebPush(body.subscription, LOCKED_TEST_MESSAGE, vapid).catch(() => {});
+    })());
+    return json({ queued: 1, delay_seconds: LOCKED_TEST_DELAY_MS / 1000 });
+  }
+
   if (body.kind === "demo") {
     // Respond now, deliver over ~12s so the user can lock / minimise and
     // watch them arrive. waitUntil keeps the Worker alive for the sends.
     ctx.waitUntil((async () => {
       for (let i = 0; i < DEMO_MESSAGES.length; i++) {
         if (i > 0) await new Promise((r) => setTimeout(r, 2000));
-        await sendWebPush(body.subscription, DEMO_MESSAGES[i], vapid).catch(() => {});
+        await sendWebPush(body.subscription, { ...DEMO_MESSAGES[i], ttl: 600 }, vapid).catch(() => {});
       }
     })());
     return json({ queued: DEMO_MESSAGES.length });
@@ -454,14 +474,20 @@ export async function encryptPayload(subscription, plaintext) {
 export async function sendWebPush(subscription, message, vapid) {
   const endpoint = new URL(subscription.endpoint);
   const jwt = await vapidJwt(endpoint.origin, vapid);
-  const body = await encryptPayload(subscription, enc.encode(JSON.stringify(message)));
+  const { ttl: _ttl, ...payload } = message;
+  const body = await encryptPayload(subscription, enc.encode(JSON.stringify(payload)));
   const res = await fetch(subscription.endpoint, {
     method: "POST",
     headers: {
       "Content-Type": "application/octet-stream",
       "Content-Encoding": "aes128gcm",
-      TTL: "300",
-      Urgency: message.level === "critical" || message.level === "review" ? "high" : "normal",
+      // How long the push service holds the message for a phone that's
+      // off / offline. Real alerts wait a day so nothing is missed while
+      // the phone is switched off; demo/test messages are throwaway.
+      TTL: String(message.ttl ?? 86400),
+      // "high" lets Android / iOS wake a sleeping phone immediately
+      // instead of batching the alert for later.
+      Urgency: "high",
       Authorization: `vapid t=${jwt}, k=${vapid.publicKey}`,
     },
     body,

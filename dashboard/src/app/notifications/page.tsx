@@ -97,6 +97,8 @@ export default function NotificationsPage() {
   const [demoFiring, setDemoFiring]            = useState(false);
   const [demoMsg, setDemoMsg]                  = useState<string | null>(null);
   const [savedMsg, setSavedMsg]                = useState<string | null>(null);
+  const [lockedMsg, setLockedMsg]              = useState<string | null>(null);
+  const [lockedBusy, setLockedBusy]            = useState(false);
 
   // Debounce ref for auto-saving thresholds to backend
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -431,6 +433,58 @@ export default function NotificationsPage() {
                 : testSent ? <CheckCircle size={14} className="text-green-400" /> : <Send size={14} />}
               {testSent ? "Sent!" : "Test"}
             </button>
+          </div>
+        )}
+
+        {/* Lock-screen test — proves alerts arrive with Kyro closed */}
+        {isEnabled && push.mode !== "local" && (
+          <div className="rounded-2xl px-5 py-4 mb-6" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">Test with your phone locked</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Press, then lock your phone or close Kyro — an alert arrives about 20 seconds later
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  setLockedBusy(true); setLockedMsg(null);
+                  try { setLockedMsg(await push.sendLockedTest()); }
+                  catch (e: unknown) { setLockedMsg(`Error: ${e instanceof Error ? e.message : "unknown"}`); }
+                  finally { setLockedBusy(false); }
+                }}
+                disabled={lockedBusy}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50 shrink-0"
+                style={{ background: "rgba(99,102,241,0.8)", color: "#fff" }}>
+                {lockedBusy ? <Loader2 size={14} className="animate-spin" /> : <Smartphone size={14} />}
+                Send in 20s
+              </button>
+            </div>
+            {lockedMsg && (
+              <p className={`text-xs rounded-lg px-3 py-2 mt-3 ${
+                lockedMsg.startsWith("Error")
+                  ? "text-red-300 bg-red-900/20 border border-red-800"
+                  : "text-indigo-300 bg-indigo-900/20 border border-indigo-800"
+              }`}>{lockedMsg}</p>
+            )}
+          </div>
+        )}
+
+        {/* What can reach you while Kyro is closed — honest per deployment */}
+        {isEnabled && push.mode === "edge" && (
+          <div className="rounded-2xl px-5 py-4 mb-6" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+            <p className="text-sm font-semibold text-white mb-2">Alerts that reach you while Kyro is closed</p>
+            <ul className="text-xs text-gray-400 space-y-1.5">
+              <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
+                Manual Counts saved by ushers in Live mode, including filling-up and over-capacity warnings</li>
+              <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
+                Final count approved at the end of service</li>
+              <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
+                If your phone is off, alerts wait up to 24 hours and arrive when it's back on</li>
+              <li className="flex items-start gap-2"><AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+                Camera alerts (room capacity, camera offline, AI questions) start once the camera system is connected —
+                until then they only show while Kyro is open</li>
+            </ul>
           </div>
         )}
 

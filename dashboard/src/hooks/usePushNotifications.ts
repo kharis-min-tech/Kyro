@@ -31,6 +31,10 @@ export interface PushState {
   sendTest:    () => Promise<boolean>;
   /** Fires the sequence of sample alerts; resolves to a status message. */
   sendDemo:    () => Promise<string>;
+  /** Asks the push server to send one alert ~20s from now, so it can be
+   *  checked with the phone locked / app closed. Null when this device
+   *  has no server push (local mode). */
+  sendLockedTest: () => Promise<string>;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -105,7 +109,7 @@ async function fetchEdgeVapidKey(): Promise<string | null> {
   }
 }
 
-async function edgeSend(sub: PushSubscription, kind: "test" | "demo"): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
+async function edgeSend(sub: PushSubscription, kind: "test" | "demo" | "locked-test"): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
   const res = await fetch("/api/push/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -451,5 +455,22 @@ export function usePushNotifications(): PushState {
     return "🔔 6 alerts over the next ~12 seconds — keep Kyro open (lock-screen delivery needs the push server)";
   }, []);
 
-  return { supported, permission, subscribed, loading, error, mode, subscribe, unsubscribe, sendTest, sendDemo };
+  const sendLockedTest = useCallback(async (): Promise<string> => {
+    const reg = await getRegistration();
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) throw new Error("Turn notifications on first");
+    if (API_URL) {
+      // Backend push: the same instant test proves the server path; the
+      // backend has no delayed variant.
+      const res = await fetch(`${API_URL}/api/v1/push/test?endpoint=${encodeURIComponent(sub.endpoint)}`,
+        { method: "POST", headers: await authHeader() });
+      if (!res.ok) throw new Error("Test push failed");
+      return "Sent — check your lock screen";
+    }
+    const sent = await edgeSend(sub, "locked-test");
+    if (!sent.ok) throw new Error(sent.error);
+    return "🔒 Lock your phone or close Kyro now — the alert arrives in about 20 seconds";
+  }, []);
+
+  return { supported, permission, subscribed, loading, error, mode, subscribe, unsubscribe, sendTest, sendDemo, sendLockedTest };
 }
