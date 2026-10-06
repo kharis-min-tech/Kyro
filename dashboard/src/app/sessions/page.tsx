@@ -129,12 +129,12 @@ function LiveCameraCard({
         {!isLive && <WifiOff size={14} className="text-gray-600 shrink-0" />}
       </div>
 
-      <div className="px-5 py-4 flex items-center gap-6">
-        {/* Live stats */}
-        <div className="flex items-center gap-5 flex-1">
+      <div className="px-4 sm:px-5 py-4 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+        {/* Live stats — grid on mobile so numbers don't push off-screen */}
+        <div className="grid grid-cols-2 sm:flex sm:items-center gap-x-4 gap-y-3 sm:gap-5 flex-1">
           <div>
             <p className="text-xs text-gray-500 mb-0.5">Now</p>
-            <p className="text-2xl font-bold text-white tabular-nums">{current.toLocaleString()}</p>
+            <p className="text-2xl font-bold tabular-nums" style={{ color: "var(--text-primary)" }}>{current.toLocaleString()}</p>
           </div>
           <div>
             <p className="text-xs text-gray-500 mb-0.5">Peak</p>
@@ -147,7 +147,7 @@ function LiveCameraCard({
           {camera.zone_capacity > 0 && (
             <div>
               <p className="text-xs text-gray-500 mb-0.5">Capacity</p>
-              <p className="text-lg font-semibold text-gray-400 tabular-nums">{camera.zone_capacity.toLocaleString()}</p>
+              <p className="text-lg font-semibold tabular-nums" style={{ color: "var(--text-muted)" }}>{camera.zone_capacity.toLocaleString()}</p>
             </div>
           )}
         </div>
@@ -157,7 +157,7 @@ function LiveCameraCard({
           <button
             onClick={() => onEnd(existingSession.session_id)}
             disabled={ending === existingSession.session_id}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50 shrink-0"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50 sm:shrink-0"
             style={{ background: "#dc2626" }}>
             <Square size={13} />
             {ending === existingSession.session_id ? "Ending…" : "End session"}
@@ -166,7 +166,7 @@ function LiveCameraCard({
           <button
             onClick={() => onStart(camera)}
             disabled={starting === camera.camera_id || !isLive}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50 shrink-0"
+            className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50 sm:shrink-0"
             style={{ background: isLive ? "#4f46e5" : "var(--bg-hover)" }}
             title={!isLive ? "Camera not live — start a worker first" : undefined}>
             <Play size={13} />
@@ -241,30 +241,33 @@ function ManualStartForm({ cameras, onCreated }: {
         <ChevronRight size={14} className={`ml-auto transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
       {open && (
-        <form onSubmit={submit} className="px-5 pb-5 flex flex-wrap gap-3 items-end" style={{ borderTop: `1px solid ${BORDER}` }}>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 mt-3">Session name</label>
+        <form onSubmit={submit} className="px-4 sm:px-5 pb-5 grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-end gap-3" style={{ borderTop: `1px solid ${BORDER}` }}>
+          <div className="flex flex-col gap-1 lg:w-52">
+            <label className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>Session name</label>
             <input value={name} onChange={(e) => setName(e.target.value)} required
-              className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-52" />
+              className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+              style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 mt-3">Camera</label>
+            <label className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>Camera</label>
             <select value={cameraId} onChange={(e) => setCameraId(e.target.value)}
-              className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+              style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }}>
               {cameras.filter((c) => c.location !== "queue").map((c) => (
                 <option key={c.camera_id} value={c.camera_id}>{c.zone_name ?? c.name}</option>
               ))}
             </select>
           </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500 mt-3">Capacity</label>
+          <div className="flex flex-col gap-1 lg:w-28">
+            <label className="text-xs mt-3" style={{ color: "var(--text-muted)" }}>Capacity</label>
             <input type="number" min="0" value={capacity} onChange={(e) => setCapacity(e.target.value)}
               placeholder="auto-filled"
-              className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-28" />
+              className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+              style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
           </div>
-          {err && <p className="w-full text-xs text-red-400">{err}</p>}
+          {err && <p className="col-span-full lg:w-full text-xs text-red-400">{err}</p>}
           <button type="submit" disabled={creating}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+            className="col-span-full sm:col-span-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
             style={{ background: "#4f46e5" }}>
             <Play size={13} />
             {creating ? "Starting…" : "Start"}
@@ -305,7 +308,7 @@ function SessionHistory({ sessions, onDownload, onRename, onDelete }: {
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Past sessions</p>
       <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
         {ended.map((s, i) => (
-          <div key={s.session_id} className="flex items-center gap-3 px-5 py-4"
+          <div key={s.session_id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 sm:px-5 py-4"
             style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
             <div className="flex-1 min-w-0">
               {editingId === s.session_id ? (
@@ -344,7 +347,7 @@ function SessionHistory({ sessions, onDownload, onRename, onDelete }: {
                 {" · "}<span className="font-mono">{s.camera_id}</span>
               </p>
             </div>
-            <div className="flex items-center gap-3 shrink-0">
+            <div className="flex items-center gap-3 sm:shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0" style={{ borderColor: BORDER }}>
               <button onClick={() => onDownload(s.session_id)}
                 className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                 <Download size={11} /> Export CSV

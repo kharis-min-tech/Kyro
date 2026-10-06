@@ -53,19 +53,24 @@ const ROLE_DEFAULT_PAGES: Record<string, PageId[]> = {
 type DemoUser = UserResponse & { pages?: PageId[]; demo_password?: string };
 
 // ─── Page colours ─────────────────────────────────────────────────────────────
+// Chip colours use translucent backgrounds + a mid-weight text colour that
+// stays readable in BOTH themes: dark-mode base is near-black (so a mid tone
+// looks bright enough), light-mode base is white (so the same mid tone keeps
+// enough contrast). Pale pastels (#a5b4fc, #86efac …) washed out on light
+// mode — avoid them here.
 const PAGE_COLOURS: Record<string, { bg: string; text: string }> = {
-  "attendance":    { bg: "rgba(99,102,241,0.15)",  text: "#a5b4fc" },
-  "manual-count":  { bg: "rgba(99,102,241,0.15)",  text: "#a5b4fc" },
-  "live-cameras":  { bg: "rgba(34,197,94,0.12)",   text: "#86efac" },
-  "seating":       { bg: "rgba(124,58,237,0.15)",  text: "#c4b5fd" },
-  "cameras":       { bg: "rgba(59,130,246,0.15)",  text: "#93c5fd" },
-  "rota":          { bg: "rgba(245,158,11,0.15)",  text: "#fde68a" },
-  "sessions":      { bg: "rgba(16,185,129,0.12)",  text: "#6ee7b7" },
-  "analytics":     { bg: "rgba(249,115,22,0.12)",  text: "#fdba74" },
-  "layout-editor": { bg: "rgba(236,72,153,0.12)",  text: "#f9a8d4" },
-  "integrations":  { bg: "rgba(59,130,246,0.15)",  text: "#93c5fd" },
-  "notifications": { bg: "rgba(234,179,8,0.12)",   text: "#fef08a" },
-  "users":         { bg: "rgba(239,68,68,0.12)",   text: "#fca5a5" },
+  "attendance":    { bg: "rgba(99,102,241,0.18)",  text: "#6366f1" },
+  "manual-count":  { bg: "rgba(99,102,241,0.18)",  text: "#6366f1" },
+  "live-cameras":  { bg: "rgba(34,197,94,0.15)",   text: "#16a34a" },
+  "seating":       { bg: "rgba(124,58,237,0.18)",  text: "#7c3aed" },
+  "cameras":       { bg: "rgba(59,130,246,0.18)",  text: "#2563eb" },
+  "rota":          { bg: "rgba(245,158,11,0.18)",  text: "#d97706" },
+  "sessions":      { bg: "rgba(16,185,129,0.15)",  text: "#059669" },
+  "analytics":     { bg: "rgba(249,115,22,0.15)",  text: "#ea580c" },
+  "layout-editor": { bg: "rgba(236,72,153,0.15)",  text: "#db2777" },
+  "integrations":  { bg: "rgba(59,130,246,0.18)",  text: "#2563eb" },
+  "notifications": { bg: "rgba(234,179,8,0.15)",   text: "#ca8a04" },
+  "users":         { bg: "rgba(239,68,68,0.15)",   text: "#dc2626" },
 };
 
 // ─── Demo storage ─────────────────────────────────────────────────────────────
@@ -510,23 +515,30 @@ export default function UsersPage() {
             <p className="text-sm font-semibold text-white">Add a new user</p>
             <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Toggle the pages they can access</p>
           </div>
-          <div className="p-5 flex flex-col gap-5">
-            <div className="flex flex-wrap gap-3">
+          <div className="p-4 sm:p-5 flex flex-col gap-5">
+            {/* On mobile, each field takes the full row so the password field
+                is never cut off; on sm+ they lay out side-by-side. */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-500">Username</label>
+                <label className="text-xs" style={{ color: "var(--text-muted)" }}>Username</label>
                 <input value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required placeholder="john.doe"
-                  className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40" />
+                  autoComplete="username"
+                  className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                  style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-500">Display name</label>
+                <label className="text-xs" style={{ color: "var(--text-muted)" }}>Display name</label>
                 <input value={newDisplay} onChange={(e) => setNewDisplay(e.target.value)} placeholder="John Doe"
-                  className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40" />
+                  className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                  style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-gray-500">Password</label>
+                <label className="text-xs" style={{ color: "var(--text-muted)" }}>Password</label>
                 <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required={!inDemoMode()}
                   type="password" minLength={8} placeholder="min 8 chars"
-                  className="bg-gray-900 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-40" />
+                  autoComplete="new-password"
+                  className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                  style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
               </div>
             </div>
             <div>
@@ -563,37 +575,42 @@ export default function UsersPage() {
               const isEditing = editingId === u.id;
               return (
                 <div key={u.id} style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
-                  <div className="px-5 py-4 flex items-start gap-4">
-                    <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
-                      style={{ background: u.role === "admin" ? "#4f46e5" : u.role === "operator" ? "#0369a1" : "var(--text-faint)" }}>
-                      {(u.display_name || u.username)[0].toUpperCase()}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-2">
-                        <p className="text-sm font-semibold text-white">{u.display_name || u.username}</p>
-                        <p className="text-xs font-mono text-gray-600">{u.username}</p>
-                        <RoleBadge role={u.role} />
+                  {/* Mobile: stack avatar/info and actions vertically so the
+                      date and access-chips never collide with the buttons.
+                      Desktop (md+): original horizontal layout. */}
+                  <div className="px-5 py-4 flex flex-col md:flex-row md:items-start gap-3 md:gap-4">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white shrink-0"
+                        style={{ background: u.role === "admin" ? "#4f46e5" : u.role === "operator" ? "#0369a1" : "var(--text-faint)" }}>
+                        {(u.display_name || u.username)[0].toUpperCase()}
                       </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        {ALL_PAGES.filter((p) => pages.includes(p.id)).map((p) => {
-                          const col = PAGE_COLOURS[p.id];
-                          return (
-                            <span key={p.id} className="text-xs px-2 py-0.5 rounded-full" style={{ background: col.bg, color: col.text }}>
-                              {p.label}
-                            </span>
-                          );
-                        })}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                          <p className="text-sm font-semibold text-white">{u.display_name || u.username}</p>
+                          <p className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{u.username}</p>
+                          <RoleBadge role={u.role} />
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {ALL_PAGES.filter((p) => pages.includes(p.id)).map((p) => {
+                            const col = PAGE_COLOURS[p.id];
+                            return (
+                              <span key={p.id} className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: col.bg, color: col.text }}>
+                                {p.label}
+                              </span>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <p className="text-xs text-gray-600">{new Date(u.created_at).toLocaleDateString()}</p>
+                    <div className="flex flex-wrap items-center gap-3 md:gap-3 md:shrink-0 pl-12 md:pl-0 md:border-l-0 border-t md:border-t-0 pt-3 md:pt-0" style={{ borderColor: BORDER }}>
+                      <p className="text-xs" style={{ color: "var(--text-muted)" }}>{new Date(u.created_at).toLocaleDateString()}</p>
                       <button onClick={() => setRevealingFor(u.username)}
                         className="flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300 transition-colors">
                         <KeyRound size={11} /> Password
                       </button>
                       <button onClick={() => setEditingId(isEditing ? null : u.id)}
                         className="flex items-center gap-1 text-xs hover:text-white transition-colors"
-                        style={{ color: isEditing ? "#818cf8" : "#6b7280" }}>
+                        style={{ color: isEditing ? "#818cf8" : "var(--text-muted)" }}>
                         <Pencil size={11} /> {isEditing ? "Cancel" : "Edit access"}
                       </button>
                       <button onClick={() => handleDeactivate(u.id, u.username)}

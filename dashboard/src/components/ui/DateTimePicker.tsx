@@ -52,12 +52,10 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick date & tim
   useEffect(() => {
     if (open && triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect();
-      const width = 272;
+      const width = Math.min(320, window.innerWidth - 24);
       setPos({
-        // Flip above the trigger when there isn't room below, so the panel
-        // isn't clipped for entries near the bottom of a long rota list.
         top:  r.bottom + 340 > window.innerHeight ? Math.max(8, r.top - 348) : r.bottom + 6,
-        left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)),
+        left: Math.max(12, Math.min(r.left, window.innerWidth - width - 12)),
       });
     }
   }, [open]);
@@ -113,7 +111,7 @@ export function DateTimePicker({ value, onChange, placeholder = "Pick date & tim
       {open && typeof window !== "undefined" && createPortal(
         <div ref={panelRef}
           className="fixed z-[9999] rounded-2xl shadow-2xl overflow-hidden"
-          style={{ top: pos.top, left: pos.left, width: 272, background: "var(--bg-base)", border: "1px solid var(--border-strong)" }}>
+          style={{ top: pos.top, left: pos.left, width: "min(calc(100vw - 1.5rem), 320px)", minWidth: 240, background: "var(--bg-base)", border: "1px solid var(--border-strong)" }}>
 
           <InlineCalendar
             value={datePart}

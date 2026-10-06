@@ -8,31 +8,25 @@ import type { Camera } from "@/types";
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
-const DEMO_OVERRIDES_KEY = "kyro_demo_camera_overrides";
-const DEMO_ADDED_KEY     = "kyro_demo_cameras_added";
-const DEMO_DELETED_KEY   = "kyro_demo_cameras_deleted";
+// Mode-scoped storage keys. Live and Demo mode now keep COMPLETELY SEPARATE
+// camera lists — adding, overriding or deleting a camera in one mode cannot
+// bleed into the other. Previously the keys were shared, which is why
+// Service Rota's Camera Zone picker showed Demo cameras even in Live mode.
+function mdeKey(name: "overrides" | "added" | "deleted"): string {
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
+  return `kyro_${mode}_cameras_${name}`;
+}
 
-// ─── Demo helpers ─────────────────────────────────────────────────────────────
-
-/**
- * Load cameras for the local-only data path.
- *
- * In user-chosen Demo mode: start from the seeded DEMO_CAMERAS (fake
- * Balcony / Overflow / Stadium so there's something to click around with),
- * then apply overrides / additions / deletions.
- *
- * In Live mode without a backend: start EMPTY. Don't pre-populate with
- * fake cameras — the user picked Live for a reason, and seeing fake
- * cameras in Live mode is exactly what makes it feel 'pushed to demo'.
- * They can add their own via the Cameras page.
- */
 function loadDemoCameras(): Camera[] {
+  // Seed the fake DEMO_CAMERAS only when the user explicitly picked Demo.
+  // In Live mode without a backend, start from an empty base — the operator
+  // adds their real cameras via the Cameras page.
   const seedDemo = localStorage.getItem("kyro_mode") === "demo";
   const base: Camera[] = seedDemo ? (DEMO_CAMERAS as Camera[]) : [];
   try {
-    const overrides: Record<string, Partial<Camera>> = JSON.parse(localStorage.getItem(DEMO_OVERRIDES_KEY) ?? "{}");
-    const extra: Camera[]    = JSON.parse(localStorage.getItem(DEMO_ADDED_KEY)   ?? "[]");
-    const deletedIds: string[] = JSON.parse(localStorage.getItem(DEMO_DELETED_KEY) ?? "[]");
+    const overrides:  Record<string, Partial<Camera>> = JSON.parse(localStorage.getItem(mdeKey("overrides")) ?? "{}");
+    const extra:      Camera[]  = JSON.parse(localStorage.getItem(mdeKey("added"))     ?? "[]");
+    const deletedIds: string[]  = JSON.parse(localStorage.getItem(mdeKey("deleted"))   ?? "[]");
     const merged = base
       .filter((c) => !deletedIds.includes(c.camera_id))
       .map((c) => overrides[c.camera_id] ? { ...c, ...overrides[c.camera_id] } : c);
@@ -42,9 +36,9 @@ function loadDemoCameras(): Camera[] {
 
 function saveDemoOverride(cameraId: string, fields: Partial<Camera>) {
   try {
-    const overrides: Record<string, Partial<Camera>> = JSON.parse(localStorage.getItem(DEMO_OVERRIDES_KEY) ?? "{}");
+    const overrides: Record<string, Partial<Camera>> = JSON.parse(localStorage.getItem(mdeKey("overrides")) ?? "{}");
     overrides[cameraId] = { ...(overrides[cameraId] ?? {}), ...fields };
-    localStorage.setItem(DEMO_OVERRIDES_KEY, JSON.stringify(overrides));
+    localStorage.setItem(mdeKey("overrides"), JSON.stringify(overrides));
   } catch {}
 }
 
@@ -126,9 +120,9 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       };
       setCameras((prev) => [...prev, newCam]);
       try {
-        const saved: Camera[] = JSON.parse(localStorage.getItem(DEMO_ADDED_KEY) ?? "[]");
+        const saved: Camera[] = JSON.parse(localStorage.getItem(mdeKey("added")) ?? "[]");
         saved.push(newCam);
-        localStorage.setItem(DEMO_ADDED_KEY, JSON.stringify(saved));
+        localStorage.setItem(mdeKey("added"), JSON.stringify(saved));
       } catch {}
 
       // Auto-generate a demo seat layout for indoor cameras with capacity
@@ -163,11 +157,11 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     setCameras((prev) => prev.filter((c) => c.camera_id !== cameraId));
     if (inDemoMode()) {
       try {
-        const deleted: string[] = JSON.parse(localStorage.getItem(DEMO_DELETED_KEY) ?? "[]");
+        const deleted: string[] = JSON.parse(localStorage.getItem(mdeKey("deleted")) ?? "[]");
         if (!deleted.includes(cameraId)) deleted.push(cameraId);
-        localStorage.setItem(DEMO_DELETED_KEY, JSON.stringify(deleted));
-        const added: Camera[] = JSON.parse(localStorage.getItem(DEMO_ADDED_KEY) ?? "[]");
-        localStorage.setItem(DEMO_ADDED_KEY, JSON.stringify(added.filter((c) => c.camera_id !== cameraId)));
+        localStorage.setItem(mdeKey("deleted"), JSON.stringify(deleted));
+        const added: Camera[] = JSON.parse(localStorage.getItem(mdeKey("added")) ?? "[]");
+        localStorage.setItem(mdeKey("added"), JSON.stringify(added.filter((c) => c.camera_id !== cameraId)));
       } catch {}
       return;
     }

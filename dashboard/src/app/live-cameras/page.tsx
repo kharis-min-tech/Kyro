@@ -230,8 +230,9 @@ function VenueOverview({
           <span className="text-xs text-gray-600">live</span>
         </div>
 
-        {/* Outside queue estimator */}
-        <div className="flex flex-col gap-1.5 ml-auto">
+        {/* Outside queue estimator — pushed right on wide screens, sits
+            on its own row on mobile instead of sliding off-screen. */}
+        <div className="flex flex-col gap-1.5 w-full sm:w-auto sm:ml-auto">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500 uppercase tracking-widest">Outside queue</span>
             {queueSize > 0 && (
@@ -334,6 +335,11 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
 
       {open && (
         <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+          {/* Horizontal scroll on phone widths — the five numeric columns
+              need ~440px total, so we let narrow screens swipe sideways
+              instead of squashing the room name until it's unreadable. */}
+          <div className="overflow-x-auto">
+          <div style={{ minWidth: 540 }}>
           {/* Header */}
           <div className="flex text-xs font-medium text-gray-500 px-4 py-2.5"
             style={{ borderBottom: `1px solid ${BORDER}`, background: "var(--bg-base)" }}>
@@ -418,6 +424,8 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
               </div>
             );
           })}
+          </div>
+          </div>
         </div>
       )}
     </div>

@@ -36,11 +36,14 @@ const BORDER  = "var(--bg-hover)";
 
 // ─── Zone colour palette ──────────────────────────────────────────────────────
 const ZONE_COLOURS = [
-  { icon: "≡",  bg: "#1e1b4b", accent: "#818cf8", mini: "#6366f1" },
-  { icon: "⊞",  bg: "#172554", accent: "#60a5fa", mini: "#3b82f6" },
-  { icon: "≈",  bg: "#052e16", accent: "#34d399", mini: "#10b981" },
-  { icon: "≡",  bg: "var(--bg-hover)", accent: "#fb923c", mini: "#f97316" },
-  { icon: "☀",  bg: "var(--bg-hover)", accent: "#f472b6", mini: "#ec4899" },
+  // Zone-card accent swatches. Using translucent accent-tinted backgrounds
+  // instead of solid dark hexes so the icon tiles blend into either light
+  // or dark pages instead of looking like dark holes on a white dashboard.
+  { icon: "≡",  bg: "rgba(99,102,241,0.15)",  accent: "#818cf8", mini: "#6366f1" },
+  { icon: "⊞",  bg: "rgba(59,130,246,0.15)",  accent: "#60a5fa", mini: "#3b82f6" },
+  { icon: "≈",  bg: "rgba(16,185,129,0.15)",  accent: "#34d399", mini: "#10b981" },
+  { icon: "≡",  bg: "rgba(249,115,22,0.15)",  accent: "#fb923c", mini: "#f97316" },
+  { icon: "☀",  bg: "rgba(236,72,153,0.15)",  accent: "#f472b6", mini: "#ec4899" },
 ];
 
 function zoneColour(idx: number) { return ZONE_COLOURS[idx % ZONE_COLOURS.length]; }
@@ -784,8 +787,18 @@ export default function AttendancePage() {
               <ChevRight size={10} style={{ color: "#6b7280", transform: showDatePicker ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }} />
             </button>
             {showDatePicker && (
-              <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl"
-                style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}`, minWidth: 240 }}>
+              <div
+                className="absolute top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl right-0"
+                style={{
+                  background: "var(--bg-card)",
+                  border: `1px solid ${BORDER}`,
+                  // Mobile: cap width so it never slips off the viewport.
+                  // Desktop: keep the roomy 240px minimum.
+                  width: "min(calc(100vw - 1.5rem), 320px)",
+                  minWidth: 240,
+                  maxHeight: "calc(100vh - 6rem)",
+                  overflowY: "auto",
+                }}>
                 <div className="px-3 py-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
                   <p style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Select date</p>
                 </div>
@@ -903,7 +916,7 @@ export default function AttendancePage() {
                   <button
                     onClick={() => { setShowMetricMenu((p) => !p); setShowDatePicker(false); setShowLiveMenu(false); }}
                     className="px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-colors hover:opacity-80"
-                    style={{ background: "rgba(99,102,241,0.15)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.25)" }}>
+                    style={{ background: "rgba(99,102,241,0.18)", color: "var(--accent-indigo, #6366f1)", border: "1px solid rgba(99,102,241,0.35)" }}>
                     {METRIC_LABELS[metric]} ▾
                   </button>
                   {showMetricMenu && (
@@ -914,8 +927,8 @@ export default function AttendancePage() {
                           onClick={() => { setMetric(key); setShowMetricMenu(false); }}
                           className="w-full text-left px-4 py-2.5 text-xs transition-colors"
                           style={{
-                            background: metric === key ? "rgba(99,102,241,0.15)" : "transparent",
-                            color: metric === key ? "#a5b4fc" : "#9ca3af",
+                            background: metric === key ? "rgba(99,102,241,0.18)" : "transparent",
+                            color: metric === key ? "var(--accent-indigo, #6366f1)" : "var(--text-muted)",
                             borderBottom: `1px solid ${BORDER}`,
                           }}
                           onMouseEnter={(e) => { if (metric !== key) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)"; }}

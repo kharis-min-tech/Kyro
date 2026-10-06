@@ -159,10 +159,11 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", label }
   useEffect(() => {
     if (open && triggerRef.current) {
       const r = triggerRef.current.getBoundingClientRect();
-      setPos({
-        top:  r.bottom + 6,
-        left: Math.min(r.left, window.innerWidth - 280),
-      });
+      // Clamp inside viewport with a 12px safety margin on each side so
+      // the calendar never slips off a phone screen.
+      const panelWidth = Math.min(320, window.innerWidth - 24);
+      const left = Math.max(12, Math.min(r.left, window.innerWidth - panelWidth - 12));
+      setPos({ top: r.bottom + 6, left });
     }
   }, [open]);
 
@@ -200,7 +201,7 @@ export function DatePicker({ value, onChange, placeholder = "Pick date", label }
 
       {open && typeof window !== "undefined" && createPortal(
         <div className="fixed z-[9999] rounded-2xl shadow-2xl overflow-hidden"
-          style={{ top: pos.top, left: pos.left, width: 272, background: "var(--bg-base)", border: `1px solid var(--border-strong)` }}
+          style={{ top: pos.top, left: pos.left, width: "min(calc(100vw - 1.5rem), 320px)", minWidth: 240, background: "var(--bg-base)", border: `1px solid var(--border-strong)` }}
           onMouseDown={(e) => e.stopPropagation()}>
           <InlineCalendar
             value={value}

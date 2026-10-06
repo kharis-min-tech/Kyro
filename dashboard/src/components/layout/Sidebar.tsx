@@ -284,9 +284,15 @@ export function Sidebar() {
           return (
             <Link key={href} href={href}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                active ? "text-white" : "text-gray-400 hover:text-white hover:bg-white/5"
+                active ? "" : "text-gray-400 hover:text-white hover:bg-white/5"
               }`}
-              style={active ? { background: ACTIVE } : {}}>
+              // Active state uses a dark indigo background in both themes,
+              // so the label stays WHITE in light mode too — can't rely on
+              // the global .text-white override here or the label would flip
+              // to near-black and vanish.
+              style={active
+                ? { background: ACTIVE, color: "#ffffff" }
+                : {}}>
               <Icon size={16} strokeWidth={1.75} />
               <span className="flex-1">{label}</span>
 

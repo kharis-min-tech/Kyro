@@ -684,12 +684,48 @@ function ResetDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel:
     if (!password) { setError("Enter your password"); return; }
     setBusy(true); setError("");
     try {
-      const token = localStorage.getItem("kyro_token") ?? "";
-      const payload = JSON.parse(atob(token.split(".")[1]));
-      const username = payload.sub ?? "admin";
-      const { authApi: api } = await import("@/lib/api");
-      await api.login(username, password);
-      onConfirm();
+      // Figure out the current username from either the JWT or the saved
+      // demo session.
+      let username = "admin";
+      try {
+        const token = localStorage.getItem("kyro_token") ?? "";
+        if (token.split(".").length === 3) {
+          const payload = JSON.parse(atob(token.split(".")[1]));
+          if (payload.sub) username = payload.sub;
+        }
+      } catch { /* fall through to local check */ }
+      const stored = localStorage.getItem("kyro_demo_last_user");
+      if (stored) username = stored;
+
+      // Without a backend we validate against the same local-user table the
+      // login screen uses. Fall back to the hardcoded built-in credentials
+      // (admin/Kharis2024!, sarah.usher/Sarah@2024!, james.viewer/James@2024!)
+      // so Reset works in local-only mode where there's nothing to call.
+      const HARDCODED: Record<string, string> = {
+        admin: "Kharis2024!", "sarah.usher": "Sarah@2024!", "james.viewer": "James@2024!",
+      };
+      const mode = localStorage.getItem("kyro_mode") ?? "demo";
+      let localOk = false;
+      try {
+        const saved = JSON.parse(localStorage.getItem(`kyro_${mode}_users`) ?? "[]");
+        const match = saved.find((u: { username: string; demo_password?: string; is_active?: boolean }) =>
+          u.username === username && u.is_active !== false);
+        if (match?.demo_password) localOk = match.demo_password === password.trim();
+      } catch {}
+      if (!localOk && HARDCODED[username]) localOk = HARDCODED[username] === password.trim();
+
+      if (localOk) {
+        onConfirm();
+        return;
+      }
+      // Last resort: if there's a backend, try it too.
+      if (process.env.NEXT_PUBLIC_API_URL) {
+        const { authApi: api } = await import("@/lib/api");
+        await api.login(username, password);
+        onConfirm();
+        return;
+      }
+      throw new Error("wrong");
     } catch { setError("Incorrect password"); }
     finally { setBusy(false); }
   };
