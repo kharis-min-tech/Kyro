@@ -20,6 +20,12 @@
  *   POST /api/relay/webhook          { url, secret?, payload }
  *   GET  /api/push/vapid-public-key
  *   POST /api/push/send              { subscription, kind: "test" | "demo" }
+ *   POST /api/push/register          { subscription, warn, crit }
+ *   POST /api/push/unregister        { endpoint }
+ *   POST /api/events/manual-count    { kind, zone?, count, capacity?, counted_by?, sender_endpoint? }
+ *
+ * Registered devices live in the SUBS KV namespace, so a Manual Count
+ * submitted on one phone alerts every leader who turned notifications on.
  *
  * Secrets / vars (wrangler.jsonc + `wrangler secret put`):
  *   VAPID_PUBLIC_KEY   base64url uncompressed P-256 point (public, in vars)
@@ -45,6 +51,15 @@ export default {
       }
       if (url.pathname === "/api/push/send" && request.method === "POST") {
         return await pushSend(request, env, ctx);
+      }
+      if (url.pathname === "/api/push/register" && request.method === "POST") {
+        return await pushRegister(request, env);
+      }
+      if (url.pathname === "/api/push/unregister" && request.method === "POST") {
+        return await pushUnregister(request, env);
+      }
+      if (url.pathname === "/api/events/manual-count" && request.method === "POST") {
+        return await manualCountEvent(request, env, ctx);
       }
       if (url.pathname.startsWith("/api/")) {
         return json({ error: "Not found" }, 404);
@@ -179,11 +194,7 @@ async function pushSend(request, env, ctx) {
   catch (e) { return json({ error: e.message }, e.status ?? 400); }
   if (!validSubscription(body.subscription)) return json({ error: "Invalid push subscription" }, 400);
 
-  const vapid = {
-    publicKey:  env.VAPID_PUBLIC_KEY,
-    privateKey: env.VAPID_PRIVATE_KEY,
-    subject:    env.VAPID_SUBJECT || "mailto:admin@kyro.app",
-  };
+  const vapid = vapidFromEnv(env);
 
   if (body.kind === "demo") {
     // Respond now, deliver over ~12s so the user can lock / minimise and
@@ -205,6 +216,155 @@ async function pushSend(request, env, ctx) {
     return json({ error: `Push service rejected the message (${res.status}): ${res.body.slice(0, 200)}` }, 502);
   }
   return json({ sent: true });
+}
+
+// ─── Registered devices + event alerts ──────────────────────────────────────
+
+const SUB_TTL_SECONDS = 120 * 24 * 3600; // refreshed whenever the app is opened
+
+function vapidFromEnv(env) {
+  return {
+    publicKey:  env.VAPID_PUBLIC_KEY,
+    privateKey: env.VAPID_PRIVATE_KEY,
+    subject:    env.VAPID_SUBJECT || "mailto:admin@kyro.app",
+  };
+}
+
+function pushReady(env) {
+  return !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.SUBS);
+}
+
+async function subKey(endpoint) {
+  const digest = await crypto.subtle.digest("SHA-256", enc.encode(endpoint));
+  return `sub:${b64urlEncode(digest)}`;
+}
+
+function clampFraction(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0.1 && n <= 1 ? n : fallback;
+}
+
+async function pushRegister(request, env) {
+  if (!sameOrigin(request)) return json({ error: "Forbidden" }, 403);
+  if (!pushReady(env)) return json({ error: "Push alerts not configured on this deployment" }, 503);
+  let body;
+  try { body = await readJson(request); }
+  catch (e) { return json({ error: e.message }, e.status ?? 400); }
+  if (!validSubscription(body.subscription)) return json({ error: "Invalid push subscription" }, 400);
+
+  const { endpoint, keys } = body.subscription;
+  const record = {
+    subscription: { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } },
+    warn: clampFraction(body.warn, 0.8),
+    crit: clampFraction(body.crit, 0.9),
+    updated_at: Date.now(),
+  };
+  await env.SUBS.put(await subKey(endpoint), JSON.stringify(record), { expirationTtl: SUB_TTL_SECONDS });
+  return json({ registered: true });
+}
+
+async function pushUnregister(request, env) {
+  if (!sameOrigin(request)) return json({ error: "Forbidden" }, 403);
+  if (!env.SUBS) return json({ removed: false });
+  let body;
+  try { body = await readJson(request); }
+  catch (e) { return json({ error: e.message }, e.status ?? 400); }
+  if (typeof body.endpoint !== "string") return json({ error: "endpoint required" }, 400);
+  await env.SUBS.delete(await subKey(body.endpoint));
+  return json({ removed: true });
+}
+
+async function allSubscriptions(env) {
+  const out = [];
+  let cursor;
+  do {
+    const page = await env.SUBS.list({ prefix: "sub:", cursor });
+    const values = await Promise.all(page.keys.map((k) => env.SUBS.get(k.name, "json")));
+    values.forEach((v, i) => { if (v) out.push({ key: page.keys[i].name, ...v }); });
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  return out;
+}
+
+// Plain text only, short, no control characters — these strings end up on
+// lock screens, so keep them tidy and bounded.
+function cleanText(v, max) {
+  return String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+// Coarse per-IP limit so a misbehaving client can't flood everyone's phone.
+async function rateLimited(env, request, limit) {
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  const key = `rl:${ip}:${Math.floor(Date.now() / 60000)}`;
+  const n = parseInt((await env.SUBS.get(key)) || "0", 10);
+  if (n >= limit) return true;
+  await env.SUBS.put(key, String(n + 1), { expirationTtl: 120 });
+  return false;
+}
+
+function levelFor(fraction, warn, crit) {
+  if (fraction === null) return "info";
+  if (fraction >= crit) return "critical";
+  if (fraction >= warn) return "warning";
+  return "info";
+}
+
+export function buildCountMessage(ev, sub) {
+  const pct = ev.fraction === null ? "" : ` (${Math.round(ev.fraction * 100)}% full)`;
+  if (ev.kind === "approved") {
+    return {
+      title: "✅ Final count approved",
+      body:  `${ev.count.toLocaleString("en-US")} total for today's service${ev.by ? ` · approved by ${ev.by}` : ""}`,
+      level: "info",
+      tag:   "kyro-final-count",
+      url:   "/attendance",
+    };
+  }
+  const level = levelFor(ev.fraction, sub.warn, sub.crit);
+  const title = level === "critical" ? `🚨 ${ev.zone} is over capacity`
+              : level === "warning"  ? `⚠️ ${ev.zone} is filling up`
+              :                        `📋 ${ev.zone} counted`;
+  return {
+    title,
+    body: `${ev.count.toLocaleString("en-US")} people${ev.capacity ? ` of ${ev.capacity.toLocaleString("en-US")} seats` : ""}${pct}${ev.by ? ` · counted by ${ev.by}` : ""}`,
+    level,
+    tag:  `kyro-count-${ev.zone.toLowerCase()}`,
+    url:  "/manual-count",
+  };
+}
+
+async function manualCountEvent(request, env, ctx) {
+  if (!sameOrigin(request)) return json({ error: "Forbidden" }, 403);
+  if (!pushReady(env)) return json({ error: "Push alerts not configured on this deployment" }, 503);
+  let body;
+  try { body = await readJson(request); }
+  catch (e) { return json({ error: e.message }, e.status ?? 400); }
+
+  const kind = body.kind === "approved" ? "approved" : "count";
+  const count = Math.round(Number(body.count));
+  if (!Number.isFinite(count) || count < 0 || count > 1_000_000) return json({ error: "Invalid count" }, 400);
+  const zone = cleanText(body.zone, 60);
+  if (kind === "count" && !zone) return json({ error: "zone required" }, 400);
+  const capRaw = Math.round(Number(body.capacity));
+  const capacity = Number.isFinite(capRaw) && capRaw > 0 && capRaw <= 1_000_000 ? capRaw : null;
+  const ev = {
+    kind, zone, count, capacity,
+    fraction: capacity ? count / capacity : null,
+    by: cleanText(body.counted_by, 40),
+  };
+
+  if (await rateLimited(env, request, 30)) return json({ error: "Too many alerts — slow down" }, 429);
+
+  const senderKey = typeof body.sender_endpoint === "string" ? await subKey(body.sender_endpoint) : null;
+  const subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey);
+  const vapid = vapidFromEnv(env);
+
+  ctx.waitUntil(Promise.all(subs.map(async (s) => {
+    const res = await sendWebPush(s.subscription, buildCountMessage(ev, s), vapid).catch(() => null);
+    // Phone uninstalled the app / revoked permission — forget it.
+    if (res && (res.status === 404 || res.status === 410)) await env.SUBS.delete(s.key);
+  })));
+  return json({ notified: subs.length });
 }
 
 // ─── RFC 8291 / 8292 implementation (WebCrypto only) ────────────────────────

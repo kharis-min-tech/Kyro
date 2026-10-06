@@ -19,6 +19,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
+import { isLiveMode } from "@/lib/liveMode";
+import { notifyManualCount } from "@/lib/edgePush";
 import { Users, Minus, Plus, CheckCircle, AlertTriangle, Trash2, Pencil, ClipboardCheck, Lock } from "lucide-react";
 
 // Mode-scoped so a Demo-mode count never surfaces in a Live webhook send
@@ -130,6 +132,14 @@ export default function ManualCountPage() {
     all.unshift(record);
     saveCounts(all);
     setHistory(all);
+    // Live mode only: alert leaders' phones. Capacity comes from the
+    // camera covering the same zone, when there is one.
+    if (isLiveMode()) {
+      const cap = cameras.find(
+        (c) => (c.zone_name ?? "").toLowerCase().trim() === trimmed.toLowerCase() && c.zone_capacity > 0,
+      )?.zone_capacity ?? null;
+      notifyManualCount({ kind: "count", zone: record.zone, count: record.count, capacity: cap, counted_by: record.counted_by });
+    }
     setConfirming(false);
     setEditingId(null);
     setStatus({ ok: true, msg: existing
@@ -137,7 +147,7 @@ export default function ManualCountPage() {
       : `Saved: ${record.zone} → ${record.count}` });
     setZone(""); setCount(0);
     setTimeout(() => setStatus(null), 3000);
-  }, [zone, count, countedBy, sessionId, existing, cameraCountingThisZone]);
+  }, [zone, count, countedBy, sessionId, existing, cameraCountingThisZone, cameras]);
 
   function removeOne(id: string) {
     if (!window.confirm("Remove this manual count? It cannot be undone.")) return;
@@ -173,6 +183,9 @@ export default function ManualCountPage() {
     saveCounts(all);
     setHistory(all);
     setApproving(false);
+    if (isLiveMode()) {
+      notifyManualCount({ kind: "approved", count: draftsTotal + approvedTotal, counted_by: by });
+    }
     setStatus({ ok: true, msg: `Approved ${drafts.length} count${drafts.length !== 1 ? "s" : ""} for this service — total ${draftsTotal + approvedTotal}` });
     setTimeout(() => setStatus(null), 4000);
   }

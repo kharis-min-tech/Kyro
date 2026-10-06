@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useCameras } from "@/hooks/useCameras";
 import { DEMO_MODE } from "@/lib/demo";
+import { updateEdgeThresholds } from "@/lib/edgePush";
 import {
   Bell, BellOff, BellRing, CheckCircle, XCircle,
   Smartphone, Monitor, Loader2, AlertTriangle, Send,
@@ -101,7 +102,15 @@ export default function NotificationsPage() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function syncRulesToBackend(warn: number, crit: number, offline: boolean) {
-    if (!API_URL) return; // thresholds stay in localStorage without a backend
+    if (!API_URL) {
+      // Cloudflare build: the Worker keeps per-device thresholds so count
+      // alerts arrive as warning / critical at the right fullness.
+      if (await updateEdgeThresholds(warn, crit)) {
+        setSavedMsg("Saved");
+        setTimeout(() => setSavedMsg(null), 2000);
+      }
+      return;
+    }
     try {
       const stored = localStorage.getItem("kyro_token");
       const real   = localStorage.getItem("kyro_real_token");

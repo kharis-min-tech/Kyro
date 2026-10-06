@@ -17,6 +17,7 @@
   // to /attendance without a full page reload).
 
   "name": "kyrokharis",
+  "account_id": "a94432b07dae8050b83efdec72a492a3",
   "compatibility_date": "2026-10-01",
 
   // A small Worker script now runs in front of the assets, but ONLY for
@@ -30,6 +31,12 @@
     "not_found_handling": "single-page-application",
     "run_worker_first": ["/api/*"]
   },
+
+  // Devices that turned notifications on (so a Manual Count on one phone
+  // can alert every leader). Entries expire after ~4 months unopened.
+  "kv_namespaces": [
+    { "binding": "SUBS", "id": "ac1ab51a47b1401ca3fb90a5a5a9ebbd" }
+  ],
 
   // VAPID public key is public by design. The matching private key is a
   // secret — set it once with:  npx wrangler secret put VAPID_PRIVATE_KEY

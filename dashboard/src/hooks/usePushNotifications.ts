@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { registerEdgeDevice, unregisterEdgeDevice } from "@/lib/edgePush";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
@@ -213,6 +214,10 @@ export function usePushNotifications(): PushState {
             registerWithBackend(existing, {
               warnThreshold: 0.80, critThreshold: 0.90, notifyOffline: true,
             }).catch(() => {});
+          } else {
+            // Refresh this device in the Worker's list (entries expire
+            // after months of not opening Kyro).
+            registerEdgeDevice(existing).catch(() => {});
           }
         } else if (!API_URL && localStorage.getItem("kyro_push_subscribed") === "1"
                    && Notification.permission === "granted") {
@@ -258,6 +263,10 @@ export function usePushNotifications(): PushState {
           setMode("edge");
           setSubscribed(true);
           localStorage.setItem("kyro_push_subscribed", "1");
+          await registerEdgeDevice(pushSub, {
+            warn: opts?.warnThreshold ?? 0.80,
+            crit: opts?.critThreshold ?? 0.90,
+          });
           const sent = await edgeSend(pushSub, "test");
           if (!sent.ok) throw new Error(sent.error ?? "Subscribed, but the welcome push failed");
           return;
@@ -319,6 +328,8 @@ export function usePushNotifications(): PushState {
       if (pushSub) {
         if (API_URL) {
           await unregisterFromBackend(pushSub.endpoint).catch(() => {});
+        } else {
+          await unregisterEdgeDevice(pushSub.endpoint);
         }
         await pushSub.unsubscribe();
       }
@@ -343,6 +354,7 @@ export function usePushNotifications(): PushState {
           const sent = await edgeSend(edgeSub, "test");
           if (sent.ok) return true;
           if (sent.gone) {
+            await unregisterEdgeDevice(edgeSub.endpoint);
             await edgeSub.unsubscribe().catch(() => {});
             setSubscribed(false);
             localStorage.removeItem("kyro_push_subscribed");
