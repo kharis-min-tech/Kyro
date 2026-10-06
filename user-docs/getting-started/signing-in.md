@@ -37,7 +37,15 @@ Demo data is kept in your browser only. Clearing your browser's storage resets i
 Tap the **eye** at the right of the password box to show what you've typed, and tap it again to hide it. It doesn't submit the form.
 :::
 
-If you see **Wrong password for this account**, check the password with the eye button and try again. If the username isn't recognised, ask your Kyro administrator to check your account on the [Users](/pages/users) page.
+Your password is checked by the Kyro server and is never stored in the app itself. If you see **Wrong username or password**, check it with the eye button and try again. Forgotten it? Ask your Kyro administrator to set a new one on the [Users](/pages/users) page.
+
+::: warning Too many wrong tries
+After 10 wrong passwords in a row from the same device, Kyro pauses sign-in from that device for 15 minutes. This protects your account from people guessing passwords.
+:::
+
+::: info Demo accounts don't work in Live
+The Demo accounts (admin, sarah.usher, james.viewer) are for practice only. Live mode uses the real accounts your administrator creates.
+:::
 
 ## Where you land
 
@@ -48,6 +56,6 @@ If you see **Wrong password for this account**, check the password with the eye 
 
 Tap **Sign out** at the bottom of the sidebar. This also forgets your mode, so the next time you open Kyro you can pick Demo or Live again.
 
-::: warning Signing in lasts for one tab
-For safety, a sign-in only lasts while that browser tab is open. If you open Kyro in a new tab or reopen your browser, you'll be asked to choose a mode and sign in again.
+::: info How long you stay signed in
+In **Live mode** you stay signed in on that device for up to 12 hours. If an administrator removes your account or changes your pages, it takes effect the next time you open a page. In **Demo mode** a sign-in lasts while that tab is open.
 :::

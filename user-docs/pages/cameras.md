@@ -2,6 +2,10 @@
 
 The Cameras page is where you add the cameras Kyro watches, and name the room (zone) each one covers.
 
+::: info Admins only
+Only **administrators** can add, change or remove cameras. Everyone else sees the list read-only.
+:::
+
 <Shot name="cameras" alt="Cameras page listing registered cameras with their zone, stream address and seat capacity, and the Add a camera section" />
 
 ## Add a camera

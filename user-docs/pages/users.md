@@ -27,10 +27,12 @@ Ticking **Seat Editor**, **Integrations** or **Users** makes that person an admi
 
 ## Passwords
 
-Tap **Password** on a user's row, then **Change password**. Enter the new password twice (at least 8 characters) and tap **Save password**.
+Tap **Password** on a user's row. Enter the new password twice (at least 8 characters) and tap **Save password**. They use it the next time they sign in.
+
+In Live mode passwords are stored securely on the Kyro server and **can't be shown**, not even to administrators. If someone forgets theirs, set a new one.
 
 ## Remove a user
 
-Tap **Remove** and confirm. In Live mode the account is deactivated, so the person can no longer sign in.
+Tap **Remove** and confirm. The person is signed out the next time they open a page, and can't sign in again.
 
-The built-in **admin** account always has full access.
+Kyro always keeps at least one administrator. You can't remove your own account, or take admin access away from the last admin.

@@ -3,10 +3,19 @@
 ## Signing in
 
 **It keeps asking me to choose Demo or Live.**
-For safety, a sign-in lasts only while that tab is open. Opening Kyro in a new tab or reopening the browser asks again. On a phone, open Kyro from the home-screen icon so it stays in one place.
+In Demo mode, a sign-in lasts only while that tab is open. In Live mode you stay signed in on that device for up to 12 hours.
 
-**I can't see a page my colleague can see.**
-Each person sees only the pages they've been given. Ask an administrator to tick the page for you on [Users](/pages/users).
+**"Too many failed sign-ins".**
+After 10 wrong passwords from one device, Kyro pauses sign-in from that device for 15 minutes. Wait, then try again, or ask an administrator to set a new password.
+
+**I was signed out suddenly.**
+An administrator may have removed your account, or your 12-hour sign-in ran out. Sign in again.
+
+**I can't see a page my colleague can see, or a link sends me back.**
+Each person can only open the pages they've been given. Ask an administrator to tick the page for you on [Users](/pages/users).
+
+**I can't approve the final count.**
+Only admins and operators can approve. Ask one of them, or ask an administrator to change your access.
 
 **How do I switch between Demo and Live?**
 Tap **Sign out** at the bottom of the sidebar and choose the other mode.

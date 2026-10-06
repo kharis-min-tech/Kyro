@@ -20,7 +20,9 @@ The stage is at the top, and each row is lettered from the front (A, B, C…).
 | 🟣 Purple | Reserved, or held while the person is on stage, in the choir or at the altar |
 | Faded, dashed | In an *ignore* area, so it isn't counted |
 
-The cards along the top show **Capacity utilisation**, **Occupied units**, **Reserved seats** and **Zones known** (the stage, altar or choir areas drawn in the [Seat Editor](/pages/seat-editor)). Use **−** and **+** to zoom the map.
+The cards along the top show **Capacity utilisation**, **Occupied units**, **Reserved seats**, **Zones known** (the stage, altar or choir areas drawn in the [Seat Editor](/pages/seat-editor)) and **AI questions** waiting for an answer. Use **−** and **+** to zoom the map.
+
+Under the room name you'll see where the map's data comes from: **LIVE** (cameras connected), **NOT CONNECTED**, or **DEMO DATA**.
 
 ## Reserve a seat
 
@@ -43,13 +45,11 @@ Marking a seat occupied or free updates the map you're looking at. It's for the 
 
 Tap **Download Manifest** under **Unit breakdown** to download a spreadsheet of every seat and its state.
 
-## Reset all seats
+## Reset seats
 
-**Sync Node** (top right) resets **every seat in this room**, clearing all your changes and reservations and going back to what the AI sees. In Live mode it asks for your password first.
+If the map has got into a muddle, tap **Reset seats** (top right). It clears any seats you marked **Occupied** or **Free** by hand and goes back to what the cameras see.
 
-::: danger Sync Node clears reservations
-Only use **Sync Node** if the map has got into a muddle. It removes every reservation in the room.
-:::
+**Reservations are kept** unless you tick **Also remove reservations**. In Live mode Kyro asks for your password first.
 
 ## AI questions on the Seat Map
 

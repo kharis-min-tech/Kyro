@@ -8,7 +8,7 @@ Manual Count is for rooms without a camera, such as the overflow room, the mothe
 
 1. In **Zone / room name**, type the room, for example *Overflow Room*.
 2. Enter the number in **People counted**. Type it, use **−** and **+**, or tap **+5**, **+10** or **+25** to count quickly.
-3. Check **Counted by**. It's filled in with your name.
+3. **Counted by** shows your name. In Live mode it's taken from your account, so counts can't be entered under someone else's name.
 4. Tap **Review & submit**.
 5. Check the number and the room, then tap **Confirm & save**.
 
@@ -24,7 +24,7 @@ If a camera is already counting that room, Kyro warns you: *"A camera is already
 
 ## Approve the final count at the end of service
 
-Drafts **don't count** towards the service total until they're approved. This stops numbers changing during the service without anyone checking them.
+Drafts **don't count** towards the service total until they're approved. This stops numbers changing during the service without anyone checking them. Only **admins and operators** can approve. Ushers see *"An admin or operator approves the final count"* instead of the button.
 
 1. Tap **Approve final count**.
 2. Check the list and the **Service total after approval**.
@@ -49,4 +49,5 @@ Editing an approved count turns it back into a draft, so it has to be approved a
 - Room names aren't case-sensitive: *overflow room* and *Overflow Room* are the same room.
 - In **Live mode**, when an usher saves a count, leaders who have [turned on notifications](/guides/phone-alerts) get an alert on their phone, for example *"📋 Overflow Room counted: 64 people, counted by Grace"*. If the room has a seat capacity, the alert warns when it's filling up or over capacity. Approving the final count sends *"✅ Final count approved"*.
 - The person who saves or approves a count doesn't get an alert about it. They can already see it on screen.
-- Counts are saved on the device that entered them. Approve on the same device the counts were entered on.
+- **Counts are shared in Live mode.** Every usher's phone adds to the same list, and everyone sees it update within about 10 seconds. The AI Count headline and the Integrations send include everyone's approved counts.
+- Ushers can remove their own drafts. Removing an approved count needs an admin or operator.
