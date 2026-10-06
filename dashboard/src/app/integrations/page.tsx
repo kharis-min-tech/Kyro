@@ -160,6 +160,39 @@ export default function IntegrationsPage() {
     setSending(mode);
     setResult(null);
     const payload = buildPayload(mode === "test");
+    const okMsg = mode === "test"
+      ? "Test payload accepted by the receiver"
+      : "End-of-service payload sent";
+
+    // Preferred path: the Cloudflare Worker posts server-side, so the
+    // receiver doesn't need to allow CORS (Slack, Zapier, Google Apps
+    // Script, Discord… don't). If the relay isn't there (local `next dev`,
+    // NAS build) we fall through to a direct browser POST below.
+    try {
+      const relay = await fetch("/api/relay/webhook", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, secret: cfg.secret, payload }),
+      });
+      const isJson = (relay.headers.get("content-type") ?? "").includes("application/json");
+      if (isJson && relay.status !== 404) {
+        const data = await relay.json() as {
+          relayed?: boolean; ok?: boolean; status?: number; statusText?: string; body?: string; error?: string;
+        };
+        if (data.relayed && data.ok) {
+          setResult({ ok: true, msg: `${okMsg} (HTTP ${data.status})` });
+        } else if (data.relayed) {
+          // Skip HTML error pages — only short text/JSON bodies help here.
+          const detail = data.body && !data.body.trimStart().startsWith("<") ? ` — ${data.body.slice(0, 160)}` : "";
+          setResult({ ok: false, msg: `Receiver returned ${data.status} ${data.statusText ?? ""}${detail}` });
+        } else {
+          setResult({ ok: false, msg: data.error ?? `Relay error (${relay.status})` });
+        }
+        setSending(null);
+        return;
+      }
+    } catch { /* no relay reachable — use direct POST */ }
+
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (cfg.secret.trim()) headers["X-Kyro-Secret"] = cfg.secret.trim();
@@ -175,9 +208,7 @@ export default function IntegrationsPage() {
       if (!res.ok) {
         setResult({ ok: false, msg: `Receiver returned ${res.status} ${res.statusText}` });
       } else {
-        setResult({ ok: true, msg: mode === "test"
-          ? "Test payload accepted by the receiver"
-          : "End-of-service payload sent" });
+        setResult({ ok: true, msg: okMsg });
       }
     } catch (e: unknown) {
       // Browser swallows CORS failures as a bare TypeError without details.

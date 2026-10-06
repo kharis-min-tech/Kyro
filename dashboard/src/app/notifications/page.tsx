@@ -101,6 +101,7 @@ export default function NotificationsPage() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function syncRulesToBackend(warn: number, crit: number, offline: boolean) {
+    if (!API_URL) return; // thresholds stay in localStorage without a backend
     try {
       const stored = localStorage.getItem("kyro_token");
       const real   = localStorage.getItem("kyro_real_token");
@@ -158,26 +159,16 @@ export default function NotificationsPage() {
 
   async function handleTest() {
     setTestSent(false);
-    await push.sendTest();
-    if (!push.error) setTestSent(true);
+    // sendTest reports its own outcome — push.error here would still be the
+    // value from before this render, so it can't be trusted.
+    if (await push.sendTest()) setTestSent(true);
   }
 
   async function handleDemoAlerts() {
     setDemoFiring(true);
     setDemoMsg(null);
     try {
-      // Get a real token first
-      const stored = localStorage.getItem("kyro_token");
-      const real   = localStorage.getItem("kyro_real_token");
-      const token  = (stored && !stored.includes("demo_signature")) ? stored : real;
-      if (!token) throw new Error("Not authenticated — enable notifications first");
-
-      const res = await fetch(`${API_URL}/api/v1/push/demo-alerts`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed");
-      setDemoMsg("🔔 Sending 5 demo alerts over the next 10 seconds — minimise this tab to see them");
+      setDemoMsg(await push.sendDemo());
     } catch (e: unknown) {
       setDemoMsg(`Error: ${e instanceof Error ? e.message : "unknown"}`);
     } finally {
@@ -230,7 +221,9 @@ export default function NotificationsPage() {
                     {push.permission === "denied"
                       ? "Blocked — reset in browser settings"
                       : isEnabled
-                      ? "You'll get alerts even when this tab is closed"
+                      ? (push.mode === "local"
+                          ? "Alerts show while Kyro is open on this device"
+                          : "You'll get alerts even when this tab is closed")
                       : "Enable to receive overcrowding and camera alerts"}
                   </p>
                 </div>
@@ -278,6 +271,18 @@ export default function NotificationsPage() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Honest about delivery when no push sender is reachable */}
+        {push.supported && push.mode === "local" && (
+          <div className="rounded-2xl p-4 mb-6 flex items-start gap-3"
+            style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+            <Info size={16} className="text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-gray-400 leading-relaxed">
+              No push server is reachable from this build, so alerts only appear while Kyro is
+              open. Lock-screen alerts start working as soon as the push server is configured.
+            </p>
           </div>
         )}
 

@@ -11,16 +11,31 @@
   //   2. That we're deploying a bundle of static files produced by
   //      `next build` (with output: 'export'), located at dashboard/out.
   //
-  // Workers Static Assets requires no runtime script — the `assets`
-  // block alone is enough to serve the files. SPA 404-handling returns
+  // SPA 404-handling returns
   // index.html for any unknown path, which Next.js's static export
   // relies on for client-side routing (e.g. navigating from /seating
   // to /attendance without a full page reload).
 
   "name": "kyrokharis",
   "compatibility_date": "2026-10-01",
+
+  // A small Worker script now runs in front of the assets, but ONLY for
+  // /api/* (run_worker_first) — it relays Integrations webhooks
+  // server-side (no CORS) and sends real Web Push notifications. Every
+  // other path is still served straight from the static export.
+  "main": "./worker/index.js",
   "assets": {
     "directory": "./dashboard/out",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+
+  // VAPID public key is public by design. The matching private key is a
+  // secret — set it once with:  npx wrangler secret put VAPID_PRIVATE_KEY
+  // (or Cloudflare dashboard → Workers → kyrokharis → Settings → Variables).
+  "vars": {
+    "VAPID_PUBLIC_KEY": "BOY5WhHRwx4ICdijWbbp-Us0WZYDXXAE3T3dS2HpjnV0RMHuaPC1YMRn1zxsiwFFDofA9uF4O4erDCY16RLKLMU",
+    "VAPID_SUBJECT": "mailto:admin@kyro.app"
   }
 }

@@ -6,15 +6,30 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type PermissionState = "default" | "granted" | "denied" | "unsupported";
 
+/**
+ * How notifications reach this device:
+ *  - "server": FastAPI backend (NEXT_PUBLIC_API_URL) stores the subscription
+ *    and pushes on real capacity / camera events.
+ *  - "edge":   Cloudflare Worker (worker/index.js) sends real Web Push —
+ *    lock screen / app closed works — for test + demo alerts.
+ *  - "local":  no push sender reachable; the service worker shows the
+ *    notification itself, so it only fires while Kyro is open.
+ */
+export type PushMode = "server" | "edge" | "local";
+
 export interface PushState {
   supported:   boolean;
   permission:  PermissionState;
   subscribed:  boolean;
   loading:     boolean;
   error:       string | null;
+  mode:        PushMode;
   subscribe:   (opts?: { warnThreshold?: number; critThreshold?: number; notifyOffline?: boolean }) => Promise<void>;
   unsubscribe: () => Promise<void>;
-  sendTest:    () => Promise<void>;
+  /** Resolves true when the test notification was handed off successfully. */
+  sendTest:    () => Promise<boolean>;
+  /** Fires the sequence of sample alerts; resolves to a status message. */
+  sendDemo:    () => Promise<string>;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -76,6 +91,43 @@ async function fetchVapidKey(): Promise<string> {
   return (await res.json()).publicKey as string;
 }
 
+/** VAPID key from the Cloudflare Worker, or null when no Worker is deployed
+ *  (local `next dev`, NAS build) or it has no keys configured. */
+async function fetchEdgeVapidKey(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/push/vapid-public-key", { cache: "no-store" });
+    if (!res.ok || !(res.headers.get("content-type") ?? "").includes("application/json")) return null;
+    const key = (await res.json()).publicKey;
+    return typeof key === "string" && key ? key : null;
+  } catch {
+    return null;
+  }
+}
+
+async function edgeSend(sub: PushSubscription, kind: "test" | "demo"): Promise<{ ok: boolean; gone?: boolean; error?: string }> {
+  const res = await fetch("/api/push/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subscription: sub.toJSON(), kind }),
+  });
+  if (res.ok) return { ok: true };
+  const data = await res.json().catch(() => ({} as { error?: string; gone?: boolean }));
+  return { ok: false, gone: res.status === 410 || data.gone === true, error: data.error ?? `Push failed (${res.status})` };
+}
+
+// `vibrate` and `requireInteraction` are valid Notification options on real
+// browsers but missing from the DOM lib's NotificationOptions type.
+type RichNotificationOptions = NotificationOptions & { vibrate?: number[]; requireInteraction?: boolean };
+
+const LOCAL_DEMO_ALERTS: { title: string; body: string; level: string; url: string }[] = [
+  { title: "⚠️ Main Floor filling up",   body: "82% of capacity (246 / 300)", level: "warning",  url: "/attendance" },
+  { title: "🚨 Balcony overcrowded",      body: "93% of capacity (112 / 120)", level: "critical", url: "/attendance" },
+  { title: "⚠️ Overflow Room filling up", body: "80% of capacity (64 / 80)",   level: "warning",  url: "/attendance" },
+  { title: "🚨 Main Floor overcrowded",   body: "91% of capacity (273 / 300)", level: "critical", url: "/attendance" },
+  { title: "⚠️ Stadium filling up",       body: "81% of capacity (810 / 1000)", level: "warning", url: "/attendance" },
+  { title: "🎭 Kyro has a question",      body: "Someone moved toward the front — were they ushered?", level: "review", url: "/seating" },
+];
+
 async function registerWithBackend(
   sub: PushSubscription,
   opts: { warnThreshold: number; critThreshold: number; notifyOffline: boolean },
@@ -132,6 +184,7 @@ export function usePushNotifications(): PushState {
   const [subscribed, setSubscribed] = useState(false);
   const [loading,    setLoading]    = useState(false);
   const [error,      setError]      = useState<string | null>(null);
+  const [mode,       setMode]       = useState<PushMode>(API_URL ? "server" : "local");
 
   // On mount: detect support, read permission, and check if already subscribed
   useEffect(() => {
@@ -142,6 +195,10 @@ export function usePushNotifications(): PushState {
     }
     setSupported(true);
     setPermission(Notification.permission as PermissionState);
+
+    if (!API_URL) {
+      fetchEdgeVapidKey().then((k) => setMode(k ? "edge" : "local"));
+    }
 
     // Use navigator.serviceWorker.ready so we wait for the SW to be fully active
     navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -183,11 +240,31 @@ export function usePushNotifications(): PushState {
       setPermission(perm as PermissionState);
       if (perm !== "granted") throw new Error("Permission denied — please allow notifications");
 
-      // No backend configured: skip Web Push subscription entirely. We'll
-      // show in-app / PWA notifications via the Notification API when
-      // things happen within Kyro. (Locked-phone/closed-app notifications
-      // need a server to send them — that requires a backend.)
+      // No FastAPI backend: use the Cloudflare Worker as the push sender
+      // when it's deployed, so notifications reach a locked phone / closed
+      // app. Subscription lives only in this browser — the Worker is
+      // stateless and receives it with each send request.
       if (!API_URL) {
+        const edgeKey = await fetchEdgeVapidKey();
+        if (edgeKey) {
+          const existing = await reg.pushManager.getSubscription();
+          // A subscription made with a different key can't be reused —
+          // subscribe() would throw InvalidStateError.
+          if (existing) await existing.unsubscribe().catch(() => {});
+          const pushSub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(edgeKey),
+          });
+          setMode("edge");
+          setSubscribed(true);
+          localStorage.setItem("kyro_push_subscribed", "1");
+          const sent = await edgeSend(pushSub, "test");
+          if (!sent.ok) throw new Error(sent.error ?? "Subscribed, but the welcome push failed");
+          return;
+        }
+
+        // No push sender reachable at all: local notifications only.
+        setMode("local");
         setSubscribed(true);
         localStorage.setItem("kyro_push_subscribed", "1");
         try {
@@ -254,11 +331,25 @@ export function usePushNotifications(): PushState {
     }
   }, []);
 
-  const sendTest = useCallback(async () => {
+  const sendTest = useCallback(async (): Promise<boolean> => {
     setLoading(true);
     setError(null);
     try {
       const reg = await getRegistration();
+
+      if (!API_URL) {
+        const edgeSub = await reg.pushManager.getSubscription();
+        if (edgeSub) {
+          const sent = await edgeSend(edgeSub, "test");
+          if (sent.ok) return true;
+          if (sent.gone) {
+            await edgeSub.unsubscribe().catch(() => {});
+            setSubscribed(false);
+            localStorage.removeItem("kyro_push_subscribed");
+          }
+          throw new Error(sent.error);
+        }
+      }
 
       // No backend: show a LOCAL notification via the service worker.
       // This appears on the phone as a real system notification (lock-screen
@@ -271,10 +362,7 @@ export function usePushNotifications(): PushState {
         if (Notification.permission !== "granted") {
           throw new Error("Permission denied — click Turn on first");
         }
-        // `vibrate` and `requireInteraction` are valid Notification options
-        // on real browsers but omitted from the DOM lib's NotificationOptions
-        // type. Cast to pass through without widening the signature.
-        const opts: NotificationOptions & { vibrate?: number[]; requireInteraction?: boolean } = {
+        const opts: RichNotificationOptions = {
           body: "Nice — notifications are working on this device.",
           icon:  "/icon-192.png",
           badge: "/icon-badge.png",
@@ -283,7 +371,7 @@ export function usePushNotifications(): PushState {
           requireInteraction: false,
         };
         await reg.showNotification("Kyro test notification", opts);
-        return;
+        return true;
       }
 
       const pushSub = await reg.pushManager.getSubscription();
@@ -304,16 +392,52 @@ export function usePushNotifications(): PushState {
             { method: "POST", headers: freshHeaders },
           );
           if (!retry.ok) throw new Error((await retry.json().catch(() => ({}))).detail ?? "Test failed");
-          return;
+          return true;
         }
         throw new Error((await res.json().catch(() => ({}))).detail ?? "Test push failed");
       }
+      return true;
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Test failed");
+      return false;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  return { supported, permission, subscribed, loading, error, subscribe, unsubscribe, sendTest };
+  const sendDemo = useCallback(async (): Promise<string> => {
+    const reg = await getRegistration();
+
+    if (API_URL) {
+      const send = async () => fetch(`${API_URL}/api/v1/push/demo-alerts`, {
+        method: "POST", headers: await authHeader(),
+      });
+      let res = await send();
+      if (res.status === 401) { localStorage.removeItem("kyro_real_token"); res = await send(); }
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ?? "Failed to queue demo alerts");
+      return "🔔 Sending demo alerts over the next ~10 seconds — lock your phone or minimise this tab to see them";
+    }
+
+    const edgeSub = await reg.pushManager.getSubscription();
+    if (edgeSub) {
+      const sent = await edgeSend(edgeSub, "demo");
+      if (!sent.ok) throw new Error(sent.error);
+      return "🔔 6 alerts arriving over the next ~12 seconds — lock your phone or minimise this tab to see them";
+    }
+
+    if (Notification.permission !== "granted") throw new Error("Turn notifications on first");
+    LOCAL_DEMO_ALERTS.forEach((a, i) => {
+      setTimeout(() => {
+        const opts: RichNotificationOptions = {
+          body: a.body, icon: "/icon-192.png", badge: "/icon-badge.png",
+          tag: `kyro-demo-${i}`, data: { url: a.url, level: a.level },
+          vibrate: [200, 100, 200], requireInteraction: a.level === "critical" || a.level === "review",
+        };
+        reg.showNotification(a.title, opts).catch(() => {});
+      }, i * 2000);
+    });
+    return "🔔 6 alerts over the next ~12 seconds — keep Kyro open (lock-screen delivery needs the push server)";
+  }, []);
+
+  return { supported, permission, subscribed, loading, error, mode, subscribe, unsubscribe, sendTest, sendDemo };
 }
