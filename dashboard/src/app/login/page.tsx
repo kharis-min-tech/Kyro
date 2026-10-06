@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
-import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon } from "lucide-react";
+import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/lib/theme";
 
 const HARDCODED_ACCOUNTS = [
@@ -121,6 +121,7 @@ export default function LoginPage() {
   const [screen, setScreen]       = useState<Screen>("landing");
   const [user, setUser]           = useState("");
   const [pass, setPass]           = useState("");
+  const [showPass, setShowPass]   = useState(false);
   const [localError, setLocalError] = useState("");
   const [accounts, setAccounts]   = useState(HARDCODED_ACCOUNTS);
 
@@ -458,10 +459,20 @@ export default function LoginPage() {
 
           <div className="flex flex-col gap-1">
             <label className="text-xs" style={{ color: "var(--text-muted)" }}>Password</label>
-            <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} required
-              autoComplete="current-password"
-              className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)" }} />
+            <div className="relative">
+              <input type={showPass ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} required
+                autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
+                className="w-full rounded-lg pl-3 pr-11 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                style={{ background: "var(--bg-base)", border: "1px solid var(--border-subtle)" }} />
+              {/* type="button" so tapping it never submits the form */}
+              <button type="button" onClick={() => setShowPass((v) => !v)}
+                aria-label={showPass ? "Hide password" : "Show password"} aria-pressed={showPass}
+                title={showPass ? "Hide password" : "Show password"}
+                className="absolute inset-y-0 right-0 w-10 flex items-center justify-center rounded-r-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                style={{ color: "var(--text-muted)" }}>
+                {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
           </div>
 
           {(localError || error) && (
