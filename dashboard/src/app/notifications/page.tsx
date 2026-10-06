@@ -482,8 +482,8 @@ export default function NotificationsPage() {
               <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
                 If your phone is off, alerts wait up to 24 hours and arrive when it's back on</li>
               <li className="flex items-start gap-2"><AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
-                Camera alerts (room capacity, camera offline, AI questions) start once the camera system is connected —
-                until then they only show while Kyro is open</li>
+                Camera alerts (free seats, room capacity, camera offline, AI questions) start once the camera system is
+                connected — until then the seat alerts you see in Demo are simulated by the open app and stop when it&apos;s closed</li>
             </ul>
           </div>
         )}
@@ -498,8 +498,8 @@ export default function NotificationsPage() {
                 <p className="text-sm font-semibold text-white">Fire demo alerts</p>
               </div>
               <p className="text-xs text-gray-500">
-                Sends 5 realistic alerts from the demo cameras — overcrowding warnings and critical alerts.
-                Minimise this tab first so you can see the desktop notifications pop up.
+                Sends 7 realistic alerts — overcrowding warnings, an AI question and a free seat. They come from the push server, so they reach a locked phone too.
+                Press it, then lock your phone or minimise this tab.
               </p>
             </div>
             <div className="px-5 py-4 flex items-center justify-between gap-4">
@@ -510,6 +510,7 @@ export default function NotificationsPage() {
                 <span>🚨 Main Floor overcrowded (91%)</span>
                 <span>⚠️  Stadium filling up (81%)</span>
                 <span>🎭 Kyro question — someone moved toward the front</span>
+                <span>🪑 Seat A12 is free — Main Floor</span>
               </div>
               <button
                 onClick={handleDemoAlerts}

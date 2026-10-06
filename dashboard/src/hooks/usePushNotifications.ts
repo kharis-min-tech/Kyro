@@ -131,6 +131,7 @@ const LOCAL_DEMO_ALERTS: { title: string; body: string; level: string; url: stri
   { title: "🚨 Main Floor overcrowded",   body: "91% of capacity (273 / 300)", level: "critical", url: "/attendance" },
   { title: "⚠️ Stadium filling up",       body: "81% of capacity (810 / 1000)", level: "warning", url: "/attendance" },
   { title: "🎭 Kyro has a question",      body: "Someone moved toward the front — were they ushered?", level: "review", url: "/seating" },
+  { title: "🪑 Seat A12 is free — Main Floor", body: "A seat just opened up. Tap to see it on the seat map.", level: "seat", url: "/seating" },
 ];
 
 async function registerWithBackend(
@@ -438,7 +439,7 @@ export function usePushNotifications(): PushState {
     if (edgeSub) {
       const sent = await edgeSend(edgeSub, "demo");
       if (!sent.ok) throw new Error(sent.error);
-      return "🔔 6 alerts arriving over the next ~12 seconds — lock your phone or minimise this tab to see them";
+      return "🔔 7 alerts arriving over the next ~14 seconds — lock your phone or minimise this tab to see them";
     }
 
     if (Notification.permission !== "granted") throw new Error("Turn notifications on first");
@@ -452,7 +453,7 @@ export function usePushNotifications(): PushState {
         reg.showNotification(a.title, opts).catch(() => {});
       }, i * 2000);
     });
-    return "🔔 6 alerts over the next ~12 seconds — keep Kyro open (lock-screen delivery needs the push server)";
+    return "🔔 7 alerts over the next ~14 seconds — keep Kyro open (lock-screen delivery needs the push server)";
   }, []);
 
   const sendLockedTest = useCallback(async (): Promise<string> => {

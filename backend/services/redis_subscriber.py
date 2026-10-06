@@ -117,6 +117,73 @@ async def _push_review_request(camera_id: str, payload: dict) -> None:
         logger.error("Review push error: %s", exc)
 
 
+# (camera_id, seat_id) → last push time. A seat can flicker free/taken as
+# people shift; one notification per seat per few minutes is plenty.
+_SEAT_PUSH_COOLDOWN_S = 300
+_last_seat_push: dict[tuple[str, str], float] = {}
+
+
+async def _push_seat_available(camera_id: str, payload: dict) -> None:
+    """
+    Fire a push notification when a seat becomes available, so ushers and
+    leaders hear about it with the app closed / phone locked. Previously
+    seat alerts only went over the dashboard WebSocket — nobody saw them
+    unless Kyro was open on screen.
+    """
+    try:
+        import time
+        from sqlalchemy import select
+        from backend.database.push_models import PushSubscription, NotificationRule
+        from backend.database.models import Camera
+        from backend.services.push_sender import send_push
+
+        seat_id = str(payload.get("seat_id") or "")
+        if not seat_id:
+            return
+        key = (camera_id, seat_id)
+        now = time.monotonic()
+        if now - _last_seat_push.get(key, -_SEAT_PUSH_COOLDOWN_S) < _SEAT_PUSH_COOLDOWN_S:
+            return
+        _last_seat_push[key] = now
+
+        factory = _get_db_factory()
+        async with factory() as db:
+            cam = (await db.execute(select(Camera).where(Camera.camera_id == camera_id))).scalar_one_or_none()
+            where = (cam.zone_name or cam.name) if cam else camera_id
+            result = await db.execute(
+                select(PushSubscription)
+                .join(NotificationRule, NotificationRule.subscription_id == PushSubscription.id)
+                .where(
+                    NotificationRule.is_active == True,
+                    PushSubscription.is_active == True,
+                    (NotificationRule.camera_id == camera_id) |
+                    (NotificationRule.camera_id == None),
+                )
+                .distinct()
+            )
+            subs = result.scalars().all()
+
+        payload_out = {
+            "title":     f"🪑 Seat {seat_id} is free — {where}",
+            "body":      "A seat just opened up. Tap to see it on the seat map.",
+            "tag":       f"kyro-seat-{camera_id}-{seat_id}",
+            "camera_id": camera_id,
+            "level":     "seat",
+            "url":       f"/seating?camera={camera_id}",
+        }
+        loop = asyncio.get_event_loop()
+        for sub in subs:
+            # A free seat is only useful for a short while — don't deliver
+            # it hours later when a switched-off phone comes back on.
+            await loop.run_in_executor(
+                None, lambda s=sub: send_push(s.endpoint, s.p256dh, s.auth, payload_out, ttl=600)
+            )
+        logger.info("Seat push sent | camera=%s seat=%s subs=%d", camera_id, seat_id, len(subs))
+
+    except Exception as exc:
+        logger.error("Seat push error: %s", exc)
+
+
 async def _persist_memory_from_worker(camera_id: str, item: dict) -> None:
     """
     Persist a spatial memory item sent from an external worker process.
@@ -254,6 +321,8 @@ async def _subscribe_loop(redis_url: str) -> None:
                     # get notified even when the tab is closed
                     if payload.get("type") == "review_request":
                         asyncio.create_task(_push_review_request(camera_id, payload))
+                    elif payload.get("type") == "seat_available_alert":
+                        asyncio.create_task(_push_seat_available(camera_id, payload))
 
         except asyncio.CancelledError:
             logger.info("Redis subscriber cancelled")

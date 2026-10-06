@@ -27,7 +27,14 @@ if not VAPID_SUB.startswith("mailto:") and not VAPID_SUB.startswith("https://"):
     VAPID_SUB = "mailto:" + VAPID_SUB
 
 
-def send_push(endpoint: str, p256dh: str, auth: str, payload: dict[str, Any]) -> bool:
+# How long the push service holds a message for a phone that's switched off
+# or out of signal. pywebpush defaults to 0 — "deliver now or drop" — which
+# silently lost every alert sent while a phone was off.
+DEFAULT_TTL_SECONDS = 24 * 3600
+
+
+def send_push(endpoint: str, p256dh: str, auth: str, payload: dict[str, Any],
+              ttl: int = DEFAULT_TTL_SECONDS) -> bool:
     """Send a JSON push payload to one subscription. Returns True on success."""
     if not VAPID_PRIVATE_KEY:
         logger.warning("VAPID_PRIVATE_KEY not set — push notifications disabled")
@@ -46,6 +53,9 @@ def send_push(endpoint: str, p256dh: str, auth: str, payload: dict[str, Any]) ->
             data=json.dumps(payload),
             vapid_private_key=VAPID_PRIVATE_KEY,
             vapid_claims={"sub": VAPID_SUB},
+            ttl=ttl,
+            # Wake a sleeping phone now instead of batching the alert.
+            headers={"Urgency": "high"},
         )
         return True
 

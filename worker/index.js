@@ -175,6 +175,7 @@ const DEMO_MESSAGES = [
   { title: "🚨 Main Floor overcrowded",  body: "91% of capacity (273 / 300)", level: "critical", camera_id: "cam_main",     tag: "demo-4" },
   { title: "⚠️ Stadium filling up",      body: "81% of capacity (810 / 1000)", level: "warning", camera_id: "cam_stadium",  tag: "demo-5" },
   { title: "🎭 Kyro has a question",     body: "Someone moved toward the front — were they ushered?", level: "review", camera_id: "cam_main", tag: "demo-6" },
+  { title: "🪑 Seat A12 is free — Main Floor", body: "A seat just opened up. Tap to see it on the seat map.", level: "seat", url: "/seating", tag: "demo-7" },
 ];
 
 // Push services browsers actually hand out. Restricting to these keeps the
