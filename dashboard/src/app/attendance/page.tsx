@@ -10,6 +10,8 @@ import { camerasApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
+import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
+import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
 
 /**
  * Local-timezone "YYYY-MM-DD".
@@ -761,6 +763,52 @@ export default function AttendancePage() {
       .catch(() => {});
   }, [selectedDate, cameras, metric]);
 
+  // Arrival / exit times for the selected day — per-camera cumulative
+  // entry/exit counters, bucketed into time slots by <ArrivalTimes>.
+  const [arrivalSeries, setArrivalSeries] = useState<CounterPoint[][] | null>(null);
+  const [arrivalEmpty, setArrivalEmpty]   = useState("Loading…");
+  useEffect(() => {
+    const isToday_ = selectedDate.toDateString() === new Date().toDateString();
+    if (userChoseDemo()) {
+      const pts = demoCounterSeries(selectedDate, isToday_ ? 7500 : 600)
+        .filter((p) => !isToday_ || p.t <= Date.now());
+      setArrivalSeries([pts]);
+      setArrivalEmpty("No arrivals yet today — doors open at 8:30 AM in the sample.");
+      return;
+    }
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setArrivalSeries(null);
+      setArrivalEmpty("Arrival times come from the cameras' entry and exit counts. Connect the camera system to see when people arrive and leave.");
+      return;
+    }
+    const cams = cameras.filter((c) => c.location !== "queue");
+    if (cams.length === 0) { setArrivalSeries(null); setArrivalEmpty("No cameras set up yet."); return; }
+    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+    const dateStr_ = toLocalDateStr(selectedDate);
+    let cancelled = false;
+    const load = async () => {
+      const token = localStorage.getItem("kyro_token") ?? "";
+      const all = await Promise.all(cams.map((cam) =>
+        fetch(`${API_URL}/api/v1/analytics/${cam.camera_id}/history?date=${dateStr_}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+          .then((r) => (r.ok ? r.json() : []))
+          .then((rows: { timestamp: string; total_entries?: number; total_exits?: number }[]) =>
+            Array.isArray(rows)
+              ? rows.map((d) => ({ t: parseBackendTime(d.timestamp), entries: d.total_entries ?? 0, exits: d.total_exits ?? 0 }))
+              : [])
+          .catch(() => [] as CounterPoint[]),
+      ));
+      if (cancelled) return;
+      setArrivalSeries(all);
+      setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
+    };
+    load();
+    // Today keeps filling in as the backend snapshots every couple of minutes.
+    const t = isToday_ ? setInterval(load, 120_000) : undefined;
+    return () => { cancelled = true; if (t) clearInterval(t); };
+  }, [selectedDate, cameras]);
+
   const now = new Date();
   const dateStr = selectedDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
   const isToday = selectedDate.toDateString() === now.toDateString();
@@ -1018,6 +1066,11 @@ export default function AttendancePage() {
                 timestamps={chartTimestamps}
               />
             </div>
+
+            {/* When people arrive / leave — operator/admin only, like the metric selector */}
+            {hydrated && (role === "admin" || role === "operator" || inDemoMode()) && (
+              <ArrivalTimes series={arrivalSeries} emptyMessage={arrivalEmpty} isSample={userChoseDemo()} />
+            )}
 
             {/* Zone overview cards */}
             <div className="rounded-2xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>

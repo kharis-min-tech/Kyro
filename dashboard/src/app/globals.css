@@ -43,10 +43,17 @@
   --accent-indigo:     #a5b4fc;
   --accent-green:      #86efac;
   --accent-red:        #fca5a5;
+
+  /* Chart series — arrivals / exits (validated colour-blind-safe pair) */
+  --series-arrive:     #3987e5;
+  --series-leave:      #d95926;
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
+
+  --series-arrive:     #2a78d6;
+  --series-leave:      #eb6834;
 
   /* Backgrounds — inverted to a clean light palette */
   --bg-deepest:        #f3f4f6;
