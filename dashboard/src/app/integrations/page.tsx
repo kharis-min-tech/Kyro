@@ -31,6 +31,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
+import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { Webhook, Send, CheckCircle, XCircle, Loader2, Copy, Eye, EyeOff, AlertTriangle } from "lucide-react";
 
 const CARD   = "var(--bg-card)";
@@ -159,6 +160,8 @@ export default function IntegrationsPage() {
     }
     setSending(mode);
     setResult(null);
+    // Live on Cloudflare: make sure the payload has every usher's approved counts.
+    await syncTodayCounts(todayLocal());
     const payload = buildPayload(mode === "test");
     const okMsg = mode === "test"
       ? "Test payload accepted by the receiver"

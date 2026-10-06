@@ -1,5 +1,6 @@
 "use client";
 
+import { getAllowedPages, ROLE_DEFAULT_PAGES } from "@/lib/access";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -50,12 +51,9 @@ const ALL_NAV = [
 ] as const;
 
 type PageId = typeof ALL_NAV[number]["id"];
+// Which pages a user may see lives in lib/access.ts (shared with <PageGuard>).
 
-const ROLE_DEFAULT_PAGES: Record<string, PageId[]> = {
-  admin:    ALL_NAV.map((p) => p.id),
-  operator: ["attendance","manual-count","live-cameras","seating","cameras","rota","sessions","analytics","notifications"],
-  viewer:   ["seating","cameras","manual-count"],
-};
+
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Administrator", operator: "Operator", viewer: "Viewer", usher: "Usher", counter: "Counter",
@@ -65,20 +63,6 @@ const BG     = "var(--bg-base)";
 const ACTIVE = "#3730a3";
 const DIVIDER = "var(--bg-hover)";
 
-function getStoredPages(username: string, role: string): PageId[] {
-  try {
-    // Demo mode: read from demo users store
-    const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
-    const match = saved.find((u: any) => u.username === username && u.is_active);
-    if (match?.pages && Array.isArray(match.pages) && match.pages.length > 0) return match.pages as PageId[];
-  } catch {}
-  try {
-    // Real mode: read from pages-by-username store (set by admin in Users page)
-    const byUsername = JSON.parse(localStorage.getItem("kyro_user_pages_by_name") ?? "{}");
-    if (byUsername[username]?.length > 0) return byUsername[username] as PageId[];
-  } catch {}
-  return (ROLE_DEFAULT_PAGES[role] as PageId[]) ?? ["seating","cameras"];
-}
 
 // ─── Global state hooks ───────────────────────────────────────────────────────
 
@@ -174,20 +158,22 @@ export function Sidebar() {
 
   useEffect(() => {
     if (!username) return;
-    setAllowedPages(getStoredPages(username, role));
+    setAllowedPages(getAllowedPages(username, role));
   }, [username, role]);
 
   useEffect(() => {
     function onAccessChanged() {
-      if (username) setAllowedPages(getStoredPages(username, role));
+      if (username) setAllowedPages(getAllowedPages(username, role));
     }
     function onStorage(e: StorageEvent) {
-      if (e.key === "kyro_demo_users" && username) setAllowedPages(getStoredPages(username, role));
+      if (e.key === "kyro_demo_users" && username) setAllowedPages(getAllowedPages(username, role));
     }
     window.addEventListener("kyro_role_changed", onAccessChanged);
+    window.addEventListener("kyro_access_changed", onAccessChanged);
     window.addEventListener("storage", onStorage);
     return () => {
       window.removeEventListener("kyro_role_changed", onAccessChanged);
+      window.removeEventListener("kyro_access_changed", onAccessChanged);
       window.removeEventListener("storage", onStorage);
     };
   }, [username, role]);

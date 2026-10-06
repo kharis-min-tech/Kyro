@@ -9,9 +9,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { ReviewPanel } from "@/components/ui/ReviewPanel";
 import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
+import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+const userChoseDemo = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 import { Sidebar } from "@/components/layout/Sidebar";
 import type { Camera, SeatState } from "@/types";
 import type { SeatAction } from "@/components/ui/SeatMap";
@@ -659,92 +661,94 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
   );
 }
 
-// ─── Reset dialog ─────────────────────────────────────────────────────────────
-function ResetDialog({ onConfirm, onCancel }: { onConfirm: () => void; onCancel: () => void }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  if (inDemoMode()) return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.8)" }}>
-      <div className="rounded-xl p-6 w-72" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Reset All Units?</p>
-        <p style={{ fontSize: 11, color: "#6b7280", marginBottom: 20 }}>Clears all overrides and resets every seat to its AI state.</p>
-        <div className="flex gap-2">
-          <button onClick={onConfirm} className="flex-1 py-2 rounded-lg text-xs font-bold uppercase"
-            style={{ background: "#ff4d6d22", color: "#ff4d6d", border: "1px solid #ff4d6d40" }}>Reset</button>
-          <button onClick={onCancel} className="flex-1 py-2 rounded-lg text-xs"
-            style={{ background: "var(--border-subtle)", color: "#6b7280" }}>Cancel</button>
-        </div>
-      </div>
+// ─── Stream status ────────────────────────────────────────────────────────────
+// Shows what's really feeding the map (previously always "LIVE DATA STREAM
+// ACTIVE", whatever the connection).
+function StreamStatus({ connected }: { connected: boolean }) {
+  const [demo, setDemo] = useState(false);
+  useEffect(() => { setDemo(userChoseDemo()); }, []);
+  const label  = demo ? "DEMO DATA" : connected ? "LIVE" : "NOT CONNECTED";
+  const colour = demo ? "#818cf8" : connected ? GREEN : "#f87171";
+  return (
+    <div className="flex items-center gap-1.5 mt-0.5">
+      <span className={`w-1.5 h-1.5 rounded-full ${connected || demo ? "animate-pulse" : ""}`} style={{ background: colour }} />
+      <span style={{ fontSize: 9, color: colour, fontFamily: "monospace", letterSpacing: "0.1em" }}>{label}</span>
     </div>
   );
+}
+
+// ─── Reset dialog ─────────────────────────────────────────────────────────────
+// Resets the seats in ONE room back to what the cameras see. Reservations are
+// kept unless the user ticks "Also remove reservations" — previously this
+// button was labelled "Sync Node" and silently wiped every reservation.
+function ResetDialog({ zoneName, reservedCount, onConfirm, onCancel }: {
+  zoneName: string;
+  reservedCount: number;
+  onConfirm: (clearReservations: boolean) => void;
+  onCancel: () => void;
+}) {
+  const [password, setPassword] = useState("");
+  const [clearReservations, setClearReservations] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  // Demo data isn't real, so Demo mode doesn't ask for a password.
+  const needsPassword = !userChoseDemo();
 
   const submit = async () => {
+    if (!needsPassword) { onConfirm(clearReservations); return; }
     if (!password) { setError("Enter your password"); return; }
     setBusy(true); setError("");
     try {
-      // Figure out the current username from either the JWT or the saved
-      // demo session.
-      let username = "admin";
-      try {
-        const token = localStorage.getItem("kyro_token") ?? "";
-        if (token.split(".").length === 3) {
-          const payload = JSON.parse(atob(token.split(".")[1]));
-          if (payload.sub) username = payload.sub;
-        }
-      } catch { /* fall through to local check */ }
-      const stored = localStorage.getItem("kyro_demo_last_user");
-      if (stored) username = stored;
-
-      // Without a backend we validate against the same local-user table the
-      // login screen uses. Fall back to the hardcoded built-in credentials
-      // (admin/Kharis2024!, sarah.usher/Sarah@2024!, james.viewer/James@2024!)
-      // so Reset works in local-only mode where there's nothing to call.
-      const HARDCODED: Record<string, string> = {
-        admin: "Kharis2024!", "sarah.usher": "Sarah@2024!", "james.viewer": "James@2024!",
-      };
-      const mode = localStorage.getItem("kyro_mode") ?? "demo";
-      let localOk = false;
-      try {
-        const saved = JSON.parse(localStorage.getItem(`kyro_${mode}_users`) ?? "[]");
-        const match = saved.find((u: { username: string; demo_password?: string; is_active?: boolean }) =>
-          u.username === username && u.is_active !== false);
-        if (match?.demo_password) localOk = match.demo_password === password.trim();
-      } catch {}
-      if (!localOk && HARDCODED[username]) localOk = HARDCODED[username] === password.trim();
-
-      if (localOk) {
-        onConfirm();
-        return;
+      if (isEdgeLive()) {
+        // Re-check the password on the Kyro server.
+        const username = edgeTokenPayload()?.sub ?? "";
+        const res = await fetch("/api/auth/login", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (!res.ok) throw new Error("wrong");
+      } else if (process.env.NEXT_PUBLIC_API_URL) {
+        let username = "";
+        try {
+          const b64 = (localStorage.getItem("kyro_token") ?? "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+          username = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))).sub ?? "";
+        } catch {}
+        await authApi.login(username, password);
+      } else {
+        throw new Error("no server");
       }
-      // Last resort: if there's a backend, try it too.
-      if (process.env.NEXT_PUBLIC_API_URL) {
-        const { authApi: api } = await import("@/lib/api");
-        await api.login(username, password);
-        onConfirm();
-        return;
-      }
-      throw new Error("wrong");
+      onConfirm(clearReservations);
     } catch { setError("Incorrect password"); }
     finally { setBusy(false); }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.8)" }}>
-      <div className="rounded-xl p-6 w-72" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
-        <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", marginBottom: 8 }}>Reset All Units</p>
-        <input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-primary)", fontSize: 11, padding: "8px 10px", borderRadius: 6, width: "100%", marginBottom: 8, outline: "none" }} />
-        {error && <p style={{ fontSize: 10, color: "#ff4d6d", marginBottom: 8 }}>{error}</p>}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }}>
+      <div className="rounded-xl p-6 w-full max-w-sm" style={{ background: CARD2, border: `1px solid ${BORDER}` }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)", marginBottom: 6 }}>Reset seats in {zoneName}?</p>
+        <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 14, lineHeight: 1.5 }}>
+          Clears any seats you marked Occupied or Free by hand and goes back to what the cameras see.
+        </p>
+        <label className="flex items-start gap-2 mb-4 cursor-pointer" style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          <input type="checkbox" checked={clearReservations} onChange={(e) => setClearReservations(e.target.checked)} className="mt-0.5" />
+          <span>
+            Also remove reservations{reservedCount > 0 ? ` (${reservedCount})` : ""}
+            <span style={{ display: "block", fontSize: 11, color: "var(--text-faint)" }}>Leave unticked to keep reserved seats.</span>
+          </span>
+        </label>
+        {needsPassword && (
+          <input type="password" placeholder="Your password" value={password} onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()} autoComplete="current-password"
+            style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-primary)", fontSize: 12, padding: "8px 10px", borderRadius: 6, width: "100%", marginBottom: 8, outline: "none" }} />
+        )}
+        {error && <p style={{ fontSize: 11, color: "#ff4d6d", marginBottom: 8 }}>{error}</p>}
         <div className="flex gap-2">
-          <button onClick={submit} disabled={busy} className="flex-1 py-2 rounded-lg text-xs font-bold uppercase"
+          <button onClick={submit} disabled={busy} className="flex-1 py-2 rounded-lg text-xs font-bold"
             style={{ background: "#ff4d6d22", color: "#ff4d6d", border: "1px solid #ff4d6d40", opacity: busy ? 0.5 : 1 }}>
-            {busy ? "…" : "Reset"}
+            {busy ? "Checking…" : "Reset seats"}
           </button>
           <button onClick={onCancel} className="flex-1 py-2 rounded-lg text-xs"
-            style={{ background: "var(--border-subtle)", color: "#6b7280" }}>Cancel</button>
+            style={{ background: "var(--border-subtle)", color: "var(--text-tertiary)" }}>Cancel</button>
         </div>
       </div>
     </div>
@@ -836,14 +840,17 @@ function CameraSeatView({ camera }: { camera: Camera }) {
     setSelectedSeat(null);
   }, [camera.camera_id]);
 
-  const handleReset = useCallback(async () => {
+  const handleReset = useCallback(async (clearReservations: boolean) => {
     if (inDemoMode()) {
       localStorage.removeItem(`kyro_seat_overrides_${camera.camera_id}`);
-      localStorage.removeItem(`kyro_demo_reserved_${camera.camera_id}`);
+      if (clearReservations) localStorage.removeItem(`kyro_demo_reserved_${camera.camera_id}`);
       window.dispatchEvent(new CustomEvent("kyro_demo_reset", { detail: { cameraId: camera.camera_id } }));
-    } else {
+    } else if (clearReservations) {
+      // Server-side full reset (seat states and reservations).
       await seatsResetApi.fullReset(camera.camera_id).catch(console.error);
     }
+    // Hand corrections are local; clearing them and reloading brings back
+    // whatever reservations are still stored.
     setOverrides({}); setLoadedId(null); setSelectedSeat(null); setShowReset(false);
   }, [camera.camera_id]);
 
@@ -855,7 +862,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
         <div className="flex items-center gap-3 mb-6">
           <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: GREEN }} />
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>{camera.zone_name ?? camera.name}</h2>
-          <span style={{ fontSize: 10, color: GREEN, fontFamily: "monospace" }}>LIVE DATA STREAM ACTIVE</span>
+          <StreamStatus connected={connected} />
         </div>
         <div className="rounded-xl p-8 flex flex-col items-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <p style={{ fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
@@ -876,7 +883,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   const reserved  = countable.filter(s => s.state === "reserved").length;
   const onStage   = countable.filter(s => s.state === "rota_hold").length;
   const cap       = camera.zone_capacity || countable.length || 1;
-  const utilPct  = Math.round((occupied / cap) * 100);
+  const utilPct  = Math.round((occupied / cap) * 1000) / 10;
 
   return (
     <div className="flex-1 flex flex-col overflow-auto" style={{ background: BG }}>
@@ -888,20 +895,14 @@ function CameraSeatView({ camera }: { camera: Camera }) {
               {camera.zone_name ?? camera.name} / {camera.location ?? "Zone"}
             </h2>
           </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: GREEN }} />
-            <span style={{ fontSize: 9, color: GREEN, fontFamily: "monospace", letterSpacing: "0.1em" }}>LIVE DATA STREAM ACTIVE</span>
-          </div>
+          <StreamStatus connected={connected} />
         </div>
         <div className="flex items-center gap-3">
-          <div style={{ fontSize: 9, color: "var(--text-faint)", textAlign: "right" }}>
-            <div>SYSTEM LATENCY</div>
-            <div style={{ color: GREEN, fontFamily: "monospace", fontWeight: 700 }}>12ms</div>
-          </div>
           <button onClick={() => setShowReset(true)}
-            className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider transition-opacity hover:opacity-80"
-            style={{ background: `${GREEN}15`, color: GREEN, border: `1px solid ${GREEN}40`, letterSpacing: "0.1em" }}>
-            Sync Node
+            title="Clear hand corrections and go back to what the cameras see"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
+            style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: `1px solid ${BORDER}` }}>
+            <RotateCcw size={12} /> Reset seats
           </button>
         </div>
       </div>
@@ -909,11 +910,13 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       <div className="flex-1 overflow-auto p-3 sm:p-5 flex flex-col gap-4 sm:gap-5">
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <StatCard label="Capacity Utilization" value={`${utilPct}.${Math.abs(utilPct % 10)}%`} change="+2.1%" />
+          <StatCard label="Capacity Utilization" value={`${utilPct}%`} sub={`${occupied} of ${cap} seats`} />
           <StatCard label="Occupied Units" value={occupied.toString()} sub={`of ${cap}`} valueColour="#ff4d6d" />
           <StatCard label="Reserved Seats" value={reserved.toString()} sub="Reserved" valueColour="#9b5de5" />
           <ZonesBadge zones={zones} />
-          <StatCard label="Anomaly Alerts" value="00" sub="Secure" />
+          <StatCard label="AI Questions" value={reviews.length.toString()}
+            sub={reviews.length ? "Waiting for an answer" : "None waiting"}
+            valueColour={reviews.length ? "#f59e0b" : undefined} />
         </div>
 
         {/* Spatial monitor */}
@@ -988,7 +991,10 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       </div>
 
       <ReviewPanel reviews={reviews} cameraId={camera.camera_id} onDismiss={dismissReview} />
-      {showReset && <ResetDialog onConfirm={handleReset} onCancel={() => setShowReset(false)} />}
+      {showReset && (
+        <ResetDialog zoneName={camera.zone_name ?? camera.name} reservedCount={reserved}
+          onConfirm={handleReset} onCancel={() => setShowReset(false)} />
+      )}
     </div>
   );
 }

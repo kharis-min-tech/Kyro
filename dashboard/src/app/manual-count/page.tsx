@@ -19,8 +19,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
-import { isLiveMode } from "@/lib/liveMode";
-import { notifyManualCount } from "@/lib/edgePush";
+import { fetchSharedCounts, saveSharedCount, removeSharedCount, approveSharedCounts, usesSharedCounts } from "@/lib/manualCountsShared";
 import { Users, Minus, Plus, CheckCircle, AlertTriangle, Trash2, Pencil, ClipboardCheck, Lock } from "lucide-react";
 
 // Mode-scoped so a Demo-mode count never surfaces in a Live webhook send
@@ -92,12 +91,34 @@ export default function ManualCountPage() {
   const [status,     setStatus]     = useState<{ ok: boolean; msg: string } | null>(null);
   const [approving,  setApproving]  = useState(false);
 
-  useEffect(() => {
-    setHistory(loadCounts());
-    try { setCountedBy(localStorage.getItem("kyro_demo_last_user") ?? ""); } catch {}
-  }, []);
+  // Live on the Cloudflare build: counts are shared through the Kyro server,
+  // so every usher's phone adds to one total. Otherwise they stay on this device.
+  const [shared, setShared]         = useState(false);
+  const [canApprove, setCanApprove] = useState(true);
+  const [saving, setSaving]         = useState(false);
 
   const sessionId = currentSessionId();
+
+  const refreshShared = useCallback(async () => {
+    try {
+      const data = await fetchSharedCounts(sessionId);
+      setHistory(data.counts as ManualCount[]);
+      setCanApprove(data.can_approve);
+    } catch (e: unknown) {
+      setStatus({ ok: false, msg: e instanceof Error ? e.message : "Couldn't load counts" });
+    }
+  }, [sessionId]);
+
+  useEffect(() => {
+    const useShared = usesSharedCounts();
+    setShared(useShared);
+    try { setCountedBy(localStorage.getItem("kyro_demo_last_user") ?? ""); } catch {}
+    if (!useShared) { setHistory(loadCounts()); return; }
+    refreshShared();
+    // Pick up other ushers' counts as they come in.
+    const t = setInterval(refreshShared, 10_000);
+    return () => clearInterval(t);
+  }, [refreshShared]);
 
   // Is this zone already being counted by an active camera?
   const cameraCountingThisZone = zone.trim() && cameras.some(
@@ -107,9 +128,35 @@ export default function ManualCountPage() {
   // Is there already a manual count for this zone+session?
   const existing = history.find((h) => h.zone.toLowerCase() === zone.toLowerCase() && h.session_id === sessionId);
 
-  const commit = useCallback(() => {
+  const commit = useCallback(async () => {
     if (!zone.trim()) return;
     const trimmed = zone.trim();
+    const done = (msgZone: string, msgCount: number) => {
+      setConfirming(false);
+      setEditingId(null);
+      setStatus({ ok: true, msg: existing ? `Updated: ${msgZone} → ${msgCount}` : `Saved: ${msgZone} → ${msgCount}` });
+      setZone(""); setCount(0);
+      setTimeout(() => setStatus(null), 3000);
+    };
+
+    if (shared) {
+      // The server records who counted (from the signed-in account), keeps
+      // one count per zone per day, and alerts leaders' phones.
+      setSaving(true);
+      try {
+        const cap = cameras.find(
+          (c) => (c.zone_name ?? "").toLowerCase().trim() === trimmed.toLowerCase() && c.zone_capacity > 0,
+        )?.zone_capacity ?? null;
+        const res = await saveSharedCount({ date: sessionId, zone: trimmed, count, capacity: cap, camera_also_counting: !!cameraCountingThisZone });
+        await refreshShared();
+        done(res.count.zone, res.count.count);
+      } catch (e: unknown) {
+        setConfirming(false);
+        setStatus({ ok: false, msg: e instanceof Error ? e.message : "Couldn't save the count" });
+      } finally { setSaving(false); }
+      return;
+    }
+
     const all = loadCounts().filter(
       (h) => !(h.zone.toLowerCase() === trimmed.toLowerCase() && h.session_id === sessionId)
     );
@@ -132,25 +179,18 @@ export default function ManualCountPage() {
     all.unshift(record);
     saveCounts(all);
     setHistory(all);
-    // Live mode only: alert leaders' phones. Capacity comes from the
-    // camera covering the same zone, when there is one.
-    if (isLiveMode()) {
-      const cap = cameras.find(
-        (c) => (c.zone_name ?? "").toLowerCase().trim() === trimmed.toLowerCase() && c.zone_capacity > 0,
-      )?.zone_capacity ?? null;
-      notifyManualCount({ kind: "count", zone: record.zone, count: record.count, capacity: cap, counted_by: record.counted_by });
-    }
-    setConfirming(false);
-    setEditingId(null);
-    setStatus({ ok: true, msg: existing
-      ? `Updated: ${record.zone} → ${record.count}`
-      : `Saved: ${record.zone} → ${record.count}` });
-    setZone(""); setCount(0);
-    setTimeout(() => setStatus(null), 3000);
-  }, [zone, count, countedBy, sessionId, existing, cameraCountingThisZone, cameras]);
+    done(record.zone, record.count);
+  }, [zone, count, countedBy, sessionId, existing, cameraCountingThisZone, cameras, shared, refreshShared]);
 
-  function removeOne(id: string) {
+  async function removeOne(id: string) {
     if (!window.confirm("Remove this manual count? It cannot be undone.")) return;
+    if (shared) {
+      const rec = history.find((h) => h.id === id);
+      if (!rec) return;
+      try { await removeSharedCount(sessionId, rec.zone); await refreshShared(); }
+      catch (e: unknown) { setStatus({ ok: false, msg: e instanceof Error ? e.message : "Couldn't remove it" }); }
+      return;
+    }
     const next = loadCounts().filter((h) => h.id !== id);
     saveCounts(next);
     setHistory(next);
@@ -170,7 +210,21 @@ export default function ManualCountPage() {
   const draftsTotal  = drafts.reduce((s, h) => s + (h.count || 0), 0);
   const approvedTotal = approved.reduce((s, h) => s + (h.count || 0), 0);
 
-  function approveAll() {
+  async function approveAll() {
+    const approvedMsg = () => setStatus({ ok: true, msg: `Approved ${drafts.length} count${drafts.length !== 1 ? "s" : ""} for this service — total ${draftsTotal + approvedTotal}` });
+    if (shared) {
+      try {
+        await approveSharedCounts(sessionId);
+        await refreshShared();
+        setApproving(false);
+        approvedMsg();
+      } catch (e: unknown) {
+        setApproving(false);
+        setStatus({ ok: false, msg: e instanceof Error ? e.message : "Couldn't approve" });
+      }
+      setTimeout(() => setStatus(null), 4000);
+      return;
+    }
     const stamp = Math.floor(Date.now() / 1000);
     const by    = countedBy.trim() || (typeof window !== "undefined"
       ? (localStorage.getItem("kyro_demo_last_user") ?? "operator")
@@ -183,10 +237,7 @@ export default function ManualCountPage() {
     saveCounts(all);
     setHistory(all);
     setApproving(false);
-    if (isLiveMode()) {
-      notifyManualCount({ kind: "approved", count: draftsTotal + approvedTotal, counted_by: by });
-    }
-    setStatus({ ok: true, msg: `Approved ${drafts.length} count${drafts.length !== 1 ? "s" : ""} for this service — total ${draftsTotal + approvedTotal}` });
+    approvedMsg();
     setTimeout(() => setStatus(null), 4000);
   }
 
@@ -285,9 +336,16 @@ export default function ManualCountPage() {
                 value={countedBy}
                 onChange={(e) => setCountedBy(e.target.value)}
                 placeholder="Your name"
-                className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                readOnly={shared}
+                title={shared ? "Recorded from the account you're signed in with" : undefined}
+                className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 read-only:opacity-70"
                 style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}
               />
+              {shared && (
+                <p className="text-xs" style={{ color: "var(--text-faint)" }}>
+                  Recorded from your account. Counts are shared — everyone sees the same list.
+                </p>
+              )}
             </div>
 
             {/* Dedup warning */}
@@ -352,11 +410,17 @@ export default function ManualCountPage() {
                   Not yet counted toward the service total — approve at the end of service.
                 </p>
               </div>
-              <button onClick={() => setApproving(true)}
-                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium text-white sm:shrink-0"
-                style={{ background: "#16a34a" }}>
-                <ClipboardCheck size={13} /> Approve final count
-              </button>
+              {canApprove ? (
+                <button onClick={() => setApproving(true)}
+                  className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium text-white sm:shrink-0"
+                  style={{ background: "#16a34a" }}>
+                  <ClipboardCheck size={13} /> Approve final count
+                </button>
+              ) : (
+                <p className="text-xs sm:shrink-0" style={{ color: "var(--text-muted)" }}>
+                  An admin or operator approves the final count
+                </p>
+              )}
             </div>
             {drafts.map((h, i) => (
               <div key={h.id} className="px-4 sm:px-5 py-3 sm:py-4 flex items-center gap-3 sm:gap-4"
@@ -460,8 +524,10 @@ export default function ManualCountPage() {
 
         <p className="text-xs" style={{ color: "var(--text-faint)" }}>
           Drafts are saved as you enter them but only approved counts count toward
-          the service total. When Kyro is connected to the backend, both sync
-          automatically across devices.
+          the service total.{" "}
+          {shared
+            ? "In Live mode counts are shared: every usher's phone adds to the same list, and it refreshes every 10 seconds."
+            : "In Demo mode counts stay on this device."}
         </p>
       </main>
 
@@ -562,10 +628,10 @@ export default function ManualCountPage() {
                 style={{ background: "var(--bg-hover)" }}>
                 Cancel
               </button>
-              <button onClick={commit}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white"
+              <button onClick={commit} disabled={saving}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-60"
                 style={{ background: "#4f46e5" }}>
-                Confirm &amp; save
+                {saving ? "Saving…" : <>Confirm &amp; save</>}
               </button>
             </div>
           </div>

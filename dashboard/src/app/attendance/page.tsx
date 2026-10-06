@@ -11,6 +11,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
+import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
 
 /**
@@ -896,10 +897,16 @@ export default function AttendancePage() {
     }
     readManual();
     const onChange = () => readManual();
+    // Live on Cloudflare: counts are shared through the server — pull them
+    // in (the sync fires kyro_manual_counts_changed, which re-reads above).
+    const sync = () => syncTodayCounts(toLocalDateStr(new Date()));
+    sync();
+    const syncTimer = setInterval(sync, 20_000);
     window.addEventListener("kyro_manual_counts_changed", onChange);
     window.addEventListener("storage",                     onChange);
     window.addEventListener("focus",                       onChange);
     return () => {
+      clearInterval(syncTimer);
       window.removeEventListener("kyro_manual_counts_changed", onChange);
       window.removeEventListener("storage",                     onChange);
       window.removeEventListener("focus",                       onChange);

@@ -28,7 +28,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.auth.dependencies import require_jwt, require_admin_or_operator, require_jwt_or_api_key, require_jwt_header_or_query
+from backend.auth.dependencies import require_jwt, require_admin_or_operator, require_admin_role, require_jwt_or_api_key, require_jwt_header_or_query
 from backend.database.connection import get_db
 from backend.database.models import Camera
 from backend.services.pipeline_registry import pipeline_registry
@@ -150,7 +150,7 @@ async def list_cameras(
 async def create_camera(
     body: CameraCreate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_jwt),
+    _: dict = Depends(require_admin_role),
 ):
     camera = Camera(
         camera_id=f"cam-{uuid4().hex[:8]}",
@@ -182,7 +182,7 @@ async def update_camera(
     camera_id: str,
     body: CameraUpdate,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_jwt),
+    _: dict = Depends(require_admin_role),
 ):
     camera = await _get_or_404(camera_id, db)
     for field, value in body.model_dump(exclude_none=True).items():
@@ -196,7 +196,7 @@ async def update_camera(
 async def delete_camera(
     camera_id: str,
     db: AsyncSession = Depends(get_db),
-    _: dict = Depends(require_admin_or_operator),
+    _: dict = Depends(require_admin_role),
 ):
     """
     Permanently removes the camera row from the database.

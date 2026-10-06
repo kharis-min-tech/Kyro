@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/hooks/useAuth";
 import { FormEvent, useState, useEffect } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
@@ -63,8 +64,10 @@ const CAMERA_TYPES = [
 
 // ─── Registered camera card ───────────────────────────────────────────────────
 
-function CameraCard({ cam, onUpdated, onUpdate, onDelete }: {
+function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage }: {
   cam: CameraType;
+  /** Only admins can change venue hardware; everyone else sees a read-only card. */
+  canManage: boolean;
   onUpdated: () => void;
   onUpdate: (id: string, fields: Partial<CameraType>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
@@ -180,16 +183,20 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete }: {
           <>
             <div className="flex items-center gap-2 mb-1">
               <p className="text-sm font-semibold text-white">{cam.name}</p>
-              <button onClick={() => setEditing(true)} className="text-gray-600 hover:text-gray-300 transition-colors">
-                <Pencil size={12} />
-              </button>
-              <button
-                onClick={() => setConfirmDelete(true)}
-                className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
-                title="Delete camera"
-              >
-                <Trash2 size={13} />
-              </button>
+              {canManage && (
+                <>
+                  <button onClick={() => setEditing(true)} className="text-gray-600 hover:text-gray-300 transition-colors" aria-label="Edit camera">
+                    <Pencil size={12} />
+                  </button>
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    className="ml-auto text-gray-600 hover:text-red-400 transition-colors"
+                    title="Delete camera"
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </>
+              )}
             </div>
 
             {/* Delete confirmation */}
@@ -221,9 +228,11 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete }: {
               <span className="text-xs font-medium text-indigo-400">
                 {cam.zone_name || <span className="text-gray-600 italic">not set</span>}
               </span>
-              <button onClick={() => setEditing(true)} className="text-gray-600 hover:text-gray-300 transition-colors">
-                <Pencil size={11} />
-              </button>
+              {canManage && (
+                <button onClick={() => setEditing(true)} className="text-gray-600 hover:text-gray-300 transition-colors" aria-label="Edit zone">
+                  <Pencil size={11} />
+                </button>
+              )}
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-xs text-gray-600">
@@ -234,11 +243,13 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete }: {
                 )}
                 {isQueue && <span className="text-amber-600">· queue counter</span>}
               </div>
-              <button onClick={() => setShowCmd((p) => !p)}
-                className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-900 rounded-lg px-2.5 py-1">
-                <Terminal size={11} />
-                {showCmd ? "Hide command" : "Start worker"}
-              </button>
+              {canManage && (
+                <button onClick={() => setShowCmd((p) => !p)}
+                  className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 border border-indigo-900 rounded-lg px-2.5 py-1">
+                  <Terminal size={11} />
+                  {showCmd ? "Hide command" : "Start worker"}
+                </button>
+              )}
             </div>
           </>
         )}
@@ -480,6 +491,8 @@ function HelpPanel() {
 
 export default function CamerasPage() {
   const { cameras, loading, error, refresh, updateCamera, deleteCamera } = useCameras();
+  const { role } = useAuth();
+  const canManage = role === "admin";
 
   return (
     <div className="flex min-h-screen bg-gray-950 text-gray-100">
@@ -489,7 +502,7 @@ export default function CamerasPage() {
         <div className="mb-6">
           <h1 className="text-xl font-bold text-white">Cameras</h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            Add cameras and rename zones any time
+            {canManage ? "Add cameras and rename zones any time" : "The cameras Kyro is watching"}
           </p>
         </div>
 
@@ -513,13 +526,18 @@ export default function CamerasPage() {
             </p>
             <div className="flex flex-col gap-3">
               {cameras.map((cam) => (
-                <CameraCard key={cam.camera_id} cam={cam} onUpdated={refresh} onUpdate={updateCamera} onDelete={deleteCamera} />
+                <CameraCard key={cam.camera_id} cam={cam} onUpdated={refresh} onUpdate={updateCamera} onDelete={deleteCamera} canManage={canManage} />
               ))}
             </div>
           </div>
         )}
 
-        {!error && !loading && <AddCameraForm onAdded={refresh} cameraCount={cameras.length} />}
+        {!error && !loading && canManage && <AddCameraForm onAdded={refresh} cameraCount={cameras.length} />}
+        {!error && !loading && !canManage && (
+          <p className="text-xs text-gray-500 rounded-xl px-4 py-3" style={{ border: "1px solid var(--border-subtle)" }}>
+            Only administrators can add, change or remove cameras.
+          </p>
+        )}
 
         <div className="mt-4">
           <HelpPanel />

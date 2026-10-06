@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
 import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff } from "lucide-react";
 import { useTheme } from "@/lib/theme";
+import { edgeLogin } from "@/lib/edgeAuth";
 
 const HARDCODED_ACCOUNTS = [
   { username: "admin",        password: "Kharis2024!",  role: "admin",    desc: "Full access — all pages" },
@@ -123,6 +124,7 @@ export default function LoginPage() {
   const [pass, setPass]           = useState("");
   const [showPass, setShowPass]   = useState(false);
   const [localError, setLocalError] = useState("");
+  const [liveBusy, setLiveBusy]   = useState(false);
   const [accounts, setAccounts]   = useState(HARDCODED_ACCOUNTS);
 
   const signedOut = typeof window !== "undefined" && !!sessionStorage.getItem("kyro_signed_out");
@@ -187,53 +189,36 @@ export default function LoginPage() {
   async function handleLiveLogin(e: FormEvent) {
     e.preventDefault();
     setLocalError("");
-    // Cloudflare Pages has no backend to hit — validate against the same
-    // hardcoded accounts as demo, then set up a session locally.
-    const check = validateDemoLogin(user, pass);
-    if (!check.ok) {
-      setLocalError(check.reason === "no_such_user"
-        ? `No account named "${user.trim()}". Try admin, sarah.usher, or james.viewer.`
-        : "Wrong password for this account.");
-      return;
-    }
-    const trimmedUser = user.trim();
+    setLiveBusy(true);
     let resolvedRole = "viewer";
     try {
-      const saved = JSON.parse(localStorage.getItem(`kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_users`) ?? "[]");
-      const match = saved.find((u: any) => u.username === trimmedUser && u.is_active);
-      if (match) {
-        resolvedRole = match.role;
+      // Live mode always checks the password on a server — never against
+      // anything shipped in this page's code.
+      setLiveMode();
+      if (process.env.NEXT_PUBLIC_API_URL) {
+        // Self-hosted: the FastAPI backend.
+        const ok = await login(user, pass);
+        if (!ok) return;
+        try {
+          const b64 = (localStorage.getItem("kyro_token") ?? "").split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+          resolvedRole = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4))).role ?? "viewer";
+        } catch {}
       } else {
-        const hardcoded: Record<string, string> = {
-          "admin": "admin", "sarah.usher": "operator", "james.viewer": "viewer",
-        };
-        resolvedRole = hardcoded[trimmedUser] ?? "viewer";
+        // Cloudflare: the Kyro Worker (worker/accounts.js).
+        const u = await edgeLogin(user, pass);
+        resolvedRole = u.role;
       }
-    } catch {}
+    } catch (err: unknown) {
+      setLocalError(err instanceof Error ? err.message : "Sign-in failed");
+      return;
+    } finally {
+      setLiveBusy(false);
+    }
 
-    sessionStorage.removeItem("kyro_signed_out");
     sessionStorage.removeItem("kyro_live_mode");
-    const { DEMO_TOKEN } = await import("@/lib/demo");
-    localStorage.setItem("kyro_token", DEMO_TOKEN);
-    localStorage.setItem("kyro_demo_role", resolvedRole);
-    // IMPORTANT: Live login must stay in LIVE mode, not demo. Previously we
-    // called setDemoMode() here so the UI had something to show without a
-    // backend — but that made Live mode display fabricated demo numbers,
-    // which confused operators who wanted to enter real data. In live mode
-    // without a backend, pages show empty/zero state; operators enter real
-    // numbers via the Manual Count page.
-    setLiveMode();
-    localStorage.setItem("kyro_demo_last_user", trimmedUser);
-    // Session-scoped "actively signed in" marker — matches handleDemoLogin
-    // and the useAuth hook's hydrate gate so role-based access control
-    // actually sees this login as authenticated.
-    sessionStorage.setItem("kyro_active_login", "1");
-
     // Fresh Live login — wipe every bit of local demo-ish state so the
     // operator sees a true empty slate (no fake past sessions, no fake
-    // AI alerts, no fake cameras, no fake seat layouts). We leave
-    // kyro_demo_users alone because operators need admin / sarah.usher /
-    // james.viewer to log in — and the stored passwords may be custom.
+    // AI alerts, no fake cameras, no fake seat layouts).
     try {
       [
         "kyro_unanswered_reviews",
@@ -247,10 +232,9 @@ export default function LoginPage() {
         "kyro_demo_rota",
         "kyro_demo_manual_counts",
         "kyro_demo_integrations_config",
-        // reserved seats + seat overrides per camera
       ].forEach((k) => localStorage.removeItem(k));
-      // Clear per-camera reserved-seat and seat-override keys too
-      for (let i = 0; i < localStorage.length; i++) {
+      // Per-camera reserved-seat, seat-override and zone keys too
+      for (let i = localStorage.length - 1; i >= 0; i--) {
         const k = localStorage.key(i);
         if (!k) continue;
         if (k.startsWith("kyro_demo_reserved_") || k.startsWith("kyro_seat_overrides_")
@@ -482,10 +466,10 @@ export default function LoginPage() {
             </p>
           )}
 
-          <button type="submit" disabled={isLoading}
+          <button type="submit" disabled={isLoading || liveBusy}
             className="rounded-lg px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50 transition-colors"
-            style={{ background: "#4f46e5" }}>
-            {isLoading ? "Signing in…" : "Sign in"}
+            style={{ background: "#4f46e5", color: "#fff" }}>
+            {isLoading || liveBusy ? "Signing in…" : "Sign in"}
           </button>
 
           <p className="text-xs text-center" style={{ color: "var(--text-faint)" }}>

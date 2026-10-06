@@ -86,26 +86,7 @@ export async function updateEdgeThresholds(warn: number, crit: number): Promise<
   return sub ? registerEdgeDevice(sub, { warn, crit }) : false;
 }
 
-/**
- * Tell every leader's phone about a Manual Count. Only call in Live mode —
- * demo numbers must never wake real people up. The sending device is
- * excluded (the usher already sees their own count on screen).
- */
-export async function notifyManualCount(ev: {
-  kind: "count" | "approved";
-  zone?: string;
-  count: number;
-  capacity?: number | null;
-  counted_by?: string;
-}): Promise<void> {
-  if (process.env.NEXT_PUBLIC_API_URL) return; // backend deployments alert from the server
-  try {
-    const sub = await currentSubscription();
-    await fetch("/api/events/manual-count", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...ev, sender_endpoint: sub?.endpoint }),
-      keepalive: true,
-    });
-  } catch { /* best effort — the count itself is already saved */ }
+/** This device's push endpoint, so the server can skip alerting the sender. */
+export async function currentPushEndpoint(): Promise<string | undefined> {
+  return (await currentSubscription())?.endpoint;
 }

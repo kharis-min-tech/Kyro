@@ -3,10 +3,14 @@
 import { useEffect, useState, FormEvent, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { usersApi } from "@/lib/api";
+import { isEdgeLive, edgeUsersApi, edgeRefreshSession, edgeTokenPayload } from "@/lib/edgeAuth";
 import { DEMO_MODE, DEMO_USERS } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+// Accounts kept in this browser: Demo mode, or a self-hosted build that has no backend.
+// Live mode on the Cloudflare build uses the Kyro server instead (isEdgeLive).
+const localStore = () => inDemoMode() && !isEdgeLive();
 import { Eye, EyeOff, KeyRound, X, Check, Pencil } from "lucide-react";
 import type { UserResponse } from "@/types";
 
@@ -37,7 +41,9 @@ type PageId = typeof ALL_PAGES[number]["id"];
 // any "operator" page, otherwise viewer. The sidebar still uses role for nav gating.
 function pagesToRole(pages: PageId[]): "admin" | "operator" | "viewer" {
   if (pages.includes("layout-editor") || pages.includes("users") || pages.includes("integrations")) return "admin";
-  const opPages: PageId[] = ["attendance","manual-count","live-cameras","rota","sessions","analytics","notifications"];
+  // Manual Count is a viewer page (ushers enter counts; operators approve them),
+  // matching the default viewer pages below and the Kyro server's rule.
+  const opPages: PageId[] = ["attendance","live-cameras","rota","sessions","analytics","notifications"];
   if (pages.some((p) => opPages.includes(p))) return "operator";
   return "viewer";
 }
@@ -92,11 +98,9 @@ function loadDemoUsers(): DemoUser[] {
         pages: u.pages ?? (ROLE_DEFAULT_PAGES[u.role] as PageId[]) ?? ["seating","cameras"],
       }));
     }
-    // Only seed admin/sarah/james in Demo mode. Live mode starts with an
-    // empty user list — admin can add real operators here. The login page
-    // still accepts the built-in credentials via its hardcoded fallback,
-    // so you can always sign in as admin / Kharis2024! without any user
-    // records existing yet.
+    // Only seed admin/sarah/james in Demo mode. Live accounts live on a
+    // server (the FastAPI backend, or the Kyro Worker on Cloudflare) and
+    // never use these built-in demo credentials.
     const isActualDemo = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
     const defaults: DemoUser[] = isActualDemo
       ? (DEMO_USERS as UserResponse[]).map((u) => ({
@@ -161,7 +165,7 @@ const HARDCODED_ROLES: Record<string, "admin" | "operator" | "viewer"> = {
 };
 
 function readCurrentPassword(username: string): string {
-  if (!inDemoMode()) return "Stored as encrypted hash — cannot be retrieved";
+  if (!localStore()) return "Stored as encrypted hash — cannot be retrieved";
   try {
     const u = loadDemoUsers().find((u) => u.username === username);
     if (u?.demo_password) return u.demo_password;
@@ -175,7 +179,8 @@ function PasswordDialog({ username, onPasswordChanged, onClose }: {
   onClose: () => void;
 }) {
   const [showPw, setShowPw]   = useState(false);
-  const [mode, setMode]       = useState<"view" | "change">("view");
+  // Live (server) passwords are hashed and can never be shown — go straight to "change".
+  const [mode, setMode]       = useState<"view" | "change">(() => (isEdgeLive() ? "change" : "view"));
   const [newPw, setNewPw]     = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [err, setErr]         = useState<string | null>(null);
@@ -188,6 +193,16 @@ function PasswordDialog({ username, onPasswordChanged, onClose }: {
     setErr(null); setOk(null);
     if (newPw.length < 8) { setErr("Must be at least 8 characters"); return; }
     if (newPw !== confirmPw) { setErr("Passwords don't match"); return; }
+    if (isEdgeLive()) {
+      edgeUsersApi.update(username, { password: newPw })
+        .then(() => {
+          setOk("Password changed. They'll use it next time they sign in.");
+          setNewPw(""); setConfirmPw("");
+          setTimeout(() => { onPasswordChanged(); onClose(); }, 1200);
+        })
+        .catch((e: Error) => setErr(e.message));
+      return;
+    }
     try {
       const all = loadDemoUsers();
       const idx = all.findIndex((u) => u.username === username);
@@ -322,7 +337,7 @@ function PasswordDialog({ username, onPasswordChanged, onClose }: {
                 className="flex-1 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50" style={{ background: "#4f46e5" }}>
                 Save password
               </button>
-              <button onClick={() => { setMode("view"); setNewPw(""); setConfirmPw(""); setErr(null); setOk(null); }}
+              <button onClick={() => { if (isEdgeLive()) { onClose(); return; } setMode("view"); setNewPw(""); setConfirmPw(""); setErr(null); setOk(null); }}
                 className="flex-1 py-2 rounded-lg text-sm text-gray-400 hover:text-white" style={{ background: "var(--border-subtle)" }}>
                 Cancel
               </button>
@@ -350,7 +365,10 @@ function AccessEditor({ user, onSaved, onCancel }: {
     setSaving(true); setErr(null);
     try {
       const updated: DemoUser = { ...user, pages: selected, role: derivedRole };
-      if (inDemoMode()) {
+      if (isEdgeLive()) {
+        const res = await edgeUsersApi.update(user.username, { pages: selected });
+        onSaved({ ...user, ...res, pages: res.pages as PageId[] });
+      } else if (localStore()) {
         onSaved(updated);
       } else {
         const res = await usersApi.update(user.id, { role: derivedRole });
@@ -394,6 +412,8 @@ export default function UsersPage() {
   const [status, setStatus]             = useState<{ ok: boolean; msg: string } | null>(null);
   const [revealingFor, setRevealingFor] = useState<string | null>(null);
   const [editingId, setEditingId]       = useState<number | null>(null);
+  const [edgeMode, setEdgeMode]         = useState(false);
+  useEffect(() => { setEdgeMode(isEdgeLive()); }, []);
 
   const [creating, setCreating]   = useState(false);
   const [newUsername, setNewUsername] = useState("");
@@ -403,7 +423,14 @@ export default function UsersPage() {
   const newRole = pagesToRole(newPages);
 
   const loadUsers = useCallback(() => {
-    if (inDemoMode()) {
+    if (isEdgeLive()) {
+      edgeUsersApi.list()
+        .then((us) => setUsers(us.map((u) => ({ ...u, pages: u.pages as PageId[] }))))
+        .catch((e: Error) => setStatus({ ok: false, msg: e.message }))
+        .finally(() => setLoading(false));
+      return;
+    }
+    if (localStore()) {
       setUsers(loadDemoUsers().filter((u) => u.is_active));
       setLoading(false);
       return;
@@ -426,7 +453,17 @@ export default function UsersPage() {
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
     setCreating(true); setStatus(null);
-    if (inDemoMode()) {
+    if (isEdgeLive()) {
+      try {
+        await edgeUsersApi.create({ username: newUsername, password: newPassword, display_name: newDisplay || undefined, pages: newPages });
+        setNewUsername(""); setNewPassword(""); setNewDisplay(""); setNewPages(["seating","cameras"]);
+        setStatus({ ok: true, msg: `"${newUsername}" created — they can sign in now` });
+        loadUsers();
+      } catch (err: unknown) { setStatus({ ok: false, msg: err instanceof Error ? err.message : "Failed" }); }
+      finally { setCreating(false); }
+      return;
+    }
+    if (localStore()) {
       const newUser: DemoUser = {
         id: Date.now(), username: newUsername,
         display_name: newDisplay || newUsername,
@@ -453,7 +490,12 @@ export default function UsersPage() {
 
   async function handleDeactivate(id: number, username: string) {
     if (!confirm(`Remove ${username}?`)) return;
-    if (inDemoMode()) {
+    if (isEdgeLive()) {
+      try { await edgeUsersApi.remove(username); setStatus({ ok: true, msg: `${username} removed — they can no longer sign in` }); loadUsers(); }
+      catch (err: unknown) { setStatus({ ok: false, msg: err instanceof Error ? err.message : "Failed" }); }
+      return;
+    }
+    if (localStore()) {
       const all = loadDemoUsers().map((u) => u.id === id ? { ...u, is_active: false } : u);
       saveDemoUsers(all);
       setUsers(all.filter((u) => u.is_active));
@@ -465,7 +507,11 @@ export default function UsersPage() {
   }
 
   function handleAccessSaved(updated: DemoUser) {
-    if (inDemoMode()) {
+    if (isEdgeLive()) {
+      setUsers((prev) => prev.map((u) => u.username === updated.username ? updated : u));
+      // Editing your own access: pick up the new pages right away.
+      if (edgeTokenPayload()?.sub === updated.username) edgeRefreshSession();
+    } else if (localStore()) {
       const all = loadDemoUsers().map((u) => u.id === updated.id ? { ...u, role: updated.role, pages: updated.pages } : u);
       saveDemoUsers(all);
       setUsers(all.filter((u) => u.is_active));
@@ -534,7 +580,7 @@ export default function UsersPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs" style={{ color: "var(--text-muted)" }}>Password</label>
-                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required={!inDemoMode()}
+                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required={!localStore()}
                   type="password" minLength={8} placeholder="min 8 chars"
                   autoComplete="new-password"
                   className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
@@ -625,7 +671,11 @@ export default function UsersPage() {
             })}
           </div>
         )}
-        <p className="text-xs text-gray-700 mt-5">The built-in admin account always has full access.</p>
+        <p className="text-xs text-gray-700 mt-5">
+          {edgeMode
+            ? "Passwords are stored securely on the Kyro server and can't be shown. Kyro always keeps at least one administrator."
+            : "The built-in admin account always has full access."}
+        </p>
       </main>
       {revealingFor && <PasswordDialog username={revealingFor} onPasswordChanged={loadUsers} onClose={() => setRevealingFor(null)} />}
     </div>

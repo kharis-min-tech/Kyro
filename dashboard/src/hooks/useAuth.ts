@@ -21,9 +21,15 @@ interface AuthState {
   logout: () => void;
 }
 
+/** Decode a JWT payload. JWTs use base64url, which plain atob() rejects. */
+function jwtPayload(token: string): Record<string, unknown> {
+  const b64 = token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  return JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+}
+
 function decodeRole(token: string): Role {
   try {
-    const payload = JSON.parse(atob(token.split(".")[1]));
+    const payload = jwtPayload(token);
     const r = payload.role as string;
     const valid: Role[] = ["admin","operator","viewer","usher","counter"];
     if (valid.includes(r as Role)) return r as Role;
@@ -76,7 +82,7 @@ export function useAuth(): AuthState {
     // Real JWT (from a connected backend)
     if (stored && !stored.includes("demo_signature_not_verified") && stored.split(".").length === 3) {
       try {
-        const payload = JSON.parse(atob(stored.split(".")[1]));
+        const payload = jwtPayload(stored) as { sub?: string; exp?: number };
         if (payload.sub && payload.exp && payload.exp * 1000 > Date.now()) {
           setToken(stored);
           setRole(decodeRole(stored));
@@ -167,7 +173,7 @@ export function useAuth(): AuthState {
       const realRole = decodeRole(res.access_token);
       setRole(realRole);
       try {
-        const payload = JSON.parse(atob(res.access_token.split(".")[1]));
+        const payload = jwtPayload(res.access_token) as { sub?: string };
         setUsername(payload.sub ?? username);
       } catch { setUsername(username); }
       return true;

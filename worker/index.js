@@ -1,3 +1,5 @@
+import { handleAccounts } from "./accounts.js";
+
 /**
  * Kyro edge Worker — runs in front of the static dashboard on Cloudflare.
  *
@@ -22,7 +24,8 @@
  *   POST /api/push/send              { subscription, kind: "test" | "demo" }
  *   POST /api/push/register          { subscription, warn, crit, mode?, tz?, demo_auto? }
  *   POST /api/push/unregister        { endpoint }
- *   POST /api/events/manual-count    { kind, zone?, count, capacity?, counted_by?, sender_endpoint? }
+ *   /api/auth/*, /api/users*, /api/manual-counts*  → accounts.js (Live sign-in,
+ *                                    user admin, shared manual counts + their alerts)
  *
  * Registered devices live in the SUBS KV namespace, so a Manual Count
  * submitted on one phone alerts every leader who turned notifications on.
@@ -67,9 +70,10 @@ export default {
       if (url.pathname === "/api/push/unregister" && request.method === "POST") {
         return await pushUnregister(request, env);
       }
-      if (url.pathname === "/api/events/manual-count" && request.method === "POST") {
-        return await manualCountEvent(request, env, ctx);
-      }
+      const accountsRes = await handleAccounts(request, env, ctx, url, {
+        notifyCount: (body) => notifyCount(env, body),
+      });
+      if (accountsRes) return accountsRes;
       if (url.pathname.startsWith("/api/")) {
         return json({ error: "Not found" }, 404);
       }
@@ -330,16 +334,6 @@ function cleanText(v, max) {
   return String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-// Coarse per-IP limit so a misbehaving client can't flood everyone's phone.
-async function rateLimited(env, request, limit) {
-  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
-  const key = `rl:${ip}:${Math.floor(Date.now() / 60000)}`;
-  const n = parseInt((await env.SUBS.get(key)) || "0", 10);
-  if (n >= limit) return true;
-  await env.SUBS.put(key, String(n + 1), { expirationTtl: 120 });
-  return false;
-}
-
 function levelFor(fraction, warn, crit) {
   if (fraction === null) return "info";
   if (fraction >= crit) return "critical";
@@ -371,38 +365,32 @@ export function buildCountMessage(ev, sub) {
   };
 }
 
-async function manualCountEvent(request, env, ctx) {
-  if (!sameOrigin(request)) return json({ error: "Forbidden" }, 403);
-  if (!pushReady(env)) return json({ error: "Push alerts not configured on this deployment" }, 503);
-  let body;
-  try { body = await readJson(request); }
-  catch (e) { return json({ error: e.message }, e.status ?? 400); }
-
+/**
+ * Phone alerts for a Manual Count saved or approved by a signed-in user
+ * (called from accounts.js — the old public /api/events/manual-count
+ * endpoint is gone, since anyone could post fake counts to it). Goes to
+ * devices registered in Live mode only, never back to the sender.
+ */
+async function notifyCount(env, body) {
+  if (!pushReady(env)) return;
   const kind = body.kind === "approved" ? "approved" : "count";
   const count = Math.round(Number(body.count));
-  if (!Number.isFinite(count) || count < 0 || count > 1_000_000) return json({ error: "Invalid count" }, 400);
-  const zone = cleanText(body.zone, 60);
-  if (kind === "count" && !zone) return json({ error: "zone required" }, 400);
+  if (!Number.isFinite(count) || count < 0) return;
   const capRaw = Math.round(Number(body.capacity));
   const capacity = Number.isFinite(capRaw) && capRaw > 0 && capRaw <= 1_000_000 ? capRaw : null;
   const ev = {
-    kind, zone, count, capacity,
+    kind, zone: cleanText(body.zone, 60), count, capacity,
     fraction: capacity ? count / capacity : null,
     by: cleanText(body.counted_by, 40),
   };
-
-  if (await rateLimited(env, request, 30)) return json({ error: "Too many alerts — slow down" }, 429);
-
   const senderKey = typeof body.sender_endpoint === "string" ? await subKey(body.sender_endpoint) : null;
-  const subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey);
+  const subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey && s.mode !== "demo");
   const vapid = vapidFromEnv(env);
-
-  ctx.waitUntil(Promise.all(subs.map(async (s) => {
+  await Promise.all(subs.map(async (s) => {
     const res = await sendWebPush(s.subscription, buildCountMessage(ev, s), vapid).catch(() => null);
     // Phone uninstalled the app / revoked permission — forget it.
     if (res && (res.status === 404 || res.status === 410)) await env.SUBS.delete(s.key);
-  })));
-  return json({ notified: subs.length });
+  }));
 }
 
 // ─── Automatic demo alerts (cron) ───────────────────────────────────────────

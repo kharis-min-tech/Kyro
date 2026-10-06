@@ -145,6 +145,20 @@ async def require_admin_or_operator(claims: dict = Depends(require_jwt)) -> dict
     return claims
 
 
+async def require_admin_role(claims: dict = Depends(require_jwt)) -> dict:
+    """
+    Restricts a route to admins. Used for venue setup (adding, editing or
+    deleting cameras) so operators and viewers can't change the hardware
+    configuration.
+    """
+    if claims.get("role") != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access restricted — admin role required",
+        )
+    return claims
+
+
 async def require_jwt_or_api_key(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
     header_key:  Optional[str] = Security(_api_key_header),

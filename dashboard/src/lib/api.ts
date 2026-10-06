@@ -24,13 +24,16 @@ async function getRealToken(): Promise<string | null> {
       try {
         const cached = localStorage.getItem("kyro_real_token");
         if (cached) return cached;
+        // Only when a deployment deliberately configures a (low-privilege)
+        // demo account. There used to be a built-in fallback password here,
+        // which handed every Demo visitor a real backend session.
+        const demoUser = process.env.NEXT_PUBLIC_DEMO_USER;
+        const demoPass = process.env.NEXT_PUBLIC_DEMO_PASS;
+        if (!demoUser || !demoPass) return null;
         const res = await fetch(`${API_URL}/api/v1/auth/token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username: process.env.NEXT_PUBLIC_DEMO_USER ?? "kharis-tech",
-            password: process.env.NEXT_PUBLIC_DEMO_PASS ?? "Kharis2024!",
-          }),
+          body: JSON.stringify({ username: demoUser, password: demoPass }),
         });
         if (!res.ok) return null;
         const data = await res.json();

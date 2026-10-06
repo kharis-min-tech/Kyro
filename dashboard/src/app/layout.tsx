@@ -9,6 +9,7 @@ import { GlobalReviewOverlay } from "@/components/ui/GlobalReviewOverlay";
 import { GlobalSeatAlertOverlay } from "@/components/ui/GlobalSeatAlertOverlay";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
+import { PageGuard } from "@/components/ui/PageGuard";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ReviewProvider>
               <SeatAlertProvider>
                 <PushRegistrationRefresher />
+                <PageGuard />
                 {/* Backend-unreachable banner (only shown in Live mode) */}
                 <BackendStatusBanner />
                 {children}

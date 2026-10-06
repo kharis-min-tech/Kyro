@@ -47,6 +47,10 @@
   // (or Cloudflare dashboard → Workers → kyrokharis → Settings → Variables).
   "vars": {
     "VAPID_PUBLIC_KEY": "BOY5WhHRwx4ICdijWbbp-Us0WZYDXXAE3T3dS2HpjnV0RMHuaPC1YMRn1zxsiwFFDofA9uF4O4erDCY16RLKLMU",
-    "VAPID_SUBJECT": "mailto:admin@kyro.app"
+    "VAPID_SUBJECT": "mailto:admin@kyro.app",
+    // SHA-256 of the one-time code that creates the first Live admin
+    // (POST /api/auth/setup). Safe to publish — the code itself isn't here,
+    // and setup is refused once any account exists.
+    "SETUP_CODE_HASH": "M2oCcT9KtfqvOnjeiK14YG1SLGrfkDRcbc1ghiHVGnQ"
   }
 }
