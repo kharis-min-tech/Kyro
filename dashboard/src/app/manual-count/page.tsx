@@ -203,25 +203,30 @@ export default function ManualCountPage() {
             </p>
           </div>
 
-          <div className="p-5 flex flex-col gap-4">
+          <div className="p-4 sm:p-5 flex flex-col gap-4">
             <div className="flex flex-col gap-1">
               <label className="text-xs" style={{ color: "var(--text-muted)" }}>Zone / room name</label>
               <input
                 value={zone}
                 onChange={(e) => setZone(e.target.value)}
                 placeholder="e.g. Overflow Room, Mothers' Room, Youth Hall"
-                className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
                 style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}
               />
             </div>
 
-            <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-2">
               <label className="text-xs" style={{ color: "var(--text-muted)" }}>People counted</label>
-              <div className="flex items-center gap-3">
+              {/* Minus, big number input, plus — always on one row, with the
+                  input flexing. The quick-add buttons go on their OWN row
+                  below so a 320px phone doesn't push +25 off the right
+                  edge. inputMode="numeric" opens the digit keypad on
+                  phones instead of the full qwerty. */}
+              <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setCount((c) => Math.max(0, c - 1))}
-                  className="w-11 h-11 rounded-lg flex items-center justify-center text-white font-bold text-xl"
+                  className="w-11 h-11 rounded-lg flex items-center justify-center text-white font-bold text-xl shrink-0"
                   style={{ background: "var(--bg-hover)", border: `1px solid ${BORDER}` }}
                   aria-label="Decrease"
                 >
@@ -229,28 +234,31 @@ export default function ManualCountPage() {
                 </button>
                 <input
                   type="number"
+                  inputMode="numeric"
                   min={0}
                   value={count}
                   onChange={(e) => setCount(Math.max(0, parseInt(e.target.value || "0", 10)))}
-                  className="flex-1 rounded-lg px-3 py-3 text-center text-2xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
+                  className="flex-1 min-w-0 rounded-lg px-3 py-3 text-center text-2xl font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 tabular-nums"
                   style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}
                 />
                 <button
                   type="button"
                   onClick={() => setCount((c) => c + 1)}
-                  className="w-11 h-11 rounded-lg flex items-center justify-center text-white font-bold text-xl"
+                  className="w-11 h-11 rounded-lg flex items-center justify-center text-white font-bold text-xl shrink-0"
                   style={{ background: "var(--bg-hover)", border: `1px solid ${BORDER}` }}
                   aria-label="Increase"
                 >
                   <Plus size={18} />
                 </button>
+              </div>
+              <div className="grid grid-cols-3 sm:flex gap-2">
                 {[5, 10, 25].map((inc) => (
                   <button
                     key={inc}
                     type="button"
                     onClick={() => setCount((c) => c + inc)}
-                    className="px-3 h-11 rounded-lg text-sm font-medium text-indigo-200"
-                    style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)" }}
+                    className="h-10 sm:h-9 rounded-lg text-sm font-medium"
+                    style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", color: "var(--accent-indigo, #6366f1)" }}
                   >
                     +{inc}
                   </button>
@@ -297,7 +305,7 @@ export default function ManualCountPage() {
               type="button"
               onClick={() => setConfirming(true)}
               disabled={!zone.trim() || count < 0}
-              className="self-start px-5 py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-40"
+              className="w-full sm:w-auto sm:self-start px-5 py-3 rounded-lg text-sm font-medium text-white disabled:opacity-40"
               style={{ background: "#4f46e5" }}
             >
               Review &amp; submit
@@ -321,7 +329,7 @@ export default function ManualCountPage() {
         {drafts.length > 0 && (
           <div className="rounded-2xl overflow-hidden"
             style={{ background: CARD, border: "1px solid rgba(245,158,11,0.35)" }}>
-            <div className="px-5 py-3 flex items-center justify-between gap-3"
+            <div className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3"
               style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(245,158,11,0.06)" }}>
               <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "#f59e0b" }}>
@@ -332,17 +340,17 @@ export default function ManualCountPage() {
                 </p>
               </div>
               <button onClick={() => setApproving(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white shrink-0"
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg text-xs font-medium text-white sm:shrink-0"
                 style={{ background: "#16a34a" }}>
                 <ClipboardCheck size={13} /> Approve final count
               </button>
             </div>
             {drafts.map((h, i) => (
-              <div key={h.id} className="px-5 py-4 flex items-center gap-4"
+              <div key={h.id} className="px-4 sm:px-5 py-3 sm:py-4 flex items-center gap-3 sm:gap-4"
                 style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-white">{h.zone}</p>
+                    <p className="text-sm font-semibold text-white truncate">{h.zone}</p>
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                       style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
                       DRAFT
@@ -355,16 +363,16 @@ export default function ManualCountPage() {
                     <p className="text-xs text-amber-300 mt-1">⚠ Camera also counting this zone</p>
                   )}
                 </div>
-                <div className="text-2xl font-bold text-white tabular-nums">{h.count}</div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="text-xl sm:text-2xl font-bold text-white tabular-nums shrink-0">{h.count}</div>
+                <div className="flex items-center gap-1.5 shrink-0">
                   <button onClick={() => edit(h)}
-                    className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center"
                     style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}
                     aria-label="Edit">
                     <Pencil size={13} />
                   </button>
                   <button onClick={() => removeOne(h.id)}
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-red-400"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-red-400"
                     style={{ background: "rgba(239,68,68,0.08)" }}
                     aria-label="Delete">
                     <Trash2 size={13} />
@@ -381,7 +389,7 @@ export default function ManualCountPage() {
         {approved.length > 0 && (
           <div className="rounded-2xl overflow-hidden"
             style={{ background: CARD, border: "1px solid rgba(16,185,129,0.3)" }}>
-            <div className="px-5 py-3 flex items-center justify-between gap-3"
+            <div className="px-4 sm:px-5 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-3"
               style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(16,185,129,0.06)" }}>
               <p className="text-xs font-semibold uppercase tracking-wider flex items-center gap-1.5" style={{ color: "#16a34a" }}>
                 <Lock size={11} /> Approved — total {approvedTotal.toLocaleString()}
@@ -389,11 +397,11 @@ export default function ManualCountPage() {
               <p className="text-xs" style={{ color: "var(--text-muted)" }}>Counts toward service total</p>
             </div>
             {approved.map((h, i) => (
-              <div key={h.id} className="px-5 py-4 flex items-center gap-4"
+              <div key={h.id} className="px-4 sm:px-5 py-3 sm:py-4 flex items-center gap-3 sm:gap-4"
                 style={i > 0 ? { borderTop: `1px solid ${BORDER}` } : {}}>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-sm font-semibold text-white">{h.zone}</p>
+                    <p className="text-sm font-semibold text-white truncate">{h.zone}</p>
                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
                       style={{ background: "rgba(16,185,129,0.15)", color: "#16a34a" }}>
                       APPROVED
@@ -406,19 +414,19 @@ export default function ManualCountPage() {
                       : ""}
                   </p>
                 </div>
-                <div className="text-2xl font-bold text-white tabular-nums">{h.count}</div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="text-xl sm:text-2xl font-bold text-white tabular-nums shrink-0">{h.count}</div>
+                <div className="flex items-center gap-1.5 shrink-0">
                   {/* Edit demotes back to draft (see commit record); keep the
                       option available so a late correction is possible, but
                       the operator must re-approve. */}
                   <button onClick={() => edit(h)}
-                    className="w-9 h-9 rounded-lg flex items-center justify-center"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center"
                     style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}
                     aria-label="Edit (will revert to draft)" title="Editing resets this count to a draft">
                     <Pencil size={13} />
                   </button>
                   <button onClick={() => removeOne(h.id)}
-                    className="w-9 h-9 rounded-lg flex items-center justify-center text-red-400"
+                    className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center text-red-400"
                     style={{ background: "rgba(239,68,68,0.08)" }}
                     aria-label="Delete">
                     <Trash2 size={13} />
