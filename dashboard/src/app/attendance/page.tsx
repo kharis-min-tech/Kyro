@@ -460,41 +460,77 @@ function AIAlertsPanel() {
 }
 
 // ─── System status panel ──────────────────────────────────────────────────────
-function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; camerasRunning?: number }) {
+// Each row reports its OWN state — previously all three rows shared one
+// label that only turned "Offline" when a configured backend failed its
+// health check, so Live mode with no backend (or no running cameras)
+// showed "Live" everywhere.
+const ST_LIVE = "#4ade80", ST_WARN = "#fbbf24", ST_DOWN = "#f87171", ST_IDLE = "var(--text-muted)";
+
+function SystemStatus({ camerasTotal, camerasRunning, feedAt }: {
+  camerasTotal: number;
+  /** From the venue-total poll; undefined until the first successful poll. */
+  camerasRunning?: number;
+  /** Epoch ms of the last successful venue-total poll. */
+  feedAt: number | null;
+}) {
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const hasBackend = Boolean(process.env.NEXT_PUBLIC_API_URL);
   const demoChosen = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 
   useEffect(() => {
-    // In user-chosen Demo mode the status widget should look lively.
-    // In Live mode WITHOUT a backend configured, don't lie — mark the
-    // service offline. Only ping /health when there's actually a backend
-    // URL to ping.
-    if (demoChosen) { setBackendOk(true); return; }
-    if (!hasBackend) { setBackendOk(false); return; }
+    // Demo mode shows the simulated system as healthy. Live mode only
+    // reports what it can actually verify.
+    if (demoChosen || !hasBackend) return;
     const check = async () => {
       try {
         const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/health`);
         setBackendOk(res.ok);
       } catch { setBackendOk(false); }
+      setNow(Date.now());
     };
     check();
     const t = setInterval(check, 30_000);
     return () => clearInterval(t);
   }, [demoChosen, hasBackend]);
 
-  const running = camerasRunning ?? camerasTotal;
-  // Simple binary status per the operator's request: Live or Offline.
-  // The only 'Offline' trigger is a configured backend that fails its
-  // /health check. Everything else counts as Live.
-  const offline = hasBackend && backendOk === false;
-  const label   = offline ? "Offline" : "Live";
-  const color   = offline ? "#f87171" : "#4ade80";
+  // Re-evaluate feed freshness every few seconds.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(t);
+  }, []);
+
+  type Row = { value: string; color: string };
+  let ai: Row, cams: Row, feed: Row;
+  if (demoChosen) {
+    ai = cams = feed = { value: "Live (demo)", color: ST_LIVE };
+  } else if (!hasBackend) {
+    ai   = { value: "Not connected", color: ST_IDLE };
+    cams = { value: "Not connected", color: ST_IDLE };
+    feed = { value: "No data", color: ST_IDLE };
+  } else if (backendOk === null) {
+    ai = cams = feed = { value: "Checking…", color: ST_IDLE };
+  } else if (!backendOk) {
+    ai   = { value: "Offline", color: ST_DOWN };
+    cams = { value: "Unknown — server offline", color: ST_DOWN };
+    feed = { value: "Offline", color: ST_DOWN };
+  } else {
+    ai = { value: "Live", color: ST_LIVE };
+    const running = camerasRunning ?? 0;
+    cams = camerasTotal === 0 ? { value: "None set up", color: ST_IDLE }
+         : running === 0     ? { value: `Offline (0 of ${camerasTotal})`, color: ST_DOWN }
+         : running < camerasTotal ? { value: `${running} of ${camerasTotal} live`, color: ST_WARN }
+         : { value: `Live (${running} of ${camerasTotal})`, color: ST_LIVE };
+    const fresh = feedAt !== null && now - feedAt < 20_000;
+    feed = !fresh ? { value: camerasTotal === 0 ? "No data" : "Not updating", color: camerasTotal === 0 ? ST_IDLE : ST_DOWN }
+         : running === 0 ? { value: "No cameras sending", color: ST_DOWN }
+         : { value: "Live", color: ST_LIVE };
+  }
 
   const items = [
-    { label: "AI Service", value: label, color, href: "/seating" },
-    { label: "Cameras",    value: label, color, href: "/cameras" },
-    { label: "Data Feed",  value: label, color, href: "/live-cameras" },
+    { label: "AI Service", ...ai,   href: "/seating" },
+    { label: "Cameras",    ...cams, href: "/cameras" },
+    { label: "Data Feed",  ...feed, href: "/live-cameras" },
   ];
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
@@ -508,7 +544,10 @@ function SystemStatus({ camerasTotal, camerasRunning }: { camerasTotal: number; 
             style={{ textDecoration: "none" }}>
             <div className="flex-1">
               <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{item.label}</p>
-              <p style={{ fontSize: 12, fontWeight: 600, color: item.color }}>{item.value}</p>
+              <p className="flex items-center gap-1.5" style={{ fontSize: 12, fontWeight: 600, color: item.color }}>
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color }} />
+                {item.value}
+              </p>
             </div>
           </Link>
         ))}
@@ -536,6 +575,7 @@ export default function AttendancePage() {
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
   const [venueTotal, setVenueTotal] = useState<VenueTotal | null>(null);
+  const [venueFeedAt, setVenueFeedAt] = useState<number | null>(null);
   const [venueHistory, setVenueHistory] = useState<number[]>([]);
   // Per-metric history so the metric selector can switch what the chart shows
   const [metricHistory, setMetricHistory] = useState<{
@@ -574,6 +614,7 @@ export default function AttendancePage() {
       try {
         const vt = await camerasApi.venueTotal();
         setVenueTotal(vt);
+        setVenueFeedAt(Date.now());
         setVenueHistory((h) => [...h.slice(-80), vt.total_current]);
         setMetricHistory((m) => ({
           people:    [...m.people.slice(-80),    vt.total_current],
@@ -1178,7 +1219,7 @@ export default function AttendancePage() {
             {(role === "admin" || role === "operator") && <AIAlertsPanel />}
 
             {/* System Status — admin only */}
-            {role === "admin" && <SystemStatus camerasTotal={cameras.length} camerasRunning={venueTotal?.cameras_running} />}
+            {role === "admin" && <SystemStatus camerasTotal={cameras.length} camerasRunning={venueTotal?.cameras_running} feedAt={venueFeedAt} />}
 
           </div>
         </div>
