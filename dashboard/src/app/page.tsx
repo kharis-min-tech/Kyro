@@ -3,10 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { DEMO_MODE } from "@/lib/demo";
-
-function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 
 export default function RootPage() {
   const { canViewAttendance, isAuthenticated } = useAuth();
@@ -17,8 +13,21 @@ export default function RootPage() {
 
   useEffect(() => {
     if (!hydrated) return;
-    if (inDemoMode()) { router.replace("/attendance"); return; }
-    if (!isAuthenticated) { router.replace("/login"); return; }
+
+    // Mode has to be an explicit user choice — on a static Cloudflare build
+    // there is no backend, so previously `inDemoMode()` returned true for
+    // every fresh visitor and this page bypassed the mode chooser entirely,
+    // dropping first-time users straight into an attendance page they never
+    // asked for. If the user has not picked a mode and signed in in this
+    // browser, send them to the landing screen so they can.
+    const hasMode  = typeof window !== "undefined" && localStorage.getItem("kyro_mode");
+    const hasToken = typeof window !== "undefined" && localStorage.getItem("kyro_token");
+
+    if (!hasMode || !hasToken || !isAuthenticated) {
+      router.replace("/login");
+      return;
+    }
+
     router.replace(canViewAttendance ? "/attendance" : "/seating");
   }, [hydrated, isAuthenticated, canViewAttendance, router]);
 

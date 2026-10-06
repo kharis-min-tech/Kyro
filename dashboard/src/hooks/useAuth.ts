@@ -57,7 +57,14 @@ export function useAuth(): AuthState {
     const isDemoToken = stored === DEMO_TOKEN
       || (stored !== null && stored.includes("demo_signature_not_verified"));
 
-    if (isDemoToken && savedRole && savedUser) {
+    // A demo-style token only counts as an active session for the CURRENT
+    // tab/visit. Without this check the token sits in localStorage forever
+    // and every fresh visit auto-signs the user in — bypassing the Demo/Live
+    // mode chooser the user wants to see on landing. The flag is set on
+    // successful login below and cleared when the browser session ends.
+    const activeLogin = sessionStorage.getItem("kyro_active_login") === "1";
+
+    if (isDemoToken && savedRole && savedUser && activeLogin) {
       const resolvedRole = VALID_ROLES.includes(savedRole) ? savedRole : "admin";
       setToken(stored);
       setRole(resolvedRole);
@@ -135,6 +142,11 @@ export function useAuth(): AuthState {
       localStorage.setItem("kyro_token", DEMO_TOKEN);
       localStorage.setItem("kyro_demo_role", resolvedRole);
       localStorage.setItem("kyro_demo_last_user", username);
+      // Mark this tab/session as actively logged in so future navigation
+      // skips the mode chooser. A new tab or a reopened browser does not
+      // inherit sessionStorage, which is why the user then lands back on
+      // the Demo/Live chooser instead of being quietly auto-signed-in.
+      sessionStorage.setItem("kyro_active_login", "1");
       setToken(DEMO_TOKEN);
       setRole(resolvedRole);
       setUsername(username);
@@ -150,6 +162,7 @@ export function useAuth(): AuthState {
       // Clear any stale demo session data so it doesn't contaminate role detection
       localStorage.removeItem("kyro_demo_role");
       localStorage.removeItem("kyro_demo_last_user");
+      sessionStorage.setItem("kyro_active_login", "1");
       setToken(res.access_token);
       const realRole = decodeRole(res.access_token);
       setRole(realRole);
@@ -172,6 +185,7 @@ export function useAuth(): AuthState {
     localStorage.removeItem("kyro_demo_last_user");
     localStorage.removeItem("kyro_mode"); // clear mode so login screen shows fresh
     sessionStorage.removeItem("kyro_live_mode");
+    sessionStorage.removeItem("kyro_active_login");
     sessionStorage.setItem("kyro_signed_out", "1");
     setToken(null);
     setRole("viewer");

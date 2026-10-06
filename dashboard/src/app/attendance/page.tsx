@@ -24,6 +24,13 @@ function toLocalDateStr(d: Date): string {
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+// True ONLY when the user explicitly picked Demo mode — distinct from
+// inDemoMode(), which is also true in Live mode on the Cloudflare build
+// because there is no backend. Guards that decide "seed/generate fake
+// data?" must use this stricter check so Live view never shows demo
+// numbers (the calendar history was previously leaking fake past days
+// into Live mode via inDemoMode()).
+const userChoseDemo = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 import type { Camera, VenueTotal } from "@/types";
 import {
   TrendingUp, TrendingDown,
@@ -582,9 +589,13 @@ export default function AttendancePage() {
   // Demo-mode: sum all camera streams
   const indoorCameras = cameras.filter((c) => c.location !== "queue");
 
-  // Seed venue history in demo mode from the venue total polling
+  // Seed venue history in demo mode from the venue total polling.
+  // Guarded on userChoseDemo() — the previous inDemoMode() check was
+  // also true in Live mode on the Cloudflare build (no backend), which
+  // meant the fake 7500-person church curve was quietly being drawn on
+  // the Live view's chart too.
   useEffect(() => {
-    if (!inDemoMode() || cameras.length === 0) return;
+    if (!userChoseDemo() || cameras.length === 0) return;
     // Start with a realistic church-attendance curve
     const people = Array.from({ length: 40 }, (_, i) => {
       const phase = i / 40;
@@ -700,7 +711,11 @@ export default function AttendancePage() {
     const isToday_ = selectedDate.toDateString() === now.toDateString();
     const dateStr_ = toLocalDateStr(selectedDate);
 
-    if (inDemoMode()) {
+    // Only seed fake history when the user EXPLICITLY chose Demo mode.
+    // The previous `inDemoMode()` check was also true in Live mode on
+    // the Cloudflare build (no backend configured), which is exactly how
+    // demo numbers were ending up on past dates in a Live view.
+    if (userChoseDemo()) {
       if (isToday_) { setHistoricalData(null); return; } // demo "today" uses live poll data as before
       // Demo: generate deterministic fake history for that date
       const seed = selectedDate.getTime();
@@ -716,7 +731,13 @@ export default function AttendancePage() {
       return;
     }
 
-    // Real mode: fetch from analytics API for the first camera
+    // Live mode without a backend: no history to show.
+    if (!process.env.NEXT_PUBLIC_API_URL) {
+      setHistoricalData(null);
+      return;
+    }
+
+    // Real backend: fetch from analytics API for the first camera.
     if (cameras.length === 0) return;
     const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
     const token = localStorage.getItem("kyro_token") ?? "";
