@@ -5,7 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useCameras } from "@/hooks/useCameras";
 import { DEMO_MODE } from "@/lib/demo";
-import { updateEdgeThresholds } from "@/lib/edgePush";
+import { updateEdgeThresholds, getDemoAuto, setDemoAuto, type DemoAuto } from "@/lib/edgePush";
 import {
   Bell, BellOff, BellRing, CheckCircle, XCircle,
   Smartphone, Monitor, Loader2, AlertTriangle, Send,
@@ -99,6 +99,9 @@ export default function NotificationsPage() {
   const [savedMsg, setSavedMsg]                = useState<string | null>(null);
   const [lockedMsg, setLockedMsg]              = useState<string | null>(null);
   const [lockedBusy, setLockedBusy]            = useState(false);
+  const [demoAuto, setDemoAutoState]           = useState<DemoAuto>("15");
+  const [demoAutoSaved, setDemoAutoSaved]      = useState(false);
+  useEffect(() => { setDemoAutoState(getDemoAuto()); }, []);
 
   // Debounce ref for auto-saving thresholds to backend
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -485,6 +488,36 @@ export default function NotificationsPage() {
                 Camera alerts (free seats, room capacity, camera offline, AI questions) start once the camera system is
                 connected — until then the seat alerts you see in Demo are simulated by the open app and stop when it&apos;s closed</li>
             </ul>
+          </div>
+        )}
+
+        {/* Automatic demo alerts — sent by the push server on a schedule */}
+        {isEnabled && push.mode === "edge" && inDemoMode() && (
+          <div className="rounded-2xl px-5 py-4 mb-6" style={{ background: CARD_BG, border: "1px solid rgba(99,102,241,0.25)" }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">Automatic demo alerts</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Sample free-seat, capacity and AI-question alerts arrive by themselves — phone locked, off or in
+                  another app. Nothing between 10 PM and 7 AM. Each one is marked &ldquo;Demo&rdquo;.
+                </p>
+              </div>
+              <div className="flex rounded-lg p-0.5 shrink-0" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }} role="group" aria-label="Automatic demo alerts">
+                {([["15", "Every 15 min"], ["60", "Hourly"], ["off", "Off"]] as [DemoAuto, string][]).map(([v, label]) => (
+                  <button key={v}
+                    onClick={async () => {
+                      setDemoAutoState(v); setDemoAutoSaved(false);
+                      if (await setDemoAuto(v)) { setDemoAutoSaved(true); setTimeout(() => setDemoAutoSaved(false), 2000); }
+                    }}
+                    aria-pressed={demoAuto === v}
+                    className="px-2.5 py-1 rounded-md text-xs font-medium"
+                    style={demoAuto === v ? { background: "var(--bg-hover)", color: "var(--text-primary)" } : { color: "var(--text-muted)" }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {demoAutoSaved && <p className="text-xs text-green-400 mt-2">Saved ✓</p>}
           </div>
         )}
 

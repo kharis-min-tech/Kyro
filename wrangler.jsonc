@@ -32,6 +32,10 @@
     "run_worker_first": ["/api/*"]
   },
 
+  // Every 15 min: automatic sample alerts for devices in Demo mode
+  // (worker/index.js runDemoTick). Live-mode devices are never sent these.
+  "triggers": { "crons": ["*/15 * * * *"] },
+
   // Devices that turned notifications on (so a Manual Count on one phone
   // can alert every leader). Entries expire after ~4 months unopened.
   "kv_namespaces": [

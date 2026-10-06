@@ -20,12 +20,17 @@
  *   POST /api/relay/webhook          { url, secret?, payload }
  *   GET  /api/push/vapid-public-key
  *   POST /api/push/send              { subscription, kind: "test" | "demo" }
- *   POST /api/push/register          { subscription, warn, crit }
+ *   POST /api/push/register          { subscription, warn, crit, mode?, tz?, demo_auto? }
  *   POST /api/push/unregister        { endpoint }
  *   POST /api/events/manual-count    { kind, zone?, count, capacity?, counted_by?, sender_endpoint? }
  *
  * Registered devices live in the SUBS KV namespace, so a Manual Count
  * submitted on one phone alerts every leader who turned notifications on.
+ *
+ * Cron (every 15 min, see wrangler.jsonc): devices in Demo mode get sample
+ * alerts automatically — free seats, rooms filling up, AI questions — so
+ * Demo behaves like a real Sunday even with the app closed. Every demo
+ * alert is labelled "Demo"; Live-mode devices never get them.
  *
  * Secrets / vars (wrangler.jsonc + `wrangler secret put`):
  *   VAPID_PUBLIC_KEY   base64url uncompressed P-256 point (public, in vars)
@@ -37,6 +42,10 @@ const JSON_HEADERS = { "Content-Type": "application/json", "Cache-Control": "no-
 const MAX_BODY_BYTES = 64 * 1024;
 
 export default {
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runDemoTick(env, new Date(event.scheduledTime)));
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     try {
@@ -274,13 +283,21 @@ async function pushRegister(request, env) {
   if (!validSubscription(body.subscription)) return json({ error: "Invalid push subscription" }, 400);
 
   const { endpoint, keys } = body.subscription;
+  const key = await subKey(endpoint);
+  // Merge so a caller that only sends some fields (e.g. thresholds) keeps
+  // the device's other settings.
+  const prev = (await env.SUBS.get(key, "json")) || {};
   const record = {
+    ...prev,
     subscription: { endpoint, keys: { p256dh: keys.p256dh, auth: keys.auth } },
-    warn: clampFraction(body.warn, 0.8),
-    crit: clampFraction(body.crit, 0.9),
+    warn: clampFraction(body.warn ?? prev.warn, 0.8),
+    crit: clampFraction(body.crit ?? prev.crit, 0.9),
+    mode: body.mode === "live" || body.mode === "demo" ? body.mode : (prev.mode ?? "live"),
+    tz: validTimeZone(body.tz) ? body.tz : (prev.tz ?? "UTC"),
+    demo_auto: DEMO_AUTO_CHOICES.includes(body.demo_auto) ? body.demo_auto : (prev.demo_auto ?? "15"),
     updated_at: Date.now(),
   };
-  await env.SUBS.put(await subKey(endpoint), JSON.stringify(record), { expirationTtl: SUB_TTL_SECONDS });
+  await env.SUBS.put(key, JSON.stringify(record), { expirationTtl: SUB_TTL_SECONDS });
   return json({ registered: true });
 }
 
@@ -386,6 +403,63 @@ async function manualCountEvent(request, env, ctx) {
     if (res && (res.status === 404 || res.status === 410)) await env.SUBS.delete(s.key);
   })));
   return json({ notified: subs.length });
+}
+
+// ─── Automatic demo alerts (cron) ───────────────────────────────────────────
+
+const DEMO_AUTO_CHOICES = ["off", "15", "60"]; // minutes between alerts
+const QUIET_START_HOUR = 22, QUIET_END_HOUR = 7; // device-local, no alerts overnight
+
+function validTimeZone(tz) {
+  if (typeof tz !== "string" || tz.length > 64) return false;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true; } catch { return false; }
+}
+
+function localHour(now, tz) {
+  try {
+    const h = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(now);
+    return parseInt(h, 10);
+  } catch { return now.getUTCHours(); }
+}
+
+const DEMO_ZONES = [
+  { zone: "Main Floor", cap: 300, cam: "demo-main" },
+  { zone: "Balcony", cap: 120, cam: "demo-balcony" },
+  { zone: "Overflow Room", cap: 80, cam: "demo-overflow" },
+  { zone: "Stadium", cap: 1000, cam: "demo-stadium" },
+];
+
+/** One varied, realistic sample alert. `n` picks the variety deterministically per tick. */
+export function demoAlertFor(n) {
+  const z = DEMO_ZONES[n % DEMO_ZONES.length];
+  const kind = Math.floor(n / DEMO_ZONES.length) % 5;
+  const row = "ABCDEFGH"[n % 8], seat = `${row}${(n * 7) % 24 + 1}`;
+  const pct = (p) => `${Math.round(z.cap * p)} / ${z.cap}`;
+  switch (kind) {
+    case 0: return { title: `🪑 Seat ${seat} is free — ${z.zone}`, body: "A seat just opened up. Tap to see it on the seat map. · Demo", level: "seat", url: "/seating", camera_id: z.cam };
+    case 1: return { title: `⚠️ ${z.zone} is filling up`, body: `82% of capacity (${pct(0.82)}) · Demo`, level: "warning", camera_id: z.cam };
+    case 2: return { title: `🚨 ${z.zone} is over capacity`, body: `93% of capacity (${pct(0.93)}) · Demo`, level: "critical", camera_id: z.cam };
+    case 3: return { title: "🎭 Kyro has a question", body: `Someone moved toward the front of ${z.zone} — were they ushered? · Demo`, level: "review", camera_id: z.cam };
+    default: return { title: `🪑 2 seats free together — ${z.zone}`, body: `Seats ${seat} and ${row}${(n * 7) % 24 + 2} are free side by side. · Demo`, level: "seat", url: "/seating", camera_id: z.cam };
+  }
+}
+
+export async function runDemoTick(env, now) {
+  if (!pushReady(env)) return { sent: 0 };
+  const tick = Math.floor(now.getTime() / (15 * 60_000)); // one per 15-minute cron run
+  const subs = (await allSubscriptions(env)).filter((s) => {
+    if (s.mode !== "demo" || !s.demo_auto || s.demo_auto === "off") return false;
+    if (s.demo_auto === "60" && now.getUTCMinutes() >= 15) return false; // only the :00 run
+    const h = localHour(now, s.tz || "UTC");
+    return !(h >= QUIET_START_HOUR || h < QUIET_END_HOUR);
+  });
+  const vapid = vapidFromEnv(env);
+  const message = { ...demoAlertFor(tick), tag: `kyro-demo-auto-${tick}`, ttl: 3600 };
+  await Promise.all(subs.map(async (s) => {
+    const res = await sendWebPush(s.subscription, message, vapid).catch(() => null);
+    if (res && (res.status === 404 || res.status === 410)) await env.SUBS.delete(s.key);
+  }));
+  return { sent: subs.length };
 }
 
 // ─── RFC 8291 / 8292 implementation (WebCrypto only) ────────────────────────

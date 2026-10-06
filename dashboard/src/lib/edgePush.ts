@@ -5,6 +5,28 @@
  */
 
 const PREFS_KEY = "kyro_notif_prefs";
+const DEMO_AUTO_KEY = "kyro_demo_auto";
+
+/** How often Demo mode sends automatic sample alerts: minutes, or "off". */
+export type DemoAuto = "off" | "15" | "60";
+
+export function getDemoAuto(): DemoAuto {
+  try {
+    const v = localStorage.getItem(DEMO_AUTO_KEY);
+    return v === "off" || v === "60" ? v : "15";
+  } catch { return "15"; }
+}
+
+/** What the Worker needs to decide which automatic alerts this device gets. */
+function deviceContext() {
+  let tz = "UTC";
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch {}
+  return {
+    mode: localStorage.getItem("kyro_mode") === "live" ? "live" : "demo",
+    tz,
+    demo_auto: getDemoAuto(),
+  };
+}
 
 function storedThresholds(): { warn: number; crit: number } {
   try {
@@ -30,7 +52,7 @@ export async function registerEdgeDevice(sub: PushSubscription, thresholds = sto
     const res = await fetch("/api/push/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscription: sub.toJSON(), warn: thresholds.warn, crit: thresholds.crit }),
+      body: JSON.stringify({ subscription: sub.toJSON(), warn: thresholds.warn, crit: thresholds.crit, ...deviceContext() }),
     });
     return res.ok;
   } catch { return false; }
@@ -44,6 +66,18 @@ export async function unregisterEdgeDevice(endpoint: string): Promise<void> {
       body: JSON.stringify({ endpoint }),
     });
   } catch { /* best effort */ }
+}
+
+/** Re-send this device's mode / timezone / demo setting (after a change). */
+export async function refreshEdgeRegistration(): Promise<boolean> {
+  if (process.env.NEXT_PUBLIC_API_URL) return false;
+  const sub = await currentSubscription();
+  return sub ? registerEdgeDevice(sub) : false;
+}
+
+export async function setDemoAuto(choice: DemoAuto): Promise<boolean> {
+  try { localStorage.setItem(DEMO_AUTO_KEY, choice); } catch {}
+  return refreshEdgeRegistration();
 }
 
 /** Re-save this device with new thresholds (Notifications page sliders). */

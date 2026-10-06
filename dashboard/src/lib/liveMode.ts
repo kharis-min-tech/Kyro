@@ -1,3 +1,5 @@
+import { refreshEdgeRegistration } from "@/lib/edgePush";
+
 /**
  * liveMode.ts — single source of truth for mode detection.
  *
@@ -38,6 +40,8 @@ export function setLiveMode() {
   if (typeof window !== "undefined") {
     localStorage.setItem("kyro_mode", "live");
     sessionStorage.setItem("kyro_live_mode", "1");
+    // Stop automatic demo alerts on this device's push registration.
+    refreshEdgeRegistration().catch(() => {});
   }
 }
 
@@ -45,5 +49,6 @@ export function setDemoMode() {
   if (typeof window !== "undefined") {
     localStorage.setItem("kyro_mode", "demo");
     sessionStorage.removeItem("kyro_live_mode");
+    refreshEdgeRegistration().catch(() => {});
   }
 }
