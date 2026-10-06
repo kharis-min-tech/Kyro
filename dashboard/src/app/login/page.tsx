@@ -172,6 +172,11 @@ export default function LoginPage() {
     localStorage.setItem("kyro_demo_role", resolvedRole);
     setDemoMode(); // ensure kyro_mode=demo so DEMO_MODE resolves correctly
     localStorage.setItem("kyro_demo_last_user", username);
+    // Session-scoped "actively signed in this tab" marker — useAuth now
+    // requires this alongside the demo token before restoring the session,
+    // so without it the user would come up as not authenticated and every
+    // role-gated page would fall through to the viewer defaults.
+    sessionStorage.setItem("kyro_active_login", "1");
 
     // Hard navigate so useAuth re-hydrates from fresh localStorage
     const dest = resolvedRole === "viewer" ? "/seating" : "/attendance";
@@ -218,6 +223,10 @@ export default function LoginPage() {
     // numbers via the Manual Count page.
     setLiveMode();
     localStorage.setItem("kyro_demo_last_user", trimmedUser);
+    // Session-scoped "actively signed in" marker — matches handleDemoLogin
+    // and the useAuth hook's hydrate gate so role-based access control
+    // actually sees this login as authenticated.
+    sessionStorage.setItem("kyro_active_login", "1");
 
     // Fresh Live login — wipe every bit of local demo-ish state so the
     // operator sees a true empty slate (no fake past sessions, no fake
