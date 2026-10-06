@@ -731,7 +731,8 @@ export default function AttendancePage() {
     if (typeof window === "undefined") return;
     function readManual() {
       try {
-        const raw = localStorage.getItem("kyro_manual_counts");
+        const mode = localStorage.getItem("kyro_mode") ?? "demo";
+        const raw = localStorage.getItem(`kyro_${mode}_manual_counts`);
         if (!raw) { setManualTotalToday(0); return; }
         const all: { count: number; session_id: string }[] = JSON.parse(raw);
         const today = new Date();

@@ -235,6 +235,8 @@ export default function LoginPage() {
         "kyro_demo_cameras_overrides",
         "kyro_demo_cameras_deleted",
         "kyro_demo_rota",
+        "kyro_demo_manual_counts",
+        "kyro_demo_integrations_config",
         // reserved seats + seat overrides per camera
       ].forEach((k) => localStorage.removeItem(k));
       // Clear per-camera reserved-seat and seat-override keys too

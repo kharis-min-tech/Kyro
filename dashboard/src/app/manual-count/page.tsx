@@ -21,7 +21,14 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
 import { Users, Minus, Plus, CheckCircle, AlertTriangle, Trash2, Pencil } from "lucide-react";
 
-const STORAGE_KEY = "kyro_manual_counts";
+// Mode-scoped so a Demo-mode count never surfaces in a Live webhook send
+// or headline total. attendance/page.tsx and integrations/page.tsx compute
+// the same key inline (page.tsx cannot export arbitrary helpers in Next
+// App Router — all three callers derive it the same way).
+function manualCountsKey(): string {
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
+  return `kyro_${mode}_manual_counts`;
+}
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
 
@@ -45,13 +52,13 @@ function currentSessionId(): string {
 function loadCounts(): ManualCount[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(manualCountsKey());
     return raw ? (JSON.parse(raw) as ManualCount[]) : [];
   } catch { return []; }
 }
 
 function saveCounts(counts: ManualCount[]) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(counts)); } catch {}
+  try { localStorage.setItem(manualCountsKey(), JSON.stringify(counts)); } catch {}
   window.dispatchEvent(new Event("kyro_manual_counts_changed"));
 }
 

@@ -31,9 +31,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
-import { Webhook, Send, CheckCircle, XCircle, Loader2, Copy, Eye, EyeOff } from "lucide-react";
+import { Webhook, Send, CheckCircle, XCircle, Loader2, Copy, Eye, EyeOff, AlertTriangle } from "lucide-react";
 
-const STORAGE_KEY = "kyro_integrations_config";
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
 
@@ -43,49 +42,65 @@ interface Config {
   enabled: boolean;
 }
 
+// Mode-scoped: Demo tests go to one receiver, Live production to another,
+// without one bleeding into the other.
+function storageKey(): string {
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
+  return `kyro_${mode}_integrations_config`;
+}
+
 function loadConfig(): Config {
   if (typeof window === "undefined") return { url: "", secret: "", enabled: false };
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(storageKey());
     if (raw) return { url: "", secret: "", enabled: false, ...JSON.parse(raw) };
   } catch {}
   return { url: "", secret: "", enabled: false };
 }
 
 function saveConfig(c: Config) {
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(c)); } catch {}
+  try { localStorage.setItem(storageKey(), JSON.stringify(c)); } catch {}
+}
+
+// Local YYYY-MM-DD — must match manual-count/page.tsx's currentSessionId()
+// so submitted counts actually line up with "today's" filter below.
+function todayLocal(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function buildPayload(forTest: boolean): Record<string, unknown> {
-  // In demo mode we read whatever stats are visible to approximate a
-  // real end-of-service snapshot. On the backend this comes directly
-  // from the attendance DB.
+  const today = todayLocal();
+  const mode = typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo");
   const manual = (() => {
     try {
-      const raw = localStorage.getItem("kyro_manual_counts");
+      const raw = localStorage.getItem(`kyro_${mode}_manual_counts`);
       if (!raw) return [];
       const all: { zone: string; count: number; session_id: string }[] = JSON.parse(raw);
-      const today = new Date().toISOString().slice(0, 10);
       return all.filter((m) => m.session_id === today);
     } catch { return []; }
   })();
   const manualTotal = manual.reduce((a, m) => a + m.count, 0);
 
-  // Fake-ish camera numbers for the demo payload — the real backend
-  // populates this from Postgres.
-  const cameraTotal = forTest ? 42 : 120;
+  // Honest numbers only. In a test payload we use recognisable sample
+  // values (42 / "Main Floor") so the receiving system can tell at a
+  // glance that it's a dry-run. In a live send we have no AI backend
+  // here, so camera_count comes through as 0 and the receiver sees the
+  // real manual total — not a fabricated 120 that misrepresents the day.
+  const cameraTotal = forTest ? 42 : 0;
   const capacity    = 300;
   const grand       = cameraTotal + manualTotal;
 
   return {
-    service_date: new Date().toISOString().slice(0, 10),
+    service_date: today,
     counted_at:   new Date().toISOString(),
+    mode:         typeof window === "undefined" ? "demo" : (localStorage.getItem("kyro_mode") ?? "demo"),
     totals: {
       camera_count:   cameraTotal,
       manual_count:   manualTotal,
       grand_total:    grand,
       capacity,
-      utilisation:    Math.round((grand / capacity) * 1000) / 1000,
+      utilisation:    capacity > 0 ? Math.round((grand / capacity) * 1000) / 1000 : 0,
     },
     by_zone: [
       ...manual.map((m) => ({ zone: m.zone, count: m.count, source: "manual" as const })),
@@ -99,6 +114,13 @@ function buildPayload(forTest: boolean): Record<string, unknown> {
   };
 }
 
+function isValidHttpsUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw.trim());
+    return u.protocol === "https:" || u.protocol === "http:";
+  } catch { return false; }
+}
+
 export default function IntegrationsPage() {
   const [cfg, setCfg]           = useState<Config>({ url: "", secret: "", enabled: false });
   const [showSecret, setShowSecret] = useState(false);
@@ -108,14 +130,28 @@ export default function IntegrationsPage() {
   useEffect(() => { setCfg(loadConfig()); }, []);
 
   const save = useCallback(() => {
+    const url = cfg.url.trim();
+    if (url && !isValidHttpsUrl(url)) {
+      setResult({ ok: false, msg: "URL must start with https:// (or http:// for local testing)" });
+      return;
+    }
     saveConfig(cfg);
     setResult({ ok: true, msg: "Settings saved" });
     setTimeout(() => setResult(null), 2500);
   }, [cfg]);
 
+  // On the Cloudflare static build there is no backend scheduler to fire
+  // the auto-send, so the checkbox is misleading unless we say so.
+  const hasBackend = !!process.env.NEXT_PUBLIC_API_URL;
+
   const send = useCallback(async (mode: "test" | "live") => {
-    if (!cfg.url.trim()) {
+    const url = cfg.url.trim();
+    if (!url) {
       setResult({ ok: false, msg: "Set a webhook URL first" });
+      return;
+    }
+    if (!isValidHttpsUrl(url)) {
+      setResult({ ok: false, msg: "URL must start with https:// (or http:// for local testing)" });
       return;
     }
     setSending(mode);
@@ -124,7 +160,7 @@ export default function IntegrationsPage() {
     try {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (cfg.secret.trim()) headers["X-Kyro-Secret"] = cfg.secret.trim();
-      const res = await fetch(cfg.url.trim(), {
+      const res = await fetch(url, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
@@ -145,13 +181,12 @@ export default function IntegrationsPage() {
       // Tell the user exactly what to check instead of a vague "Network error".
       const msg = e instanceof Error ? e.message : "Network error";
       const corsNote = msg.toLowerCase().includes("failed to fetch")
-        ? " (Most common cause: the receiving server didn't send an "
+        ? " — Most common cause: the receiving server did not send an "
           + "'Access-Control-Allow-Origin' header permitting this page. "
-          + "Try pointing the URL at https://webhook.site/#!/view for a "
-          + "quick CORS-friendly test receiver, or configure your receiver "
-          + "to allow this origin.)"
+          + "Quick working test: paste a fresh URL from https://webhook.site "
+          + "(it accepts cross-origin posts out of the box)."
         : "";
-      setResult({ ok: false, msg: `Send failed: ${msg}.${corsNote}` });
+      setResult({ ok: false, msg: `Send failed: ${msg}${corsNote}` });
     } finally {
       setSending(null);
     }
@@ -215,12 +250,24 @@ export default function IntegrationsPage() {
               </div>
             </div>
 
-            <label className="flex items-center gap-2 cursor-pointer">
+            <label className="flex items-start gap-2 cursor-pointer">
               <input type="checkbox" checked={cfg.enabled}
                 onChange={(e) => setCfg((c) => ({ ...c, enabled: e.target.checked }))}
-                className="w-4 h-4 rounded"
+                className="w-4 h-4 rounded mt-0.5"
               />
-              <span className="text-sm text-white">Auto-send at end of each service</span>
+              <div className="flex-1 min-w-0">
+                <span className="text-sm" style={{ color: "var(--text-primary)" }}>Auto-send at end of each service</span>
+                {!hasBackend && (
+                  <p className="text-xs mt-0.5 flex items-start gap-1.5" style={{ color: "#f59e0b" }}>
+                    <AlertTriangle size={12} className="shrink-0 mt-0.5" />
+                    <span>
+                      Needs a backend scheduler to fire — this static Cloudflare build
+                      cannot run cron jobs. Until a backend is wired up, use
+                      <strong> Send end-of-service now</strong> manually after each service.
+                    </span>
+                  </p>
+                )}
+              </div>
             </label>
 
             <div className="flex flex-wrap gap-2">
