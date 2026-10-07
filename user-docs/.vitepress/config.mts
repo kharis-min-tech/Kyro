@@ -29,6 +29,7 @@ export default defineConfig({
         text: "Getting Started",
         items: [
           { text: "What is Kyro?", link: "/getting-started/what-is-kyro" },
+          { text: "Video tour", link: "/getting-started/video-tour" },
           { text: "Signing in", link: "/getting-started/signing-in" },
           { text: "Finding your way around", link: "/getting-started/navigation" },
           { text: "Roles & access", link: "/getting-started/roles" },

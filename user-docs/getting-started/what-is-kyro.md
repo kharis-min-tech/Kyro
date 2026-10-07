@@ -31,7 +31,7 @@ When you open Kyro you choose a **mode**:
 See [Signing in](/getting-started/signing-in) for how to choose.
 
 ::: tip New to Kyro?
-Start in **Demo mode** and follow the [Sunday service checklist](/guides/sunday-checklist). Everything you see in Demo works the same way in Live.
+Watch the [2½-minute video tour](/getting-started/video-tour), then try it yourself in **Demo mode** with the [Sunday service checklist](/guides/sunday-checklist). Everything you see in Demo works the same way in Live.
 :::
 
 ## What Kyro needs to count automatically

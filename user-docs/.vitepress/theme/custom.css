@@ -79,3 +79,12 @@
 .VPFeature { border-radius: 14px !important; transition: border-color 0.2s, transform 0.2s; }
 .VPFeature:hover { border-color: var(--vp-c-brand-1) !important; transform: translateY(-2px); }
 .VPFeature .icon { background: var(--vp-c-brand-soft) !important; }
+
+/* Video tour */
+.kyro-video { margin: 1.5rem 0; border-radius: 14px; overflow: hidden; border: 1px solid var(--vp-c-divider);
+  box-shadow: 0 12px 40px rgba(79, 70, 229, 0.18); background: #0d0f1a; }
+.kyro-video video { display: block; width: 100%; height: auto; }
+.home-video { max-width: 960px; margin: 3rem auto 1rem; padding: 0 24px; text-align: center; }
+.home-video h2 { font-size: 28px; font-weight: 700; margin-bottom: 4px; }
+.home-video p { color: var(--vp-c-text-2); }
+.home-video a { color: var(--vp-c-brand-1); font-weight: 600; }

@@ -17,7 +17,7 @@ Look out for these signs in the sidebar:
 | A pulsing green dot next to **Sessions** | A service is being recorded right now |
 | The page name highlighted in indigo | The page you're on |
 
-At the bottom of the sidebar you'll find your name and role, the light/dark switch, and **Sign out**.
+At the bottom of the sidebar you'll find your name and role, **Help guide**, the light/dark switch, and **Sign out**. **Help guide** opens this guide at the page that explains the page you're on.
 
 ## On your phone
 

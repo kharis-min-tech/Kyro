@@ -13,6 +13,9 @@ hero:
       text: Get started
       link: /getting-started/what-is-kyro
     - theme: alt
+      text: ▶ Watch the tour
+      link: /getting-started/video-tour
+    - theme: alt
       text: Sunday checklist
       link: /guides/sunday-checklist
     - theme: alt
@@ -51,3 +54,14 @@ features:
     link: /pages/analytics
     linkText: Analytics
 ---
+
+<div class="home-video">
+  <h2>See Kyro in action</h2>
+  <p>A 2½-minute tour of the main features, step by step.</p>
+  <div class="kyro-video">
+    <video controls preload="metadata" playsinline poster="/videos/kyro-tour-poster.jpg">
+      <source src="/videos/kyro-tour.mp4" type="video/mp4" />
+    </video>
+  </div>
+  <p><a href="/getting-started/video-tour">What's in the video →</a></p>
+</div>

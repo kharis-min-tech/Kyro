@@ -2,7 +2,11 @@
 
 Open Kyro and you'll see two cards: **Demo mode** and **Live mode**. Pick one, then sign in.
 
-<Shot name="login" alt="Kyro sign-in screen with the Demo mode and Live mode cards" />
+<Shot name="login" alt="Kyro sign-in screen with the Demo mode and Live mode cards, and the Help and light/dark buttons at the top right" />
+
+::: tip Help before you sign in
+Tap **Help** at the top right of the sign-in screen to open this guide. You don't need an account. The button next to it switches between light and dark.
+:::
 
 ## Demo mode
 

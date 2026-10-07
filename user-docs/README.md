@@ -25,3 +25,16 @@ BASE_URL=http://localhost:8787 FIREFOX_PATH=/path/to/firefox npm run screenshots
 Use `<Shot name="…" alt="…" />` in any page to show a framed screenshot that follows
 the reader's light/dark theme (`phone` for phone shots, `size="card"` / `size="wide-card"`
 for cropped cards).
+
+## Re-recording the video tour
+
+`public/videos/kyro-tour.mp4` is recorded from the live test site in Demo mode by
+`scripts/record-tour.mjs` (Playwright, with an on-screen cursor and captions):
+
+```bash
+npm i -D playwright ffmpeg-static && npx playwright install chromium
+node scripts/record-tour.mjs ./recording        # writes a .webm
+npx ffmpeg-static -i recording/*.webm -c:v libx264 -crf 24 -pix_fmt yuv420p -movflags +faststart -an public/videos/kyro-tour.mp4
+```
+
+`worker/index.js` serves `/videos/*` with byte ranges so the video plays on iPhone/iPad.
