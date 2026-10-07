@@ -14,6 +14,11 @@
     "not_found_handling": "404-page",
     "run_worker_first": ["/videos/*"]
   },
+  // The guide's own address on the Kharis domain (custom domain → this Worker).
+  "routes": [
+    { "pattern": "kyro-help.kharischurch.com", "custom_domain": true }
+  ],
+
   // No schedule for the guide.
   "triggers": { "crons": [] }
 }

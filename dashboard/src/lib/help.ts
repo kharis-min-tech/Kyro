@@ -2,7 +2,7 @@
  * help.ts — where the Kyro user guide lives, and which guide page explains
  * each dashboard page (so "Help" opens the right page, not just the home).
  */
-export const HELP_URL = (process.env.NEXT_PUBLIC_HELP_URL ?? "https://kyro-user-documentation.itadmin-a94.workers.dev").replace(/\/$/, "");
+export const HELP_URL = (process.env.NEXT_PUBLIC_HELP_URL ?? "https://kyro-help.kharischurch.com").replace(/\/$/, "");
 
 const GUIDE_PAGES: Record<string, string> = {
   attendance: "/pages/ai-count",

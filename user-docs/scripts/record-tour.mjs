@@ -4,7 +4,7 @@
 import { chromium } from "playwright";
 
 const APP = process.env.APP_URL ?? "https://kyro.kharischurch.com";
-const GUIDE = process.env.GUIDE_URL ?? "https://kyro-user-documentation.itadmin-a94.workers.dev";
+const GUIDE = process.env.GUIDE_URL ?? "https://kyro-help.kharischurch.com";
 const OUT_DIR = process.argv[2];
 const W = 1280, H = 720;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -265,7 +265,7 @@ await click(page.getByRole("link", { name: "Get started" }).first(), 2600);
 
 // ── End card ──
 await hideCaption();
-await page.evaluate(() => window.__tourTitle("You're ready", "Start in Demo mode, then sign in to Live for the real thing", "Guide: kyro-user-documentation.itadmin-a94.workers.dev"));
+await page.evaluate(() => window.__tourTitle("You're ready", "Start in Demo mode, then sign in to Live for the real thing", "Guide: kyro-help.kharischurch.com"));
 await sleep(4200);
 
 const video = page.video();
