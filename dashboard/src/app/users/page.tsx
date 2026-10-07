@@ -541,7 +541,7 @@ export default function UsersPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 p-3 sm:p-6 overflow-auto max-w-4xl">
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 p-3 sm:p-6 overflow-auto max-w-4xl">
 
         <div className="mb-6">
           <h1 className="text-xl font-bold text-white">Users</h1>

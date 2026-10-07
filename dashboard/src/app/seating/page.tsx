@@ -246,8 +246,9 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
         </div>
       </div>
 
-      {/* Dots */}
-      <div className="flex flex-col items-center" style={{ gap }}>
+      {/* Dots — w-max + mx-auto: centred when it fits, scrollable (not
+          clipped on the left) when a wide room is wider than a phone. */}
+      <div className="flex flex-col items-center w-max mx-auto" style={{ gap }}>
         {rowKeys.map((row) => (
           <div key={row} className="flex items-center" style={{ gap }}>
             <span style={{ fontSize: 9, color: "var(--border-subtle)", width: 12, textAlign: "right", marginRight: 4, fontFamily: "monospace" }}>{row}</span>
@@ -257,6 +258,9 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
               const zoneNote = s._zone_labels?.length ? ` · in "${s._zone_labels.join("/")}"` : "";
               return (
                 <button key={s.seat_id}
+                  // inline-tiny-btn: opts out of the 40px phone tap-height rule
+                  // in globals.css, which stretched every seat into an oval.
+                  className="inline-tiny-btn"
                   onClick={() => onSelect(s)}
                   title={`${s.seat_id} · ${ignored ? "excluded (in ignore-zone)" : s.state}${zoneNote}`}
                   style={{
@@ -282,7 +286,7 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
       </div>
 
       {/* Coordinate readout */}
-      <div className="absolute bottom-2 left-2" style={{ fontFamily: "monospace" }}>
+      <div className="absolute bottom-2 left-2 hidden md:block" style={{ fontFamily: "monospace" }}>
         <div style={{ fontSize: 9, color: "#1e3a2a" }}>COORD_X: {coords.x.toFixed(4)}</div>
         <div style={{ fontSize: 9, color: "#1e3a2a" }}>COORD_Y: {coords.y.toFixed(4)}</div>
       </div>
@@ -927,9 +931,9 @@ function CameraSeatView({ camera }: { camera: Camera }) {
         {/* Spatial monitor */}
         <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           {/* Legend bar */}
-          <div className="flex items-center gap-5 px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
             <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Spatial Monitor</span>
-            <div className="flex items-center gap-4 flex-1">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 flex-1 order-last md:order-none w-full md:w-auto">
               {[
                 { label: `Occupied ${occupied}`,    colour: "#ff4d6d" },
                 { label: `Free ${free}`,            colour: "#1e3a2a" },
@@ -1020,7 +1024,7 @@ export default function SeatingPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 flex flex-col overflow-hidden">
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 flex flex-col overflow-hidden">
         {/* Camera tabs */}
         <div className="flex items-center gap-1 px-4 shrink-0 overflow-x-auto"
           style={{ background: CARD, borderBottom: `1px solid ${BORDER}`, minHeight: 44 }}>

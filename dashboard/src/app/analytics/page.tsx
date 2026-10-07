@@ -343,8 +343,8 @@ export default function AnalyticsPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 overflow-auto">
-        <div className="px-6 py-5 flex items-center justify-between" style={{ borderBottom:`1px solid ${BORDER}`, background:CARD_BG }}>
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 overflow-auto">
+        <div className="px-4 sm:px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3" style={{ borderBottom:`1px solid ${BORDER}`, background:CARD_BG }}>
           <div>
             <h1 className="text-lg font-bold text-white">Analytics</h1>
             <p className="text-xs mt-0.5" style={{ color:"#6b7280" }}>
@@ -357,7 +357,7 @@ export default function AnalyticsPage() {
 
         {/* Search bar */}
         <form onSubmit={(e)=>{ e.preventDefault(); applyFilter(history,search,fromDate,toDate); }}
-          className="px-6 py-3 flex flex-wrap items-center gap-3"
+          className="px-4 sm:px-6 py-3 flex flex-wrap items-center gap-3"
           style={{ borderBottom:`1px solid ${BORDER}`, background:"var(--bg-base)" }}>
           <div className="flex items-center gap-2 flex-1 min-w-48 rounded-lg px-3 py-2" style={{ background:CARD_BG, border:`1px solid ${BORDER}` }}>
             <Search size={13} style={{ color:"#6b7280" }}/>

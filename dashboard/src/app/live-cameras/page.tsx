@@ -943,7 +943,9 @@ export default function LiveCamerasPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 px-4 py-4 sm:px-8 sm:py-8 overflow-auto">
+      {/* min-w-0: without it this flex child grows to its widest content (the
+          room table), pushing the whole page past a phone's screen edge. */}
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 px-4 py-4 sm:px-8 sm:py-8 overflow-auto">
 
         {/* Header */}
         <div className="mb-6">

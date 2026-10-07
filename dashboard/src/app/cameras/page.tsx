@@ -497,7 +497,7 @@ export default function CamerasPage() {
   return (
     <div className="flex min-h-screen bg-gray-950 text-gray-100">
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 p-3 sm:p-6 max-w-2xl">
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 p-3 sm:p-6 max-w-2xl">
 
         <div className="mb-6">
           <h1 className="text-xl font-bold text-white">Cameras</h1>

@@ -630,7 +630,8 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
 // Only visible when there IS an archive and the main unanswered panel is
 // empty — otherwise the bell would compete with the panel it's meant to be
 // an alternative to. Fixed at top-right so it doesn't collide with the
-// draggable panel or the sidebar.
+// draggable panel or the sidebar. On phones it sits just below the fixed top
+// bar (h-14, z-40) — at top:1rem it was hidden underneath it.
 function ArchivedRestoreBell() {
   const [archivedCount, setArchivedCount]     = useState(0);
   const [unansweredCount, setUnansweredCount] = useState(0);
@@ -654,10 +655,8 @@ function ArchivedRestoreBell() {
   return (
     <button
       onClick={restoreAllArchived}
-      className="fixed z-30 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-transform hover:scale-105"
+      className="fixed z-30 top-[4.25rem] md:top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-transform hover:scale-105"
       style={{
-        top: "1rem",
-        right: "1rem",
         background: "var(--bg-card)",
         border: "1px solid rgba(245,158,11,0.5)",
         color: "var(--accent-amber)",

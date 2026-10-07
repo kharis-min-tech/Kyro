@@ -518,7 +518,7 @@ export default function RotaPage() {
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: "var(--bg-base)" }}>
       <Sidebar />
-      <main className="flex-1 pt-14 md:pt-0 p-3 sm:p-6 max-w-2xl flex flex-col gap-6">
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 p-3 sm:p-6 max-w-2xl flex flex-col gap-6">
 
         {/* Header */}
         <div>
