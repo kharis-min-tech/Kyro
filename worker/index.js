@@ -1,4 +1,5 @@
 import { handleAccounts } from "./accounts.js";
+import { handleIntegrations, runIntegrationTick, isBlockedHost } from "./integrations.js";
 
 /**
  * Kyro edge Worker — runs in front of the static dashboard on Cloudflare.
@@ -46,7 +47,12 @@ const MAX_BODY_BYTES = 64 * 1024;
 
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runDemoTick(env, new Date(event.scheduledTime)));
+    const now = new Date(event.scheduledTime);
+    ctx.waitUntil(Promise.all([
+      runDemoTick(env, now),
+      // Automatic end-of-service webhook (Integrations → "Send automatically")
+      runIntegrationTick(env, now).catch(() => {}),
+    ]));
   },
 
   async fetch(request, env, ctx) {
@@ -74,6 +80,8 @@ export default {
         notifyCount: (body) => notifyCount(env, body),
       });
       if (accountsRes) return accountsRes;
+      const integrationsRes = await handleIntegrations(request, env, url);
+      if (integrationsRes) return integrationsRes;
       if (url.pathname.startsWith("/api/")) {
         return json({ error: "Not found" }, 404);
       }
@@ -108,14 +116,6 @@ class HttpError extends Error {
 
 // ─── Webhook relay ──────────────────────────────────────────────────────────
 
-function isBlockedHost(hostname) {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-  if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".local") || h.endsWith(".internal")) return true;
-  if (/^(127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(h)) return true;
-  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
-  if (h.includes(":") && (h === "::1" || /^(fc|fd|fe80)/.test(h))) return true;
-  return false;
-}
 
 async function relayWebhook(request) {
   if (!sameOrigin(request)) return json({ error: "Forbidden" }, 403);

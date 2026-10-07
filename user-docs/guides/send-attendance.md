@@ -11,11 +11,11 @@ Send each service's total to a Google Sheet, a denomination portal or a chat cha
 5. **Action:** choose **Google Sheets → Create Spreadsheet Row**, and map the columns:
    - Date → `service_date`
    - Total → `totals grand_total`
-   - Camera count → `totals camera_count`
    - Manual count → `totals manual_count`
+   - Camera count → `totals camera_count`
 6. Turn the Zap on.
 
-After each service, approve the counts on **Manual Count**, then tap **Send end-of-service now** in Integrations. A new row appears in your sheet.
+After each service, approve the counts on **Manual Count**. Then either tap **Send today's total now** in Integrations, or turn on **Send automatically after each service** so it happens by itself. A new row appears in your sheet.
 
 ::: tip Filter out tests
 Test sends include `"test": true` and Demo sends include `"mode": "demo"`. Add a Zapier **Filter** step that only continues when `mode` is `live` and `test` doesn't exist.

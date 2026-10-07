@@ -26,7 +26,7 @@ A simple run-through for using Kyro on a service day. Print it, or keep it open 
 
 - [ ] **End every session.** The green dot next to **Sessions** should stop.
 - [ ] **Approve the final count** on [Manual Count](/pages/manual-count).
-- [ ] **Send the total** with **Send end-of-service now** on [Integrations](/pages/integrations).
+- [ ] **Send the total**: it goes automatically if you've set a schedule on [Integrations](/pages/integrations); otherwise tap **Send today's total now**.
 - [ ] Look at **Arrival & exit times** on [AI Count](/pages/ai-count). When did most people arrive? Plan next week's door team around it.
 
 ::: tip Practise in Demo mode

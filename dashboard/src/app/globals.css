@@ -255,3 +255,28 @@ img, video, canvas, svg, iframe {
 
 /* Preserve legibility of colored-background chips (red/green/purple) in
    light mode — their text colours stay as the pastel tones they already use. */
+
+/* ─── Light mode: keep white text on solid-coloured buttons ─────────────────
+   The light theme maps .text-white to dark text (for cards), which also
+   turned the labels on solid indigo / green buttons dark — e.g. "Sign in",
+   "Save settings", "Approve" became dark-on-purple. React writes inline
+   backgrounds as rgb() when rendered in the browser and as hex (no space)
+   in pre-built pages, so match both forms of those exact solid fills. */
+:root[data-theme="light"] [style*="background: rgb(79, 70, 229)"],
+:root[data-theme="light"] [style*="background: rgb(79, 70, 229)"] *,
+:root[data-theme="light"] [style*="background:#4f46e5"],
+:root[data-theme="light"] [style*="background:#4f46e5"] *,
+:root[data-theme="light"] [style*="background: #4f46e5"],
+:root[data-theme="light"] [style*="background: #4f46e5"] *,
+:root[data-theme="light"] [style*="background: rgba(99, 102, 241, 0.8)"],
+:root[data-theme="light"] [style*="background: rgba(99, 102, 241, 0.8)"] *,
+:root[data-theme="light"] [style*="background:rgba(99,102,241,0.8)"],
+:root[data-theme="light"] [style*="background:rgba(99,102,241,0.8)"] *,
+:root[data-theme="light"] [style*="background: rgb(22, 163, 74)"],
+:root[data-theme="light"] [style*="background: rgb(22, 163, 74)"] *,
+:root[data-theme="light"] [style*="background:#16a34a"],
+:root[data-theme="light"] [style*="background:#16a34a"] *,
+:root[data-theme="light"] [style*="background: #16a34a"],
+:root[data-theme="light"] [style*="background: #16a34a"] * {
+  color: #fff !important;
+}

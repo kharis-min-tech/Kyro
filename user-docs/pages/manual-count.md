@@ -32,7 +32,7 @@ Drafts **don't count** towards the service total until they're approved. This st
 
 <Shot name="manual-count-approve" alt="End of service approval window listing three draft counts and the service total after approval" />
 
-Approved counts move to the **Approved** box, which shows who approved them and when. They're now included in the [AI Count](/pages/ai-count) headline and the [Integrations](/pages/integrations) send.
+Approved counts move to the **Approved** box, which shows who approved them and when. They're now included in the [AI Count](/pages/ai-count) headline and what [Integrations](/pages/integrations) sends.
 
 ## Correct or remove a count
 
