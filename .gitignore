@@ -35,3 +35,6 @@ logs/
 ai/models/weights/*.onnx
 ai/models/weights/*.pth
 !ai/models/weights/.gitkeep
+
+# Downloaded model weights (fetched automatically on first run)
+ai/models/weights/*.pt
