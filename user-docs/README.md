@@ -38,3 +38,14 @@ npx ffmpeg-static -i recording/*.webm -c:v libx264 -crf 24 -pix_fmt yuv420p -mov
 ```
 
 `worker/index.js` serves `/videos/*` with byte ranges so the video plays on iPhone/iPad.
+
+### Voice-over
+
+The narration is generated on this computer with [Kokoro](https://github.com/thewh1teagle/kokoro-onnx)
+(open-source, offline; voice `af_heart`) by `scripts/narrate-tour.py`, which times each line to the
+captions. Re-run it after re-recording, then add the audio:
+
+```bash
+python scripts/narrate-tour.py ./kokoro-models narration.wav 143.4 af_heart
+ffmpeg -i public/videos/kyro-tour.mp4 -i narration.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 128k -movflags +faststart -shortest out.mp4
+```

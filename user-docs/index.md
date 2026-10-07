@@ -57,7 +57,7 @@ features:
 
 <div class="home-video">
   <h2>See Kyro in action</h2>
-  <p>A 2½-minute tour of the main features, step by step.</p>
+  <p>A 2½-minute narrated tour of the main features. 🔊 Turn your sound on.</p>
   <div class="kyro-video">
     <video controls preload="metadata" playsinline poster="/videos/kyro-tour-poster.jpg">
       <source src="/videos/kyro-tour.mp4" type="video/mp4" />
