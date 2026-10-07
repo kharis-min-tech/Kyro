@@ -12,7 +12,9 @@ import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
   Moon, Sun, Menu, X, Hash, Webhook,
+  CircleHelp,
 } from "lucide-react";
+import { helpUrlFor } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
 
 function ThemeToggleRow() {
@@ -312,6 +314,15 @@ export function Sidebar() {
           </div>
           <ChevronDown size={13} className="text-gray-600 shrink-0" />
         </div>
+        <a href={helpUrlFor(pathname)} target="_blank" rel="noopener noreferrer"
+          title="Opens the guide for this page"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left"
+          style={{ color: "#6b7280" }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
+          <CircleHelp size={16} strokeWidth={1.75} />
+          Help guide
+        </a>
         <ThemeToggleRow />
         <button onClick={logout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left"

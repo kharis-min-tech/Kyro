@@ -4,7 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
-import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff } from "lucide-react";
+import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff, CircleHelp } from "lucide-react";
+import { HELP_URL } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
 import { edgeLogin } from "@/lib/edgeAuth";
 
@@ -99,20 +100,30 @@ function PreLoginThemeToggle() {
   const { theme, toggle } = useTheme();
   const isDark = theme === "dark";
   const Icon   = isDark ? Sun : Moon;
+  const pill = {
+    background: "var(--bg-card)",
+    border: "1px solid var(--border-subtle)",
+    color: "var(--text-primary)",
+  };
   return (
-    <button
-      onClick={toggle}
-      aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      className="fixed top-4 right-4 z-50 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
-      style={{
-        background: "var(--bg-card)",
-        border: "1px solid var(--border-subtle)",
-        color: "var(--text-primary)",
-      }}
-    >
-      <Icon size={16} />
-    </button>
+    <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+      {/* The user guide is open to everyone — no sign-in needed. */}
+      <a href={HELP_URL} target="_blank" rel="noopener noreferrer"
+        title="Open the Kyro help guide (videos and step-by-step pictures)"
+        className="h-10 px-4 rounded-full flex items-center gap-2 text-sm font-medium transition-opacity hover:opacity-80"
+        style={pill}>
+        <CircleHelp size={16} /> Help
+      </a>
+      <button
+        onClick={toggle}
+        aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        className="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+        style={pill}
+      >
+        <Icon size={16} />
+      </button>
+    </div>
   );
 }
 
