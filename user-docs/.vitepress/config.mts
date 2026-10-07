@@ -60,6 +60,7 @@ export default defineConfig({
           { text: "Getting alerts on your phone", link: "/guides/phone-alerts" },
           { text: "AI questions & seat alerts", link: "/guides/ai-questions" },
           { text: "Sending attendance to another system", link: "/guides/send-attendance" },
+          { text: "Getting the best count from your cameras", link: "/guides/camera-setup" },
         ],
       },
       {

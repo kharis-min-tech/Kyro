@@ -37,6 +37,10 @@ Open **How do I find my camera's stream address?** on the page for help.
 - **Edit:** tap a **pencil** icon to change the name, zone, stream address, type (**Indoor (has seats)** or **Outdoor / queue (no seats)**) or seat capacity, then **Save**.
 - **Delete:** tap the **bin**, then **Yes, delete it**. This can't be undone.
 
+::: tip Where to put cameras
+Camera placement decides whether everyone gets counted. See [Getting the best count from your cameras](/guides/camera-setup).
+:::
+
 ## Start the camera
 
 Adding a camera tells Kyro about it. The camera starts counting once the Kyro software is running for it on the church's Kyro computer. Tap **Start worker** on a camera to see the command, and give it to whoever looks after that computer.

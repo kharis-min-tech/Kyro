@@ -70,6 +70,11 @@ class PersonDetector:
     def __init__(self, cfg: DetectionConfig) -> None:
         self._cfg = cfg
         self._device = self._resolve_device(cfg.device)
+        if cfg.model_name in ("auto", ""):
+            # Most accurate model the hardware can keep up with (see config.py).
+            name = "yolo11x.pt" if self._device == "cuda" else "yolo11l.pt"
+            cfg.model_name = name
+            cfg.model_path = cfg.model_path.parent / name
         self._model = self._load_model(cfg.model_path, cfg.model_name)
         logger.info(
             "PersonDetector ready | model=%s device=%s conf=%.2f",
@@ -86,46 +91,88 @@ class PersonDetector:
         """
         Run inference on a single BGR frame.
 
+        With tiling on (DETECTION_TILES ≥ 2) the frame is checked twice: once
+        whole, and once as a grid of overlapping tiles, each at full model
+        resolution. A person at the back of a hall may be only ~20 px tall —
+        too small for the model once the whole frame is shrunk to its input
+        size, but large enough inside a tile. Results are merged so nobody is
+        counted twice.
+
         Args:
             frame: H×W×3 numpy array in BGR colour order (OpenCV default).
 
         Returns:
             List of Detection objects, one per visible person.
         """
+        boxes, scores = self._predict(frame)
+        grid = self._tile_grid(frame)
+        if grid > 1:
+            H, W = frame.shape[:2]
+            all_b, all_s, all_e = [boxes], [scores], [np.zeros(len(boxes), dtype=bool)]
+            for (x, y, crop) in self._tiles(frame, grid):
+                b, sc = self._predict(crop)
+                if not len(b):
+                    continue
+                th, tw = crop.shape[:2]
+                # Is the box cut off by an INNER tile edge (not the frame
+                # edge)? Then it may be only part of a person.
+                m = 3.0
+                edge = ((b[:, 0] <= m) & (x > 0)) | ((b[:, 1] <= m) & (y > 0)) \
+                     | ((b[:, 2] >= tw - m) & (x + tw < W)) | ((b[:, 3] >= th - m) & (y + th < H))
+                all_b.append(b + np.array([x, y, x, y], dtype=np.float32))
+                all_s.append(sc)
+                all_e.append(edge)
+            boxes, scores = _merge(np.concatenate(all_b), np.concatenate(all_s), np.concatenate(all_e),
+                                   self._cfg.merge_iou, self._cfg.merge_containment)
+
+        detections = [
+            Detection(bbox=b.astype(np.float32), confidence=float(c), class_id=0)
+            for b, c in zip(boxes, scores)
+        ]
+
+        if self._cfg.overhead_mode:
+            detections = self._filter_overhead(detections, frame.shape[0], frame.shape[1])
+
+        return detections
+
+    def _predict(self, img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """One model pass → (N×4 xyxy boxes, N scores)."""
         results = self._model.predict(
-            source=frame,
+            source=img,
             conf=self._cfg.confidence_threshold,
             iou=self._cfg.iou_threshold,
             classes=self._cfg.target_classes,
             imgsz=self._cfg.imgsz,
             max_det=self._cfg.max_det,
             device=self._device,
+            augment=self._cfg.tta,   # also checks a flipped / rescaled copy
             verbose=False,
         )
+        r = results[0]
+        if r.boxes is None or len(r.boxes) == 0:
+            return np.zeros((0, 4), dtype=np.float32), np.zeros((0,), dtype=np.float32)
+        return r.boxes.xyxy.cpu().numpy().astype(np.float32), r.boxes.conf.cpu().numpy().astype(np.float32)
 
-        detections: list[Detection] = []
+    def _tile_grid(self, frame: np.ndarray) -> int:
+        """Tiles per side: the configured number, or for "auto" 2 when the
+        frame is meaningfully bigger than the model's input, else 1 (off)."""
+        t = self._cfg.tiles
+        if t == "auto":
+            return 2 if max(frame.shape[:2]) > self._cfg.imgsz * 1.25 else 1
+        try:
+            return max(1, int(t))
+        except ValueError:
+            return 1
 
-        # ultralytics returns a list with one result per image
-        for result in results:
-            if result.boxes is None:
-                continue
-            boxes = result.boxes.xyxy.cpu().numpy()   # (N, 4)
-            confs = result.boxes.conf.cpu().numpy()   # (N,)
-            cls_ids = result.boxes.cls.cpu().numpy()  # (N,)
-
-            for bbox, conf, cls_id in zip(boxes, confs, cls_ids):
-                detections.append(
-                    Detection(
-                        bbox=bbox.astype(np.float32),
-                        confidence=float(conf),
-                        class_id=int(cls_id),
-                    )
-                )
-
-        if self._cfg.overhead_mode:
-            detections = self._filter_overhead(detections, frame.shape[0], frame.shape[1])
-
-        return detections
+    def _tiles(self, frame: np.ndarray, grid: int):
+        """Overlapping grid×grid crops: yields (x_offset, y_offset, crop)."""
+        H, W = frame.shape[:2]
+        ov = self._cfg.tile_overlap
+        tw = int(W / (grid - (grid - 1) * ov))
+        th = int(H / (grid - (grid - 1) * ov))
+        for y in np.linspace(0, H - th, grid).astype(int):
+            for x in np.linspace(0, W - tw, grid).astype(int):
+                yield int(x), int(y), frame[y:y + th, x:x + tw]
 
     def _filter_overhead(
         self, detections: list[Detection], frame_h: int, frame_w: int
@@ -187,5 +234,49 @@ class PersonDetector:
             logger.info("Loading YOLO model from %s", model_path)
             return YOLO(str(model_path))
 
+        # Download straight into the weights folder (a Docker volume), so the
+        # model is fetched once rather than on every container restart.
         logger.info("Model not found locally — downloading %s", model_name)
-        return YOLO(model_name)
+        try:
+            return YOLO(str(model_path))
+        except Exception:  # noqa: BLE001 — fall back to Ultralytics' default location
+            return YOLO(model_name)
+
+
+def _merge(boxes: np.ndarray, scores: np.ndarray, at_tile_edge: np.ndarray,
+           iou: float, containment: float) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Merge detections from the whole frame and the tiles.
+
+    1. Non-max suppression removes the same person found twice.
+    2. A box cut off by an inner tile edge that lies mostly inside a bigger
+       box is a fragment (a tile only saw half that person) and is dropped.
+
+    Only tile-edge boxes can be dropped as fragments. A person sitting behind
+    someone else often lies almost entirely inside the front person's box —
+    treating every contained box as a fragment deleted those real people.
+    """
+    if len(boxes) == 0:
+        return boxes, scores
+    import torch, torchvision  # local: torch is already loaded by ultralytics
+    keep = torchvision.ops.nms(torch.from_numpy(boxes), torch.from_numpy(scores), iou).numpy()
+    boxes, scores, at_tile_edge = boxes[keep], scores[keep], at_tile_edge[keep]
+    areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+    kept: list[int] = []
+    for i in range(len(boxes)):
+        if at_tile_edge[i]:
+            bi = boxes[i]
+            for j in range(len(boxes)):
+                if j == i or areas[j] < areas[i] * 1.3:
+                    continue
+                bj = boxes[j]
+                iw = max(0.0, min(bi[2], bj[2]) - max(bi[0], bj[0]))
+                ih = max(0.0, min(bi[3], bj[3]) - max(bi[1], bj[1]))
+                if areas[i] > 0 and (iw * ih) / areas[i] > containment:
+                    break
+            else:
+                kept.append(i)
+            continue
+        kept.append(i)
+    kept_arr = np.array(kept, dtype=int)
+    return boxes[kept_arr], scores[kept_arr]

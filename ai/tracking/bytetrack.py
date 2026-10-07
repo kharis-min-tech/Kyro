@@ -21,6 +21,7 @@ from typing import Optional
 
 import numpy as np
 from filterpy.kalman import KalmanFilter
+from scipy.optimize import linear_sum_assignment
 
 from ai.config import TrackingConfig
 from ai.detection.detector import Detection
@@ -126,6 +127,12 @@ class Track:
         tlwh = detection.to_tlwh()
         self._kf = _build_kalman_filter(tlwh)
 
+        # min_hits counts this first detection as hit #1, so min_hits=1 means
+        # "confirmed immediately". Previously confirmation only ever happened
+        # inside update(), so min_hits=1 behaved like 2.
+        if cfg.min_hits <= 1:
+            self.state = TrackState.CONFIRMED
+
     # ------------------------------------------------------------------
     # Kalman operations
     # ------------------------------------------------------------------
@@ -212,28 +219,20 @@ def _iou_matrix(tracks: list[Track], detections: list[Detection]) -> np.ndarray:
     return iou.astype(np.float32)
 
 
-def _greedy_match(cost_matrix: np.ndarray, threshold: float) -> list[tuple[int, int]]:
+def _optimal_match(iou: np.ndarray, threshold: float) -> list[tuple[int, int]]:
     """
-    Greedy assignment: match each row to the best available column if
-    the cost (IoU) exceeds the threshold.
+    Globally optimal one-to-one assignment (Hungarian algorithm) maximising
+    total IoU, keeping only pairs that overlap at least `threshold`.
+
+    Replaces a greedy matcher: greedy takes the single best pair first, which
+    in a packed pew can steal a detection that was the ONLY good match for a
+    neighbouring track — that neighbour then goes LOST and the person is
+    briefly uncounted (or later re-counted under a new id).
     """
-    matches: list[tuple[int, int]] = []
-    if cost_matrix.size == 0:
-        return matches
-
-    used_cols: set[int] = set()
-    # Sort by descending IoU to take best matches first
-    row_order = np.argsort(-cost_matrix.max(axis=1))
-
-    for row in row_order:
-        best_col = int(np.argmax(cost_matrix[row]))
-        if best_col in used_cols:
-            continue
-        if cost_matrix[row, best_col] >= threshold:
-            matches.append((row, best_col))
-            used_cols.add(best_col)
-
-    return matches
+    if iou.size == 0:
+        return []
+    rows, cols = linear_sum_assignment(-iou)
+    return [(int(r), int(c)) for r, c in zip(rows, cols) if iou[r, c] >= threshold]
 
 
 # ---------------------------------------------------------------------------
@@ -310,7 +309,7 @@ class ByteTracker:
 
         # 4. Stage 2: match low-confidence dets to remaining unmatched tracks
         remaining_tracks = [confirmed_tracks[i] for i in unmatched_tracks1]
-        matches2, unmatched_tracks2, _ = self._match(remaining_tracks, low_dets)
+        matches2, unmatched_tracks2, unmatched_low2 = self._match(remaining_tracks, low_dets)
 
         for t_idx, d_idx in matches2:
             remaining_tracks[t_idx].update(low_dets[d_idx])
@@ -321,19 +320,29 @@ class ByteTracker:
             if track.track_id in still_unmatched:
                 track.mark_lost()
 
-        # 6. Stage 3: match unmatched high-conf dets to tentative tracks
-        unmatched_high_dets = [high_dets[i] for i in unmatched_dets1]
-        matches3, unmatched_tentative3, unmatched_dets3 = self._match(tentative_tracks, unmatched_high_dets)
+        # 6. Stage 3: match the remaining candidate detections to tentative
+        #    (not-yet-confirmed) tracks. Candidates are every unmatched
+        #    detection at or above new_track_thresh — NOT only high-confidence
+        #    ones. Previously a person had to score >= high_thresh (0.6) to
+        #    ever start a track, so anyone the detector saw at 0.3–0.6 —
+        #    typically half-hidden behind a pew, far away or in dim light —
+        #    was detected and then thrown away, never counted.
+        candidate_dets = [high_dets[i] for i in unmatched_dets1] + [
+            low_dets[i] for i in unmatched_low2
+            if low_dets[i].confidence >= self._cfg.new_track_thresh
+        ]
+        matches3, unmatched_tentative3, unmatched_dets3 = self._match(tentative_tracks, candidate_dets)
 
         for t_idx, d_idx in matches3:
-            tentative_tracks[t_idx].update(unmatched_high_dets[d_idx])
+            tentative_tracks[t_idx].update(candidate_dets[d_idx])
 
-        # Tentative tracks that still weren't matched this frame are deleted
-        # immediately (standard SORT/ByteTrack behaviour) — otherwise a track
-        # that never gets re-matched stays TENTATIVE forever and is never
-        # cleaned up, leaking memory and wasting compute every frame.
+        # A tentative track that keeps missing is dropped — but only after a
+        # short grace (tentative_max_misses frames), not on its first miss,
+        # so a new arrival who flickers for a frame isn't discarded and then
+        # re-started from scratch (never reaching min_hits).
         for t_idx in unmatched_tentative3:
-            tentative_tracks[t_idx].mark_deleted()
+            if tentative_tracks[t_idx].age > self._cfg.tentative_max_misses:
+                tentative_tracks[t_idx].mark_deleted()
 
         # 7. Delete stale tracks
         for track in self._tracks:
@@ -342,9 +351,12 @@ class ByteTracker:
 
         self._tracks = [t for t in self._tracks if not t.is_deleted]
 
-        # 8. Initialise new tracks from unmatched high-confidence detections
+        # 8. Start new tracks from the remaining candidate detections
+        #    (confidence >= new_track_thresh). They still need min_hits
+        #    matched frames before they're counted, which filters one-off
+        #    false detections.
         for d_idx in unmatched_dets3:
-            new_track = Track(unmatched_high_dets[d_idx], self._cfg)
+            new_track = Track(candidate_dets[d_idx], self._cfg)
             self._tracks.append(new_track)
 
         # 9. Return only confirmed tracks
@@ -397,7 +409,7 @@ class ByteTracker:
         Returns (matches, unmatched_track_indices, unmatched_detection_indices).
         """
         iou = _iou_matrix(tracks, detections)
-        matches = _greedy_match(iou, self._cfg.iou_threshold)
+        matches = _optimal_match(iou, self._cfg.iou_threshold)
 
         matched_t = {m[0] for m in matches}
         matched_d = {m[1] for m in matches}

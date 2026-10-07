@@ -123,11 +123,17 @@ class AttendanceCounter:
         current_track_ids = {p.track_id for p in tracked_persons}
         entries_before, exits_before = self._total_entries, self._total_exits
 
-        # current_attendance / peak: always raw track_id based. These are
-        # tracker-confirmed, on-screen-right-now people — identity is
+        # current_attendance / peak: always raw track_id based — identity is
         # irrelevant here and must never be allowed to perturb this count.
-        self._active_ids = current_track_ids
-        self._peak = max(self._peak, len(current_track_ids))
+        # Includes tracks that are momentarily LOST (hidden behind someone
+        # standing up, bending down) — they're still in the room. Counting
+        # only people visible in this exact frame made the live headcount
+        # dip every time anyone was briefly occluded. Someone who has really
+        # left drops off once the tracker forgets them (max_age).
+        remembered = set(still_tracked_ids) if still_tracked_ids is not None else current_track_ids
+        present_ids = current_track_ids | remembered
+        self._active_ids = present_ids
+        self._peak = max(self._peak, len(present_ids))
 
         # Entries: finalise (at most once per track_id) only once that
         # track's identity has actually resolved — i.e. is no longer the

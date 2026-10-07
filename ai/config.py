@@ -27,16 +27,27 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 @dataclass
 class DetectionConfig:
-    # YOLO model variant: yolov8n / yolov8s / yolov8m / yolov8l / yolov8x
-    model_name: str = os.getenv("YOLO_MODEL", "yolov8n.pt")
-    model_path: Path = field(default_factory=lambda: MODELS_DIR / os.getenv("YOLO_MODEL", "yolov8n.pt"))
+    # Detection model. "auto" picks the most accurate model the hardware can
+    # run: yolo11x on an NVIDIA GPU, yolo11l otherwise. Benchmarked on
+    # crowded scenes in a 1080p "whole hall" frame (see ai/eval/README.md):
+    #   yolov8n @640 (old default) found 28% of people, 0.4% of distant ones;
+    #   yolo11l @1280 + 2×2 tiles found 84% (69% of distant ones), headcount
+    #   error 28.5 → 4.0 per frame. Any Ultralytics name/path also works,
+    #   e.g. "yolo11m.pt" on a slow machine.
+    model_name: str = os.getenv("YOLO_MODEL", "auto")
+    model_path: Path = field(default_factory=lambda: MODELS_DIR / os.getenv("YOLO_MODEL", "auto"))
 
     # Inference settings.
     # NOTE: biased toward recall over precision — a missed person is worse
     # than an extra false-positive box that gets filtered by tracking, since
     # every person needs to be counted. If you see too many false detections
     # (e.g. flagging chairs/bags), raise DETECTION_CONF back up.
-    confidence_threshold: float = float(os.getenv("DETECTION_CONF", "0.30"))
+    # LOWERED 0.30 → 0.10: the tracker needs the low-confidence detections
+    # (0.1–0.5) for its second matching stage — that's how ByteTrack keeps
+    # following someone who is momentarily half-hidden. Whether a person is
+    # COUNTED is decided by the tracker (new_track_thresh + min_hits), not
+    # by this cut-off.
+    confidence_threshold: float = float(os.getenv("DETECTION_CONF", "0.10"))
     # NMS IoU — HIGHER means less aggressive suppression, which matters when
     # people are seated close together (e.g. a full pew): two real, adjacent
     # people can produce overlapping boxes that a low NMS threshold would
@@ -47,11 +58,25 @@ class DetectionConfig:
     # Only detect person class (class 0 in COCO)
     target_classes: list[int] = field(default_factory=lambda: [0])
 
-    # Image size fed into model (must be multiple of 32)
-    imgsz: int = int(os.getenv("DETECTION_IMGSZ", "640"))
+    # Model input size (multiple of 32). RAISED 640 → 1280: at 640 a whole
+    # 1080p hall is shrunk so far that people at the back are a few pixels.
+    imgsz: int = int(os.getenv("DETECTION_IMGSZ", "1280"))
 
     # Max detections per frame (safety limit)
-    max_det: int = int(os.getenv("DETECTION_MAX_DET", "300"))
+    max_det: int = int(os.getenv("DETECTION_MAX_DET", "1000"))
+
+    # ── Small / distant people ─────────────────────────────────────────
+    # Tiling: check the whole frame AND an overlapping grid of tiles, each
+    # at full model resolution, then merge. "auto" = 2×2 when the frame is
+    # bigger than imgsz; "off"/"1" = whole frame only; "3" = 3×3.
+    tiles: str = os.getenv("DETECTION_TILES", "auto")
+    tile_overlap: float = float(os.getenv("DETECTION_TILE_OVERLAP", "0.25"))
+    merge_iou: float = float(os.getenv("DETECTION_MERGE_IOU", "0.55"))
+    # A tile-edge box this much inside a bigger box is a half-person fragment.
+    merge_containment: float = float(os.getenv("DETECTION_MERGE_CONTAINMENT", "0.6"))
+    # Test-time augmentation: also run a flipped / rescaled copy. A little
+    # more recall for ~2–3× the compute.
+    tta: bool = os.getenv("DETECTION_TTA", "false").lower() == "true"
 
     # ── Overhead / birds-eye camera mode ──────────────────────────────
     # The default YOLO "person" class is trained mostly on standing/side-on
@@ -88,8 +113,11 @@ class DetectionConfig:
 # ---------------------------------------------------------------------------
 @dataclass
 class TrackingConfig:
-    # Max frames to keep a lost track alive before dropping
-    max_age: int = int(os.getenv("TRACK_MAX_AGE", "30"))
+    # Max frames to keep a lost track alive before dropping. RAISED 30 → 60
+    # (≈4 s at 15 fps): in a seated hall someone is often hidden for a few
+    # seconds by a person standing up in front of them; at 2 s they were
+    # dropped and then re-acquired as a "new" person.
+    max_age: int = int(os.getenv("TRACK_MAX_AGE", "60"))
 
     # Minimum consecutive detections before a track is confirmed.
     # LOWERED from 3 → 2: at 3, anyone briefly occluded in their first 3
@@ -102,9 +130,25 @@ class TrackingConfig:
     # IoU threshold for matching detections to existing tracks
     iou_threshold: float = float(os.getenv("TRACK_IOU_THRESHOLD", "0.3"))
 
-    # High/low confidence split for ByteTrack two-stage matching
-    high_thresh: float = float(os.getenv("TRACK_HIGH_THRESH", "0.6"))
+    # High/low confidence split for ByteTrack two-stage matching.
+    # high_thresh 0.6 → 0.5 (the ByteTrack paper's default).
+    high_thresh: float = float(os.getenv("TRACK_HIGH_THRESH", "0.5"))
     low_thresh: float = float(os.getenv("TRACK_LOW_THRESH", "0.1"))
+
+    # Lowest confidence that may START a new track. Was effectively 0.6
+    # (high_thresh), which silently discarded every partly-hidden or distant
+    # person the detector scored 0.3–0.6. Tracks still need min_hits frames
+    # to be confirmed, so single-frame false detections don't get counted.
+    new_track_thresh: float = float(os.getenv("TRACK_NEW_THRESH", "0.25"))
+
+    # Frames a not-yet-confirmed track may go unmatched before it's dropped.
+    tentative_max_misses: int = int(os.getenv("TRACK_TENTATIVE_GRACE", "2"))
+
+    # How long (seconds) to remember someone who is momentarily hidden. The
+    # pipeline converts this to frames from the measured frame rate, so it
+    # stays ~4 s whether the model runs at 15 fps (GPU) or one frame every
+    # few seconds (CPU). 0 = use max_age frames as-is.
+    lost_seconds: float = float(os.getenv("TRACK_LOST_SECONDS", "4"))
 
 
 # ---------------------------------------------------------------------------

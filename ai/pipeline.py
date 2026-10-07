@@ -89,12 +89,16 @@ class VisionPipeline:
     # Public API
     # ------------------------------------------------------------------
 
-    def process_frame(self, frame: np.ndarray) -> PipelineResult:
+    def process_frame(self, frame: np.ndarray, detect_frame: Optional[np.ndarray] = None) -> PipelineResult:
         """
         Process a single BGR frame through the full pipeline.
 
         Args:
             frame: H×W×3 numpy array from OpenCV capture.
+            detect_frame: optional higher-resolution copy of the same frame.
+                People are detected on it (more detail for small/distant
+                people) and their boxes are scaled into `frame`'s coordinates,
+                which is what seats, zones and everything downstream use.
 
         Returns:
             PipelineResult with all metrics for this frame.
@@ -104,7 +108,15 @@ class VisionPipeline:
 
         # Stage 1: Detect persons
         t_detect = time.perf_counter()
-        detections = self._detector.detect(frame)
+        if detect_frame is not None and detect_frame.shape[:2] != frame.shape[:2]:
+            detections = self._detector.detect(detect_frame)
+            sx = frame.shape[1] / detect_frame.shape[1]
+            sy = frame.shape[0] / detect_frame.shape[0]
+            scale = np.array([sx, sy, sx, sy], dtype=np.float32)
+            for d in detections:
+                d.bbox = (d.bbox * scale).astype(np.float32)
+        else:
+            detections = self._detector.detect(frame)
         inference_ms = (time.perf_counter() - t_detect) * 1000
 
         # Stage 1.5: Camera-calibration scale sanity check. The re-id
@@ -120,7 +132,9 @@ class VisionPipeline:
         # later stages — min_hits confirmation, tracking — filter more).
         detections = self._filter_by_scale_plausibility(detections, frame.shape[0])
 
-        # Stage 2: Track persons
+        # Stage 2: Track persons. Keep the "remember a hidden person" window
+        # in seconds, whatever frame rate the model achieves on this machine.
+        self._sync_lost_window()
         tracked_persons = self._tracker.update(detections)
 
         # Stage 2.5: Classify movement context BEFORE occupancy update.
@@ -184,6 +198,18 @@ class VisionPipeline:
             movement_context={tid: m.value for tid, m in movement_context.items()},
             newly_available_seat_ids=list(self._seat_engine.newly_available_seat_ids),
         )
+
+    def _sync_lost_window(self) -> None:
+        now = time.perf_counter()
+        last = getattr(self, "_last_frame_t", None)
+        self._last_frame_t = now
+        secs = self._cfg.tracking.lost_seconds
+        if last is None or secs <= 0:
+            return
+        dt = max(1e-3, now - last)
+        ema = getattr(self, "_frame_dt", dt)
+        self._frame_dt = 0.8 * ema + 0.2 * dt
+        self._cfg.tracking.max_age = int(min(600, max(2, round(secs / self._frame_dt))))
 
     def get_seat_bbox(self, seat_id: str) -> Optional[np.ndarray]:
         """Look up a seat's fixed bbox by ID — used by the worker to crop

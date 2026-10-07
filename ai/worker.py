@@ -187,7 +187,57 @@ def fetch_spatial_memory(camera_id: str, backend_url: str, api_key: str) -> list
 # Camera stream open
 # ---------------------------------------------------------------------------
 
-def open_capture(stream: str) -> cv2.VideoCapture:
+class LatestFrameReader:
+    """
+    Reads the camera continuously on a background thread and keeps only the
+    newest frame. cap.read() on its own returns frames in order, so when
+    detection is slower than the camera (a stronger model, tiling, a CPU-only
+    machine) frames queue up and the counts drift further and further behind
+    real time — CAP_PROP_BUFFERSIZE is ignored by many RTSP backends.
+    """
+
+    def __init__(self, cap: cv2.VideoCapture) -> None:
+        import threading
+        self._cap = cap
+        self._lock = threading.Lock()
+        self._frame: Optional[np.ndarray] = None
+        self._ok = True
+        self._fresh = threading.Event()
+        self._stop = False
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self) -> None:
+        while not self._stop:
+            ok, frame = self._cap.read()
+            with self._lock:
+                self._ok = ok
+                if ok:
+                    self._frame = frame
+            self._fresh.set()
+            if not ok:
+                return
+
+    def read(self, timeout: float = 5.0) -> tuple[bool, Optional[np.ndarray]]:
+        """Newest frame not returned before (waits up to `timeout` for one)."""
+        if not self._fresh.wait(timeout):
+            return False, None
+        with self._lock:
+            self._fresh.clear()
+            return self._ok and self._frame is not None, self._frame
+
+    def release(self) -> None:
+        self._stop = True
+        try:
+            self._cap.release()
+        except Exception:
+            pass
+
+    def isOpened(self) -> bool:  # noqa: N802 — mirrors cv2.VideoCapture
+        return self._cap.isOpened()
+
+
+def open_capture(stream: str) -> LatestFrameReader:
     source: int | str = int(stream) if stream.isdigit() else stream
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
@@ -195,7 +245,7 @@ def open_capture(stream: str) -> cv2.VideoCapture:
     # Prefer lower latency buffer for RTSP
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     logger.info("Camera stream opened | source=%s", stream)
-    return cap
+    return LatestFrameReader(cap)
 
 
 # ---------------------------------------------------------------------------
@@ -470,14 +520,19 @@ def main() -> None:
                     continue
                 continue
 
-            # Resize to configured resolution
+            # Keep the camera's full-resolution frame for detection — shrinking
+            # a 1080p/4K picture to 1280×720 first threw away the detail
+            # needed to find people at the back. The rest of the pipeline
+            # (seat layouts, zones, snapshots) still works in the configured
+            # frame size; detections are scaled into it.
+            full_frame = frame
             if config.camera.frame_width > 0:
                 frame = cv2.resize(frame, (config.camera.frame_width, config.camera.frame_height))
 
             camera_error = _camera_error_status(frame)
 
             # ── Run vision pipeline ───────────────────────────────────────
-            result = pipeline.process_frame(frame)
+            result = pipeline.process_frame(frame, detect_frame=full_frame)
 
             # ── Rolling FPS calculation ───────────────────────────────────
             now = time.perf_counter()
