@@ -3,7 +3,7 @@
 // MP4 afterwards with ffmpeg.
 import { chromium } from "playwright";
 
-const APP = process.env.APP_URL ?? "https://kyrokharis.itadmin-a94.workers.dev";
+const APP = process.env.APP_URL ?? "https://kyro.kharischurch.com";
 const GUIDE = process.env.GUIDE_URL ?? "https://kyro-user-documentation.itadmin-a94.workers.dev";
 const OUT_DIR = process.argv[2];
 const W = 1280, H = 720;

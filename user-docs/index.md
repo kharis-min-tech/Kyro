@@ -20,7 +20,7 @@ hero:
       link: /guides/sunday-checklist
     - theme: alt
       text: Open Kyro
-      link: https://kyrokharis.itadmin-a94.workers.dev
+      link: https://kyro.kharischurch.com
 
 features:
   - icon: { src: /icons/count.svg }

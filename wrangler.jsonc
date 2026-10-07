@@ -25,6 +25,12 @@
   // server-side (no CORS) and sends real Web Push notifications. Every
   // other path is still served straight from the static export.
   "main": "./worker/index.js",
+
+  // kyro.kharischurch.com is served by this Worker (route on the proxied
+  // record; the old office tunnel origin is no longer used for it).
+  "routes": [
+    { "pattern": "kyro.kharischurch.com/*", "zone_name": "kharischurch.com" }
+  ],
   "assets": {
     "directory": "./dashboard/out",
     "binding": "ASSETS",

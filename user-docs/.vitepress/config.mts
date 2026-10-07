@@ -22,7 +22,7 @@ export default defineConfig({
       { text: "Pages", link: "/pages/ai-count" },
       { text: "Guides", link: "/guides/sunday-checklist" },
       { text: "Help", link: "/help/troubleshooting" },
-      { text: "Open Kyro", link: "https://kyrokharis.itadmin-a94.workers.dev" },
+      { text: "Open Kyro", link: "https://kyro.kharischurch.com" },
     ],
     sidebar: [
       {
