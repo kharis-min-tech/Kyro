@@ -6,7 +6,7 @@ import { X, Camera as CameraIcon, RotateCcw, Download, Wifi, WifiOff, RefreshCw 
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
 import { useAuth } from "@/hooks/useAuth";
-import { ReviewPanel } from "@/components/ui/ReviewPanel";
+import { useReviewContext } from "@/lib/ReviewContext";
 import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
@@ -759,7 +759,11 @@ function ResetDialog({ zoneName, reservedCount, onConfirm, onCancel }: {
 function CameraSeatView({ camera }: { camera: Camera }) {
   const { role } = useAuth();
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
-  const { data, connected, reviews, dismissReview } = usePipelineStream(camera.camera_id, streamRole);
+  const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
+  // Questions for this room, from the same list the app-wide pop-up shows —
+  // so the count drops as soon as one is answered anywhere.
+  const { reviews: allQuestions } = useReviewContext();
+  const waitingQuestions = allQuestions.filter((r) => r.camera_id === camera.camera_id).length;
 
   // Deep-link from a push notification: /seating?review=<id> should auto-open
   // the unanswered-review panel focused on that specific question.
@@ -868,7 +872,8 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           <p style={{ fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
           <span style={{ fontSize: 64, fontWeight: 900, color: "var(--text-primary)" }}>{current.toLocaleString()}</span>
         </div>
-        <ReviewPanel reviews={reviews} cameraId={camera.camera_id} onDismiss={dismissReview} />
+        {/* AI questions are shown by the app-wide overlay (GlobalReviewOverlay). A second
+            copy here stacked on top of it and covered its answer buttons. */}
       </div>
     );
   }
@@ -914,9 +919,9 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           <StatCard label="Occupied Units" value={occupied.toString()} sub={`of ${cap}`} valueColour="#ff4d6d" />
           <StatCard label="Reserved Seats" value={reserved.toString()} sub="Reserved" valueColour="#9b5de5" />
           <ZonesBadge zones={zones} />
-          <StatCard label="AI Questions" value={reviews.length.toString()}
-            sub={reviews.length ? "Waiting for an answer" : "None waiting"}
-            valueColour={reviews.length ? "#f59e0b" : undefined} />
+          <StatCard label="AI Questions" value={waitingQuestions.toString()}
+            sub={waitingQuestions ? "Waiting for an answer" : "None waiting"}
+            valueColour={waitingQuestions ? "#f59e0b" : undefined} />
         </div>
 
         {/* Spatial monitor */}
@@ -990,7 +995,8 @@ function CameraSeatView({ camera }: { camera: Camera }) {
         </div>
       </div>
 
-      <ReviewPanel reviews={reviews} cameraId={camera.camera_id} onDismiss={dismissReview} />
+      {/* AI questions are shown by the app-wide overlay (GlobalReviewOverlay). A second
+          copy here stacked on top of it and covered its answer buttons. */}
       {showReset && (
         <ResetDialog zoneName={camera.zone_name ?? camera.name} reservedCount={reserved}
           onConfirm={handleReset} onCancel={() => setShowReset(false)} />
