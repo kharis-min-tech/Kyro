@@ -13,7 +13,7 @@ Kyro can send alerts straight to your phone's lock screen, like a text message, 
 
 1. Open Kyro in **Chrome**.
 2. Go to **Notifications** and tap **Turn on**, then **Allow**.
-3. Optional: **⋮ → Install app** to open Kyro like an app.
+3. Optional: **<Icon name="more" label="more" /> → Install app** to open Kyro like an app.
 
 ## Computer
 
@@ -25,7 +25,7 @@ Go to **Notifications**, tap **Turn on** and **Allow**. Alerts appear in the cor
 
 1. On **Notifications**, tap **Send in 20s**.
 2. **Straight away**, lock your phone or switch to another app.
-3. About 20 seconds later you should see **🔒 Kyro reached your lock screen**.
+3. About 20 seconds later you should see <Icon name="lock" /> **Kyro reached your lock screen**.
 
 If it arrives, you're set. You won't miss alerts.
 
@@ -33,12 +33,12 @@ If it arrives, you're set. You won't miss alerts.
 
 | Alert | Example |
 |---|---|
-| A room is counted | 📋 Overflow Room counted: 64 people · counted by Grace |
-| A room is filling up | ⚠️ Main Floor is filling up: 83% full |
-| A room is over capacity | 🚨 Main Floor is over capacity: 93% full |
-| The final count is approved | ✅ Final count approved: 1,204 total for today's service |
-| A seat is free *(with cameras)* | 🪑 Seat A12 is free: Main Floor |
-| The AI has a question *(with cameras)* | 🎭 Kyro has a question |
+| A room is counted | <Icon name="clipboard" /> Overflow Room counted: 64 people · counted by Grace |
+| A room is filling up | <Icon name="warning" color="#f59e0b" /> Main Floor is filling up: 83% full |
+| A room is over capacity | <Icon name="alert" color="#ef4444" /> Main Floor is over capacity: 93% full |
+| The final count is approved | <Icon name="check-circle" color="#22c55e" /> Final count approved: 1,204 total for today's service |
+| A seat is free *(with cameras)* | <Icon name="seat" /> Seat A12 is free: Main Floor |
+| The AI has a question *(with cameras)* | <Icon name="question" /> Kyro has a question |
 
 Tapping an alert opens the right page in Kyro.
 

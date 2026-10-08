@@ -21,7 +21,7 @@ At the bottom of the sidebar you'll find your name and role, **Help guide**, the
 
 ## On your phone
 
-On a phone the sidebar is tucked away. Tap the **menu button** (☰) at the top right to open it. It closes by itself when you pick a page, or tap the dimmed area to close it.
+On a phone the sidebar is tucked away. Tap the **menu button** (<Icon name="menu" label="menu" />) at the top right to open it. It closes by itself when you pick a page, or tap the dimmed area to close it.
 
 <div class="phones">
   <Shot phone name="phone-manual-count" alt="Manual Count page on a phone" />

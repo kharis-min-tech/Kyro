@@ -1,6 +1,6 @@
 # Video tour
 
-A 2½-minute walk through Kyro's main features, with a spoken voice-over. 🔊 Turn your sound on. Follow the cursor and the captions. Each step is explained in more detail in this guide.
+A 2½-minute walk through Kyro's main features, with a spoken voice-over. <Icon name="sound" /> Turn your sound on. Follow the cursor and the captions. Each step is explained in more detail in this guide.
 
 <div class="kyro-video">
   <video controls preload="metadata" playsinline poster="/videos/kyro-tour-poster.jpg">

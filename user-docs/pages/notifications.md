@@ -12,7 +12,7 @@ For step-by-step setup on iPhone and Android, see [Getting alerts on your phone]
 
 1. Tap **Turn on**.
 2. When your browser asks, tap **Allow**.
-3. A welcome alert arrives: **✅ Kyro notifications active**.
+3. A welcome alert arrives: <Icon name="check-circle" color="#22c55e" /> **Kyro notifications active**.
 
 The card turns green and says **Notifications enabled**. Tap **Turn off** at any time to stop alerts on this device.
 
@@ -38,10 +38,10 @@ Open **Adjust thresholds** to move the warning and critical levels. They save by
 
 The page lists exactly what can reach you on this setup:
 
-- ✅ Manual counts saved by ushers in Live mode, including **filling up** and **over capacity** warnings
-- ✅ **Final count approved** at the end of the service
-- ✅ If your phone is off, alerts wait up to **24 hours** and arrive when it's back on
-- ⏳ Camera alerts (free seats, room capacity, camera offline, AI questions) start once the camera system is connected
+- <Icon name="check" color="#22c55e" /> Manual counts saved by ushers in Live mode, including **filling up** and **over capacity** warnings
+- <Icon name="check" color="#22c55e" /> **Final count approved** at the end of the service
+- <Icon name="check" color="#22c55e" /> If your phone is off, alerts wait up to **24 hours** and arrive when it's back on
+- <Icon name="clock" color="#9ca3af" /> Camera alerts (free seats, room capacity, camera offline, AI questions) start once the camera system is connected
 
 ## Demo mode extras
 

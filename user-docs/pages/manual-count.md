@@ -47,7 +47,7 @@ Editing an approved count turns it back into a draft, so it has to be approved a
 
 - Each calendar day is one service. At midnight a new day starts, and the lists show today's counts only.
 - Room names aren't case-sensitive: *overflow room* and *Overflow Room* are the same room.
-- In **Live mode**, when an usher saves a count, leaders who have [turned on notifications](/guides/phone-alerts) get an alert on their phone, for example *"📋 Overflow Room counted: 64 people, counted by Grace"*. If the room has a seat capacity, the alert warns when it's filling up or over capacity. Approving the final count sends *"✅ Final count approved"*.
+- In **Live mode**, when an usher saves a count, leaders who have [turned on notifications](/guides/phone-alerts) get an alert on their phone, for example *"Overflow Room counted: 64 people, counted by Grace"*. If the room has a seat capacity, the alert warns when it's filling up or over capacity. Approving the final count sends *"Final count approved"*.
 - The person who saves or approves a count doesn't get an alert about it. They can already see it on screen.
 - **Counts are shared in Live mode.** Every usher's phone adds to the same list, and everyone sees it update within about 10 seconds. The AI Count headline and the Integrations send include everyone's approved counts.
 - Ushers can remove their own drafts. Removing an approved count needs an admin or operator.

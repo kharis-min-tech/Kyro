@@ -7,7 +7,7 @@ The Users page is where administrators create accounts for the team and choose w
 ## Add a user
 
 1. Fill in **Username** (for example *john.doe*), **Display name** and **Password** (at least 8 characters).
-2. Under **Page access**, tap the pages they should see. A ✓ shows a page is on.
+2. Under **Page access**, tap the pages they should see. A <Icon name="check" label="tick" /> shows a page is on.
 3. Check the role badge, for example **→ operator**. It updates as you tick pages. See [Roles & access](/getting-started/roles).
 4. Tap **Create user**.
 

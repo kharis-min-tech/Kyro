@@ -33,6 +33,6 @@ If the green dot next to **Sessions** is still pulsing after the service, a sess
 
 Finished sessions are listed under **Past sessions**, with the date, how long they ran, the peak, the number of entries and the capacity.
 
-- **Rename:** tap **✎ rename**, type the name, then **Save**. A quick-started session has no name until you rename it here.
+- **Rename:** tap **<Icon name="pencil" /> rename**, type the name, then **Save**. A quick-started session has no name until you rename it here.
 - **Download:** tap **Export CSV** to get a spreadsheet of the session's numbers.
 - **Delete:** tap **Delete** and confirm. This can't be undone.

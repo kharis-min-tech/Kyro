@@ -14,10 +14,10 @@ The stage is at the top, and each row is lettered from the front (A, B, C…).
 
 | Dot | Meaning |
 |---|---|
-| 🔴 Red | Occupied |
-| ⚫ Dark | Free |
-| 🟡 Yellow | Away briefly: the person has stepped out and is expected back |
-| 🟣 Purple | Reserved, or held while the person is on stage, in the choir or at the altar |
+| <Icon name="dot" color="#ff4d6d" /> Red | Occupied |
+| <Icon name="dot" color="#2a2f45" /> Dark | Free |
+| <Icon name="dot" color="#ffd60a" /> Yellow | Away briefly: the person has stepped out and is expected back |
+| <Icon name="dot" color="#9b5de5" /> Purple | Reserved, or held while the person is on stage, in the choir or at the altar |
 | Faded, dashed | In an *ignore* area, so it isn't counted |
 
 The cards along the top show **Capacity utilisation**, **Occupied units**, **Reserved seats**, **Zones known** (the stage, altar or choir areas drawn in the [Seat Editor](/pages/seat-editor)) and **AI questions** waiting for an answer. Use **−** and **+** to zoom the map.

@@ -12,7 +12,7 @@ Sometimes the AI isn't sure what it's seeing, for example when someone walks to 
 2. Tap the answer that matches what you see, for example:
    - **Yes, it's the stage/altar**
    - **No — toilet break**
-   - **Yes — gave their life to Christ ✝**
+   - **Yes — gave their life to Christ**
    - **Yes — count looks right**
 3. That's it. **Your answer trains the AI**, so it won't ask the same thing again.
 

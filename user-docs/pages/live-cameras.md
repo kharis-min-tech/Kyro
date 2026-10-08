@@ -28,7 +28,7 @@ When a room reaches **80%** full, an amber **Rooms filling up** banner appears a
 
 Below the overview, each camera has a tile showing the live picture, **Live** or **Offline**, the count against capacity, seats left, and people **in** and **out**. Tiles show **FILLING UP** at 80% and **OVERCROWDED** at 90%.
 
-- **See one room bigger:** tap the expand icon at the bottom right of its tile. Close it with **✕** or the Esc key.
+- **See one room bigger:** tap the expand icon at the bottom right of its tile. Close it with **<Icon name="close" label="close" />** or the Esc key.
 - **Picture stopped?** If a tile says **Stream lost — tap to retry**, tap it.
 
 An **outdoor queue** camera shows a big number of **people outside**. It has no seats. Its count feeds the **OUTSIDE QUEUE** box above.
