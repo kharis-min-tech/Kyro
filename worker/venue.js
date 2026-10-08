@@ -373,7 +373,8 @@ export class VenueHub extends DurableObject {
       const cur = byDay.get(d);
       if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts });
     }
-    const history = [...byDay.entries()].sort().map(([d, v]) => ({
+    // A day where the cameras never saw anyone (e.g. a quick test) isn't a service.
+    const history = [...byDay.entries()].filter(([, v]) => v.peak > 0).sort().map(([d, v]) => ({
       timestamp: new Date(v.at).toISOString(), date: d, attendance: v.peak,
       occupancy_pct: v.capacity ? Math.round((v.peak / v.capacity) * 1000) / 10 : 0,
     }));

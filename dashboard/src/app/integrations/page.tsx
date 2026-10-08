@@ -6,7 +6,9 @@
  *
  * Live mode on Cloudflare: settings live on the Kyro server
  * (worker/integrations.js). "Send a test" / "Send today's total now" are
- * sent by the server using every usher's approved counts, and "Send
+ * sent by the server using every usher's approved counts plus each camera
+ * room's highest count that day (source "camera"; an approved manual count
+ * for the same room name replaces the camera number), and "Send
  * automatically" is fired by the Worker's 15-minute cron at the chosen
  * day/time — no browser needs to be open.
  *
@@ -214,9 +216,14 @@ export default function IntegrationsPage() {
           <div className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
             <p className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>What happens when you send</p>
             <ul className="list-disc pl-4 space-y-0.5">
-              <li>Kyro takes <strong>today&apos;s approved Manual Counts</strong> — every room and the total (drafts are left out).</li>
+              {edge ? (<>
+                <li>Kyro takes <strong>today&apos;s approved Manual Counts</strong> (drafts are left out) and <strong>each camera room&apos;s highest count today</strong> — from Camera Mode or a camera computer — then adds up the total.</li>
+                <li>If a room has both, the approved manual count is used instead of the camera number, so nobody is counted twice.</li>
+              </>) : (
+                <li>Kyro takes <strong>today&apos;s approved Manual Counts</strong> — every room and the total (drafts are left out).</li>
+              )}
               <li>It posts them to your webhook address as a small data message, like the example at the bottom of this page.</li>
-              <li><strong>Send a test</strong> adds a pretend camera count of 42 and is marked <code>&quot;test&quot;: true</code>, so you can check it arrives without confusing your records.</li>
+              <li><strong>Send a test</strong> {edge ? "uses a pretend camera count of 42 instead of the real camera numbers" : "adds a pretend camera count of 42"} and is marked <code>&quot;test&quot;: true</code>, so you can check it arrives without confusing your records.</li>
               <li>Nothing is changed in Kyro — sending just shares a copy of the numbers.</li>
             </ul>
           </div>

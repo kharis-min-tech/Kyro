@@ -10,6 +10,7 @@ import { useReviewContext } from "@/lib/ReviewContext";
 import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
+import { useEdgeVenue } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -668,10 +669,15 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
 // ─── Stream status ────────────────────────────────────────────────────────────
 // Shows what's really feeding the map (previously always "LIVE DATA STREAM
 // ACTIVE", whatever the connection).
-function StreamStatus({ connected }: { connected: boolean }) {
+function StreamStatus({ connected, edgeRunning }: {
+  connected: boolean;
+  /** Edge Live: whether this room's camera is counting right now (undefined = not edge). */
+  edgeRunning?: boolean;
+}) {
   const [demo, setDemo] = useState(false);
   useEffect(() => { setDemo(userChoseDemo()); }, []);
-  const label  = demo ? "DEMO DATA" : connected ? "LIVE" : "NOT CONNECTED";
+  if (edgeRunning !== undefined) connected = edgeRunning;
+  const label  = demo ? "DEMO DATA" : connected ? "LIVE" : edgeRunning !== undefined ? "OFFLINE" : "NOT CONNECTED";
   const colour = demo ? "#818cf8" : connected ? GREEN : "#f87171";
   return (
     <div className="flex items-center gap-1.5 mt-0.5">
@@ -764,6 +770,13 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   const { role } = useAuth();
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
+  // Edge Live (Cloudflare build): these cameras count people per room, so
+  // the room's numbers come from /api/live/venue rather than seat states.
+  const [edge, setEdge] = useState(false);
+  useEffect(() => { setEdge(isEdgeLive()); }, []);
+  const { venue: edgeVenue, error: edgeError } = useEdgeVenue(edge);
+  const edgeZone = edgeVenue?.zones.find((z) => z.camera_id === camera.camera_id) ?? null;
+  const edgeRunning = edge ? !!edgeZone?.is_running : undefined;
   // Questions for this room, from the same list the app-wide pop-up shows —
   // so the count drops as soon as one is answered anywhere.
   const { reviews: allQuestions } = useReviewContext();
@@ -864,13 +877,13 @@ function CameraSeatView({ camera }: { camera: Camera }) {
 
   // Queue camera
   if (isQueue) {
-    const current = data?.attendance.current ?? 0;
+    const current = edge ? (edgeZone?.current ?? 0) : (data?.attendance.current ?? 0);
     return (
       <div className="flex-1 flex flex-col overflow-auto p-6" style={{ background: BG }}>
         <div className="flex items-center gap-3 mb-6">
-          <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: GREEN }} />
+          <span className={`w-2 h-2 rounded-full ${edge && !edgeRunning ? "" : "animate-pulse"}`} style={{ background: edge && !edgeRunning ? "#f87171" : GREEN }} />
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)" }}>{camera.zone_name ?? camera.name}</h2>
-          <StreamStatus connected={connected} />
+          <StreamStatus connected={connected} edgeRunning={edgeRunning} />
         </div>
         <div className="rounded-xl p-8 flex flex-col items-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <p style={{ fontSize: 9, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>People outside now</p>
@@ -893,6 +906,10 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   const onStage   = countable.filter(s => s.state === "rota_hold").length;
   const cap       = camera.zone_capacity || countable.length || 1;
   const utilPct  = Math.round((occupied / cap) * 1000) / 10;
+  // Edge Live with no seat layout: show the room's people count instead of seats.
+  const roomMode  = edge && rawSeats.length === 0;
+  const roomPeople = edgeZone?.current ?? 0;
+  const roomSeats  = camera.zone_capacity || edgeZone?.capacity || 0;
 
   return (
     <div className="flex-1 flex flex-col overflow-auto" style={{ background: BG }}>
@@ -904,19 +921,58 @@ function CameraSeatView({ camera }: { camera: Camera }) {
               {camera.zone_name ?? camera.name} / {camera.location ?? "Zone"}
             </h2>
           </div>
-          <StreamStatus connected={connected} />
+          <StreamStatus connected={connected} edgeRunning={edgeRunning} />
         </div>
         <div className="flex items-center gap-3">
-          <button onClick={() => setShowReset(true)}
+          {!roomMode && <button onClick={() => setShowReset(true)}
             title="Clear hand corrections and go back to what the cameras see"
             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-80"
             style={{ background: "var(--bg-hover)", color: "var(--text-secondary)", border: `1px solid ${BORDER}` }}>
             <RotateCcw size={12} /> Reset seats
-          </button>
+          </button>}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-3 sm:p-5 flex flex-col gap-4 sm:gap-5">
+        {roomMode ? (<>
+        {/* Room view — edge Live: these cameras count people per room, not seat by seat */}
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <StatCard label="People in room" value={edgeZone ? roomPeople.toLocaleString() : "—"} />
+          <StatCard label="Seats" value={roomSeats > 0 ? roomSeats.toLocaleString() : "—"} />
+          <StatCard label="Seats left" value={roomSeats > 0 && edgeZone ? Math.max(0, roomSeats - roomPeople).toLocaleString() : "—"}
+            valueColour={roomSeats > 0 && edgeZone && roomPeople >= roomSeats ? "#ff4d6d" : undefined} />
+          <StatCard label="Reserved Seats" value={reserved.toString()} sub="Reserved" valueColour="#9b5de5" />
+          <StatCard label="AI Questions" value={waitingQuestions.toString()}
+            sub={waitingQuestions ? "Waiting for an answer" : "None waiting"}
+            valueColour={waitingQuestions ? "#f59e0b" : undefined} />
+        </div>
+        <div className="rounded-xl px-4 py-4 flex flex-col gap-2" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span style={{ fontSize: 9, fontWeight: 700, color: "var(--text-faint)", textTransform: "uppercase", letterSpacing: "0.12em" }}>Room</span>
+            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10, fontWeight: 700,
+              background: edgeRunning ? `${GREEN}15` : "#f8717115", color: edgeRunning ? GREEN : "#f87171",
+              border: `1px solid ${edgeRunning ? `${GREEN}30` : "#f8717130"}` }}>
+              {edgeRunning ? "Live" : "Offline"}
+            </span>
+            {edgeZone && roomSeats > 0 && (
+              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>{Math.round((roomPeople / roomSeats) * 100)}% full</span>
+            )}
+          </div>
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+            These cameras count the people in the room — seat-by-seat detection isn&apos;t available from them.
+            {!edgeRunning && " The count updates when Camera Mode or the camera computer is running for this room."}
+          </p>
+          {edgeRunning === false && edgeZone?.error_reason && (
+            <p style={{ fontSize: 11, color: "#f59e0b" }}>{edgeZone.error_reason}</p>
+          )}
+          {roomSeats === 0 && (
+            <p style={{ fontSize: 11, color: "var(--text-faint)" }}>Set this room&apos;s number of seats on the Cameras page to see seats left.</p>
+          )}
+          {edgeError && !edgeVenue && (
+            <p style={{ fontSize: 11, color: "#f87171" }}>Couldn&apos;t load the room&apos;s count ({edgeError}).</p>
+          )}
+        </div>
+        </>) : (<>
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           <StatCard label="Capacity Utilization" value={`${utilPct}%`} sub={`${occupied} of ${cap} seats`} />
@@ -997,6 +1053,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           <IntelligenceFeed seats={mergedSeats} camera={camera} connected={connected} />
           <UnitBreakdown seats={mergedSeats} camera={camera} />
         </div>
+        </>)}
       </div>
 
       {/* AI questions are shown by the app-wide overlay (GlobalReviewOverlay). A second

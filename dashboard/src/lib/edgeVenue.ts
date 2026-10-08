@@ -37,11 +37,23 @@ export interface EdgeHistoryPoint {
 
 const enc = encodeURIComponent;
 
+export interface EdgeDaily {
+  /** One point per day: the most people in the building at once. */
+  history: { timestamp: string; date: string; attendance: number; occupancy_pct: number }[];
+  arrival: { hour: number; count: number; avg_count: number }[];
+  summary: {
+    camera_id: string; total_sessions: number; all_time_peak: number; avg_attendance: number;
+    avg_occupancy_pct: number; first_session: string | null; last_session: string | null;
+  };
+}
+
 export const edgeVenueApi = {
   cameras: (all = false) => edgeFetch<EdgeCamera[]>(`/api/live/cameras${all ? "?all=1" : ""}`),
   venue: () => edgeFetch<VenueTotal>("/api/live/venue"),
   history: (date: string, tz: string, camera?: string) =>
     edgeFetch<EdgeHistoryPoint[]>(`/api/live/history?date=${enc(date)}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
+  daily: (days: number, tz: string, camera?: string) =>
+    edgeFetch<EdgeDaily>(`/api/live/daily?days=${enc(String(days))}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
   pairingCode: () => edgeFetch<{ code: string; expires_at: string }>("/api/live/pairing-code", { method: "POST" }),
   devices: () => edgeFetch<EdgeDevice[]>("/api/live/devices"),
   removeDevice: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/devices/${enc(id)}`, { method: "DELETE" }),

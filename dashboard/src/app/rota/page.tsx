@@ -6,6 +6,8 @@ import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { useCameras } from "@/hooks/useCameras";
 import { seatsApi } from "@/lib/api";
 import { ROW_CONFIG as DEMO_ROW_CONFIG } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import type { Camera as CameraInfo } from "@/types";
 import { parseRotaText, needsSeatingAnswer, type ParsedRotaEntry, type SectionInfo } from "@/lib/rotaParser";
 import { SeatingAreaPicker, type SeatingAnswer } from "@/components/ui/SeatingAreaPicker";
 import {
@@ -85,8 +87,19 @@ function blankEntry(): ParsedEntry {
  *  to auto-fill obvious entries during parsing and to power the "which
  *  seating area is this?" picker for entries that stay ambiguous.
  *  Entirely local/free — no AI call involved. */
-async function loadSectionsFor(camId: string | null): Promise<SectionInfo[]> {
+async function loadSectionsFor(camId: string | null, cams: CameraInfo[] = []): Promise<SectionInfo[]> {
   if (!camId) return [];
+  // Edge Live (Cloudflare build): no seat layouts — the seating areas are
+  // the real camera rooms (zone names) from the Cameras page.
+  if (isEdgeLive()) {
+    const names = new Set<string>();
+    for (const c of cams) {
+      if (c.location === "queue") continue;
+      const n = (c.zone_name || c.name || "").trim();
+      if (n) names.add(n);
+    }
+    return Array.from(names).map((section) => ({ section, rows: [] }));
+  }
   if (inDemoMode()) {
     return [{ section: "Main Floor", rows: DEMO_ROW_CONFIG.map((r) => r.row) }];
   }
@@ -367,8 +380,11 @@ function ActiveRota({ cameraId, entries, onDeleted }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RotaPage() {
-  const { cameras } = useCameras();
+  const { cameras, loading: camsLoading } = useCameras();
   const [cameraId, setCameraId]     = useState<string | null>(null);
+  const [edge, setEdge]             = useState(false);
+  useEffect(() => { setEdge(isEdgeLive()); }, []);
+  const noEdgeRooms = edge && !camsLoading && cameras.filter((c) => c.location !== "queue").length === 0;
   const activeCamId = cameraId ?? cameras[0]?.camera_id ?? null;
 
   // Known seating areas for the active camera — used to auto-fill obvious
@@ -415,14 +431,16 @@ export default function RotaPage() {
   useEffect(() => {
     if (!activeCamId) return;
     loadActive(activeCamId);
-    loadSectionsFor(activeCamId).then(setSections);
   }, [activeCamId, loadActive]);
+  useEffect(() => {
+    if (!activeCamId) return;
+    loadSectionsFor(activeCamId, cameras).then(setSections);
+  }, [activeCamId, cameras]);
 
   function handleCameraChange(id: string) {
     setCameraId(id);
     setParsed(null); setSaved(false); setSaveErr(null); setSkipped(new Set());
     loadActive(id);
-    loadSectionsFor(id).then(setSections);
   }
 
   function handleParsed(entries: ParsedEntry[], raw: string, warns: string[]) {
@@ -558,8 +576,19 @@ export default function RotaPage() {
           </p>
         </div>
 
+        {noEdgeRooms && (
+          <div className="rounded-xl px-4 py-8 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Users2 size={22} className="mx-auto mb-3 text-indigo-400" />
+            <p className="text-sm font-semibold text-white">No camera rooms yet</p>
+            <p className="text-xs text-gray-500 mt-1.5 max-w-sm mx-auto">
+              Your rota sections come from your camera rooms. Add a camera on the Cameras page
+              (or start Camera Mode) and give it a room name — it will appear here.
+            </p>
+          </div>
+        )}
+
         {/* Active rota */}
-        <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {!noEdgeRooms && <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
             <p className="text-sm font-semibold text-white">Today's rota</p>
             <p className="text-xs text-gray-500 mt-0.5">
@@ -579,7 +608,7 @@ export default function RotaPage() {
               <p className="text-sm text-gray-600 text-center py-4">No cameras registered yet</p>
             )}
           </div>
-        </div>
+        </div>}
 
         {/* Success banner */}
         {saved && (

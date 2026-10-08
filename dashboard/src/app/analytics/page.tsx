@@ -7,6 +7,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { CameraSwitcher } from "@/components/layout/CameraSwitcher";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, makeDemoAnalytics } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import { edgeVenueApi } from "@/lib/edgeVenue";
+import { useCameras } from "@/hooks/useCameras";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -18,6 +21,8 @@ const BG      = "var(--bg-base)";
 const CARD_BG = "var(--bg-card)";
 const BORDER  = "var(--border-subtle)";
 const DEFAULT_CAMERA = process.env.NEXT_PUBLIC_CAMERA_ID ?? "cam-01";
+/** Edge Live (Cloudflare build, no backend): how many days /api/live/daily covers. */
+const EDGE_DAYS = 30;
 
 // Safely parse a date from ISO string using UTC
 function parseUTC(ts: string) { return new Date(ts); }
@@ -261,7 +266,18 @@ export default function AnalyticsPage() {
   const { canViewAttendance, isAuthenticated } = useAuth();
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
-  useEffect(() => { setHydrated(true); }, []);
+  // Read once after mount (never during render) to avoid hydration mismatches.
+  const [edge, setEdge] = useState(false);
+  const [realDemo, setRealDemo] = useState(false);
+  useEffect(() => {
+    setHydrated(true);
+    setEdge(isEdgeLive());
+    setRealDemo(localStorage.getItem("kyro_mode") === "demo");
+  }, []);
+  // Edge Live: "" = all cameras; otherwise a camera id from CameraContext.
+  const [edgeCamera, setEdgeCamera] = useState("");
+  const [edgeError, setEdgeError] = useState<string | null>(null);
+  const { cameras } = useCameras();
   useEffect(() => {
     if (!hydrated || inDemoMode()) return;
     if (!isAuthenticated) { router.replace("/login"); return; }
@@ -311,6 +327,26 @@ export default function AnalyticsPage() {
       setLoading(false);
       return;
     }
+    // Live mode on the Cloudflare build: real daily counts from the cameras.
+    if (isEdgeLive()) {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      edgeVenueApi.daily(EDGE_DAYS, tz, edgeCamera || undefined)
+        .then((d) => {
+          // Anchor each point at midday UTC on its local date, so the
+          // UTC-based date labels below show the church's calendar day.
+          const h: AttendancePoint[] = (d.history ?? []).map((p) => ({
+            timestamp: `${p.date}T12:00:00Z`, attendance: p.attendance, occupancy_pct: p.occupancy_pct,
+          }));
+          setHistory(h); setFiltered(h);
+          setSummary(h.length ? (d.summary as AnalyticsSummary) : null);
+          setArrival(h.length ? (d.arrival ?? []) : []);
+          setSelectedDay((prev) => prev ? (h.find((x) => x.timestamp === prev.timestamp) ?? null) : null);
+          setEdgeError(null);
+        })
+        .catch((e) => setEdgeError(e instanceof Error ? e.message : "Couldn't load counts"))
+        .finally(() => setLoading(false));
+      return;
+    }
     // Live mode without a backend: nothing to load.
     if (!process.env.NEXT_PUBLIC_API_URL) {
       setHistory([]); setSummary(null); setArrival([]); setFiltered([]);
@@ -321,11 +357,15 @@ export default function AnalyticsPage() {
     Promise.all([analyticsApi.history(cameraId,30), analyticsApi.summary(cameraId), analyticsApi.arrival(cameraId,30)])
       .then(([h,s,arr]) => { setHistory(h); setFiltered(h); setSummary(s); setArrival(arr); })
       .catch(console.error).finally(() => setLoading(false));
-  }, [cameraId]);
+  }, [cameraId, edgeCamera]);
 
   useEffect(() => { loadData(); }, [loadData]);
   // Auto-refresh every 30s in real mode (demo already polls every 5s)
   useEffect(() => {
+    if (isEdgeLive()) {
+      const t = setInterval(loadData, 60_000);
+      return () => clearInterval(t);
+    }
     if (inDemoMode()) {
       const t = setInterval(loadData, 5000);
       return () => clearInterval(t);
@@ -349,10 +389,23 @@ export default function AnalyticsPage() {
             <h1 className="text-lg font-bold text-white">Analytics</h1>
             <p className="text-xs mt-0.5" style={{ color:"#6b7280" }}>
               Attendance trends and seat utilisation
-              {hydrated && inDemoMode() && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updates every 5s</span>}
+              {hydrated && realDemo && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updates every 5s</span>}
             </p>
           </div>
-          <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />
+          {edge ? (
+            <div className="flex items-center gap-2 min-w-0 max-w-full">
+              <span className="text-xs text-gray-500 shrink-0">Camera</span>
+              <select value={edgeCamera} onChange={(e) => { setLoading(true); setEdgeCamera(e.target.value); }}
+                className="min-w-0 max-w-full flex-1 sm:flex-none bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <option value="">All cameras</option>
+                {cameras.map((c) => (
+                  <option key={c.camera_id} value={c.camera_id}>{c.zone_name || c.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />
+          )}
         </div>
 
         {/* Search bar */}
@@ -387,11 +440,23 @@ export default function AnalyticsPage() {
 
         <div className="p-6 flex flex-col gap-5">
           {loading && <div className="text-sm py-16 text-center" style={{ color:"#6b7280" }}>Loading…</div>}
-          {!loading && <>
+          {!loading && edge && edgeError && (
+            <p className="text-xs" style={{ color:"#f87171" }}>Couldn&apos;t load the latest counts ({edgeError}). Trying again in a minute.</p>
+          )}
+          {!loading && edge && !edgeError && history.length === 0 && (
+            <div className="rounded-2xl p-8 text-center" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+              <BarChart2 size={22} className="mx-auto mb-3" style={{ color:"#6366f1" }}/>
+              <p className="text-sm font-semibold text-white">No counts yet</p>
+              <p className="text-xs mt-1.5 max-w-sm mx-auto" style={{ color:"#6b7280" }}>
+                Counts appear here after a service with Camera Mode or a camera computer running.
+              </p>
+            </div>
+          )}
+          {!loading && !(edge && history.length === 0) && <>
             {summary && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Stat label="Total services" value={summary.total_sessions} sub="Last 6 months" icon={Calendar} accent="#6366f1"/>
-                <Stat label="All-time peak" value={summary.all_time_peak.toLocaleString()} sub="Single service record" icon={TrendingUp} accent="#f59e0b"/>
+                <Stat label="Total services" value={summary.total_sessions} sub={edge ? `Last ${EDGE_DAYS} days` : "Last 6 months"} icon={Calendar} accent="#6366f1"/>
+                <Stat label={edge ? "Peak" : "All-time peak"} value={summary.all_time_peak.toLocaleString()} sub={edge ? `Most at once, last ${EDGE_DAYS} days` : "Single service record"} icon={TrendingUp} accent="#f59e0b"/>
                 <Stat label="Average attendance" value={Math.round(summary.avg_attendance).toLocaleString()}
                   sub={trend!==0?`${trend>0?"↑":"↓"} ${Math.abs(trend)}% vs prior period`:"Stable"} icon={Users} accent="#4ade80"/>
                 <Stat label="Avg occupancy" value={`${summary.avg_occupancy_pct}%`} sub="Of seat capacity" icon={BarChart2} accent="#818cf8"/>

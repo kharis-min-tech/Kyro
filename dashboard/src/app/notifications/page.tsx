@@ -5,6 +5,7 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useCameras } from "@/hooks/useCameras";
 import { DEMO_MODE } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
 import { updateEdgeThresholds, getDemoAuto, setDemoAuto, type DemoAuto } from "@/lib/edgePush";
 import {
   Bell, BellOff, BellRing, CheckCircle, XCircle,
@@ -102,6 +103,10 @@ export default function NotificationsPage() {
   const [demoAuto, setDemoAutoState]           = useState<DemoAuto>("15");
   const [demoAutoSaved, setDemoAutoSaved]      = useState(false);
   useEffect(() => { setDemoAutoState(getDemoAuto()); }, []);
+  // Read after mount (not during render) so server and client HTML agree.
+  const [realDemo, setRealDemo] = useState(false);
+  const [edge, setEdge]         = useState(false);
+  useEffect(() => { setRealDemo(localStorage.getItem("kyro_mode") === "demo"); setEdge(isEdgeLive()); }, []);
 
   // Debounce ref for auto-saving thresholds to backend
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -329,6 +334,13 @@ export default function NotificationsPage() {
             <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <p className="text-sm font-semibold text-white">Alert rules</p>
               <p className="text-xs text-gray-500 mt-0.5">When should Kyro wake your phone?</p>
+              {edge && (
+                <p className="text-xs text-gray-400 mt-2 flex items-start gap-1.5">
+                  <Info size={12} className="text-indigo-400 shrink-0 mt-0.5" />
+                  <span>Phones also get an alert when a camera room is filling up or over capacity, at the levels below.
+                  Each room needs its number of seats set on the Cameras page.</span>
+                </p>
+              )}
             </div>
             <div className="px-5 py-4 flex flex-col gap-5">
               <div className="flex flex-col gap-3">
@@ -484,15 +496,21 @@ export default function NotificationsPage() {
                 Final count approved at the end of service</li>
               <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
                 If your phone is off, alerts wait up to 24 hours and arrive when it's back on</li>
+              {edge ? (
+                <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
+                  A camera room filling up or over capacity (Camera Mode or a camera computer), at the levels set on this
+                  page — the room needs its number of seats set on the Cameras page</li>
+              ) : (
               <li className="flex items-start gap-2"><AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
                 Camera alerts (free seats, room capacity, camera offline, AI questions) start once the camera system is
                 connected — until then the seat alerts you see in Demo are simulated by the open app and stop when it&apos;s closed</li>
+              )}
             </ul>
           </div>
         )}
 
         {/* Automatic demo alerts — sent by the push server on a schedule */}
-        {isEnabled && push.mode === "edge" && inDemoMode() && (
+        {isEnabled && push.mode === "edge" && realDemo && (
           <div className="rounded-2xl px-5 py-4 mb-6" style={{ background: CARD_BG, border: "1px solid rgba(99,102,241,0.25)" }}>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0">
@@ -522,7 +540,7 @@ export default function NotificationsPage() {
         )}
 
         {/* Demo alerts — demo mode only, and only when notifications are enabled */}
-        {isEnabled && inDemoMode() && (
+        {isEnabled && realDemo && (
           <div className="rounded-2xl overflow-hidden mb-6"
             style={{ background: CARD_BG, border: "1px solid rgba(99,102,241,0.25)" }}>
             <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>

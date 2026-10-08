@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { attendanceApi } from "@/lib/api";
@@ -8,12 +8,14 @@ import { useCameras } from "@/hooks/useCameras";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, DEMO_SESSIONS } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import { edgeVenueApi, useEdgeVenue, type EdgeHistoryPoint } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { Play, Square, Download, Radio, WifiOff, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
-import type { SessionResponse, Camera } from "@/types";
+import type { SessionResponse, Camera, ZoneLive } from "@/types";
 
 const BG     = "var(--bg-base)";
 const CARD   = "var(--bg-card)";
@@ -83,6 +85,32 @@ function formatDuration(start: string, end: string | null): string {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+// ─── Edge Live helpers (Cloudflare build, counts from /api/live/*) ───────────
+function browserTz(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
+function localDate(ms: number, tz: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+}
+/** The camera's real per-minute rows between a session's start and end (local calendar days in between). */
+async function edgeSessionRows(session: SessionResponse, endMs: number): Promise<EdgeHistoryPoint[]> {
+  const tz = browserTz();
+  const start = new Date(session.started_at).getTime();
+  const dates: string[] = [];
+  for (let t = start; ; t += 86_400_000) {
+    const d = localDate(Math.min(t, endMs), tz);
+    if (!dates.includes(d)) dates.push(d);
+    if (t >= endMs || dates.length >= 3) break;
+  }
+  const endDate = localDate(endMs, tz);
+  if (!dates.includes(endDate)) dates.push(endDate);
+  const all = (await Promise.all(dates.map((d) => edgeVenueApi.history(d, tz, session.camera_id)))).flat();
+  return all
+    .filter((r) => r.camera_id === session.camera_id)
+    .filter((r) => { const t = Date.parse(r.timestamp); return t >= start && t <= endMs; })
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp));
+}
+
 // ─── Live camera card — shows live count + one-tap session start ──────────────
 function LiveCameraCard({
   camera,
@@ -91,7 +119,12 @@ function LiveCameraCard({
   onEnd,
   starting,
   ending,
+  edge = false,
+  edgeZone = null,
 }: {
+  edge?: boolean;
+  /** Edge Live: this camera's live numbers from /api/live/venue (null = not reporting). */
+  edgeZone?: ZoneLive | null;
   camera: Camera;
   existingSession: SessionResponse | null;
   onStart: (camera: Camera) => void;
@@ -102,11 +135,11 @@ function LiveCameraCard({
   const { role } = useAuth();
   const streamRole = (role === "admin" || role === "operator") ? role : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
-  const current  = data?.attendance.current ?? 0;
-  const peak     = data?.attendance.peak    ?? 0;
-  const entries  = data?.attendance.entries ?? 0;
+  const current  = edge ? (edgeZone?.current ?? 0) : (data?.attendance.current ?? 0);
+  const peak     = edge ? (edgeZone?.peak    ?? 0) : (data?.attendance.peak    ?? 0);
+  const entries  = edge ? (edgeZone?.entries ?? 0) : (data?.attendance.entries ?? 0);
   const isQueue  = camera.location === "queue";
-  const isLive   = inDemoMode() || (connected && !!data);
+  const isLive   = edge ? !!edgeZone?.is_running : (inDemoMode() || (connected && !!data));
 
   if (isQueue) return null; // Queue cameras don't have sessions
 
@@ -168,7 +201,7 @@ function LiveCameraCard({
             disabled={starting === camera.camera_id || !isLive}
             className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-white disabled:opacity-50 sm:shrink-0"
             style={{ background: isLive ? "#4f46e5" : "var(--bg-hover)" }}
-            title={!isLive ? "Camera not live — start a worker first" : undefined}>
+            title={!isLive ? (edge ? "This camera isn't counting — start Camera Mode or the camera computer first" : "Camera not live — start a worker first") : undefined}>
             <Play size={13} />
             {starting === camera.camera_id ? "Starting…" : "Start session"}
           </button>
@@ -375,7 +408,29 @@ export default function SessionsPage() {
   const { canViewAttendance, isAuthenticated, role } = useAuth();
   const router = useRouter();
   const [hydrated, setHydrated]   = useState(false);
-  useEffect(() => { setHydrated(true); }, []);
+  const [edge, setEdge]           = useState(false);
+  useEffect(() => { setHydrated(true); setEdge(isEdgeLive()); }, []);
+  const { venue: edgeVenue } = useEdgeVenue(edge);
+  const zoneFor = (cameraId: string): ZoneLive | null =>
+    edgeVenue?.zones.find((z) => z.camera_id === cameraId) ?? null;
+
+  // Edge Live: keep the highest count seen while each session runs, saved
+  // with the session so it survives leaving the page.
+  const sessionsRef = useRef<SessionResponse[]>([]);
+  sessionsRef.current = sessions;
+  useEffect(() => {
+    if (!edge || !edgeVenue) return;
+    let changed = false;
+    let all: SessionResponse[] | null = null;
+    for (const sess of sessionsRef.current) {
+      if (sess.ended_at) continue;
+      const z = edgeVenue.zones.find((x) => x.camera_id === sess.camera_id);
+      if (!z || !z.is_running || (z.current ?? 0) <= (sess.peak_attendance ?? 0)) continue;
+      all = updateDemoSession(sess.session_id, { peak_attendance: z.current });
+      changed = true;
+    }
+    if (changed && all) setSessions(all);
+  }, [edge, edgeVenue]);
 
   useEffect(() => {
     if (!hydrated || inDemoMode()) return;
@@ -440,6 +495,33 @@ export default function SessionsPage() {
   async function handleEnd(sessionId: string) {
     setEnding(sessionId);
     setStatus(null);
+    if (isEdgeLive()) {
+      // Real numbers only: the highest count seen while the session ran,
+      // plus whatever the camera's minute-by-minute history shows.
+      const sess = loadDemoSessions().find((s) => s.session_id === sessionId);
+      const endMs = Date.now();
+      const patch: Partial<SessionResponse> = { ended_at: new Date(endMs).toISOString() };
+      let note = "";
+      if (sess) {
+        let peak = sess.peak_attendance ?? 0;
+        try {
+          const rows = await edgeSessionRows(sess, endMs);
+          if (rows.length) {
+            peak = Math.max(peak, ...rows.map((r) => r.attendance || 0));
+            const first = rows[0], last = rows[rows.length - 1];
+            patch.total_entries = Math.max(0, (last.total_entries || 0) - (first.total_entries || 0));
+            patch.total_exits   = Math.max(0, (last.total_exits || 0) - (first.total_exits || 0));
+          }
+        } catch {
+          note = " (couldn't load the camera's history, so entries weren't added)";
+        }
+        patch.peak_attendance = peak;
+      }
+      setSessions(updateDemoSession(sessionId, patch));
+      setStatus({ ok: true, msg: `Session ended — peak ${patch.peak_attendance ?? 0} saved${note}` });
+      setEnding(null);
+      return;
+    }
     if (inDemoMode()) {
       const updated = updateDemoSession(sessionId, { ended_at: new Date().toISOString() });
       setSessions(updated);
@@ -482,7 +564,42 @@ export default function SessionsPage() {
     }
   }
 
+  async function downloadEdgeCsv(sessionId: string) {
+    const session = loadDemoSessions().find((s) => s.session_id === sessionId);
+    if (!session) return;
+    const endMs = session.ended_at ? new Date(session.ended_at).getTime() : Date.now();
+    const cap   = session.venue_capacity || 0;
+    let rows: EdgeHistoryPoint[] = [];
+    let failed = false;
+    try { rows = await edgeSessionRows(session, endMs); } catch { failed = true; }
+    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
+    let lines: string[];
+    if (rows.length) {
+      lines = ["recorded_at,current_attendance,total_entries,total_exits,occupancy_percent"];
+      for (const r of rows) {
+        const occ = cap > 0 ? ((r.attendance / cap) * 100).toFixed(1) : String(r.occupancy_pct ?? 0);
+        lines.push(`${r.timestamp},${r.attendance},${r.total_entries},${r.total_exits},${occ}`);
+      }
+    } else {
+      // No per-minute rows (or they couldn't be loaded): summary only — never invented numbers.
+      lines = [
+        "session_name,camera_id,started_at,ended_at,peak_attendance,total_entries,total_exits,venue_capacity",
+        [esc(session.name || "Unnamed session"), esc(session.camera_id), session.started_at, session.ended_at ?? "",
+         session.peak_attendance, session.total_entries, session.total_exits, session.venue_capacity].join(","),
+      ];
+      setStatus({ ok: !failed, msg: failed
+        ? "Couldn't load the camera's minute-by-minute counts — exported the session summary only."
+        : "No minute-by-minute counts were recorded for this session — exported the session summary only." });
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv" });
+    const a    = document.createElement("a");
+    a.href     = URL.createObjectURL(blob);
+    a.download = `kyro-${(session.name || "session").replace(/\s+/g, "-").toLowerCase()}-${sessionId}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
+  }
+
   function downloadCsv(sessionId: string) {
+    if (isEdgeLive()) { downloadEdgeCsv(sessionId); return; }
     if (inDemoMode()) {
       const session = loadDemoSessions().find((s) => s.session_id === sessionId);
       if (!session) return;
@@ -576,6 +693,8 @@ export default function SessionsPage() {
                   onEnd={handleEnd}
                   starting={starting}
                   ending={ending}
+                  edge={edge}
+                  edgeZone={edge ? zoneFor(cam.camera_id) : null}
                 />
               );
             })}
