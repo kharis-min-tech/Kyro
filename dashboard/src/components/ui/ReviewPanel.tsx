@@ -29,7 +29,9 @@ const TYPE_COLOURS: Record<string, { border: string; badge: string; text: string
 
 // ─── Desktop push notification for new AI question ───────────────────────────
 function fireDesktopNotification(review: ReviewRequest) {
-  if (typeof window === "undefined") return;
+  // iPhone Safari has no Notification at all unless Kyro is added to the
+  // Home Screen — referencing it there crashes the page.
+  if (typeof window === "undefined" || typeof Notification === "undefined") return;
   if (Notification.permission !== "granted") return;
   try {
     const icon = TYPE_ICONS[review.review_type] ?? "❓";

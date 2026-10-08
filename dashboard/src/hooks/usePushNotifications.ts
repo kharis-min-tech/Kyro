@@ -195,7 +195,7 @@ export function usePushNotifications(): PushState {
   // On mount: detect support, read permission, and check if already subscribed
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || typeof Notification === "undefined") {
       setSupported(false);
       return;
     }
@@ -225,7 +225,7 @@ export function usePushNotifications(): PushState {
             registerEdgeDevice(existing).catch(() => {});
           }
         } else if (!API_URL && localStorage.getItem("kyro_push_subscribed") === "1"
-                   && Notification.permission === "granted") {
+                   && typeof Notification !== "undefined" && Notification.permission === "granted") {
           // No backend: there's no Web Push subscription to find, but the
           // user previously enabled notifications in this browser (we
           // stored a flag). Honour that state so the Notifications page
@@ -246,6 +246,9 @@ export function usePushNotifications(): PushState {
     try {
       const reg = await getRegistration();
 
+      if (typeof Notification === "undefined") {
+        throw new Error("On iPhone, first add Kyro to your Home Screen (Share → Add to Home Screen), then open it from there");
+      }
       const perm = await Notification.requestPermission();
       setPermission(perm as PermissionState);
       if (perm !== "granted") throw new Error("Permission denied — please allow notifications");
@@ -376,7 +379,7 @@ export function usePushNotifications(): PushState {
       // fires while the Kyro tab/PWA is open; real Web Push can wake a
       // closed app.
       if (!API_URL) {
-        if (Notification.permission !== "granted") {
+        if (typeof Notification === "undefined" || Notification.permission !== "granted") {
           throw new Error("Permission denied — click Turn on first");
         }
         const opts: RichNotificationOptions = {
@@ -442,7 +445,7 @@ export function usePushNotifications(): PushState {
       return "🔔 7 alerts arriving over the next ~14 seconds — lock your phone or minimise this tab to see them";
     }
 
-    if (Notification.permission !== "granted") throw new Error("Turn notifications on first");
+    if (typeof Notification === "undefined" || Notification.permission !== "granted") throw new Error("Turn notifications on first");
     LOCAL_DEMO_ALERTS.forEach((a, i) => {
       setTimeout(() => {
         const opts: RichNotificationOptions = {
