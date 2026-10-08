@@ -21,7 +21,7 @@ export function GlobalSeatAlertOverlay() {
 
   return (
     <>
-      <div className="fixed bottom-4 left-4 z-40 flex flex-col gap-2 max-w-xs">
+      <div className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] left-4 z-40 flex flex-col gap-2 max-w-xs">
         {alerts.map((alert) => (
           <div
             key={alert.alert_id}

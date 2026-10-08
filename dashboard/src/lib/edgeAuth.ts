@@ -56,6 +56,10 @@ async function parse<T>(res: Response): Promise<T> {
 
 export async function edgeFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = edgeToken();
+  // Not signed in (e.g. on the sign-in page): don't even ask the server.
+  // Asking got a "not signed in" reply, which used to trigger sign-out →
+  // reload of the sign-in page every 10 s, wiping whatever was typed.
+  if (!token && !path.startsWith("/api/auth/")) throw new Error("Please sign in");
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -65,7 +69,7 @@ export async function edgeFetch<T>(path: string, init: RequestInit = {}): Promis
     },
     cache: "no-store",
   });
-  if (res.status === 401) window.dispatchEvent(new Event("kyro_session_expired"));
+  if (res.status === 401 && token) window.dispatchEvent(new Event("kyro_session_expired"));
   return parse<T>(res);
 }
 
@@ -81,14 +85,27 @@ export async function edgeLogin(username: string, password: string): Promise<Edg
 }
 
 /** Re-reads the signed-in user (pages may have changed) and refreshes the token. */
-export async function edgeRefreshSession(): Promise<EdgeUser | null> {
-  if (!edgeToken()) return null;
+/**
+ * Re-check this sign-in with the server.
+ *   user      → still valid (token renewed)
+ *   null      → the server rejected it: sign out
+ *   undefined → couldn't check (no signal, iPhone paused the request…): keep the session
+ */
+export async function edgeRefreshSession(): Promise<EdgeUser | null | undefined> {
+  const token = edgeToken();
+  if (!token) return null;
+  let res: Response;
   try {
-    const data = await edgeFetch<{ access_token: string; user: EdgeUser }>("/api/auth/me");
+    res = await fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+  } catch { return undefined; }
+  if (res.status === 401 || res.status === 403) return null;
+  if (!res.ok) return undefined;
+  try {
+    const data = (await res.json()) as { access_token: string; user: EdgeUser };
     localStorage.setItem("kyro_token", data.access_token);
     window.dispatchEvent(new Event("kyro_access_changed"));
     return data.user;
-  } catch { return null; }
+  } catch { return undefined; }
 }
 
 export const edgeUsersApi = {

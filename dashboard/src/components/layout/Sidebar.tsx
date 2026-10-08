@@ -12,7 +12,7 @@ import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
   Moon, Sun, Menu, X, Hash, Webhook,
-  CircleHelp,
+  CircleHelp, Video,
 } from "lucide-react";
 import { helpUrlFor } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
@@ -43,6 +43,7 @@ const ALL_NAV = [
   { id: "live-cameras",  href: "/live-cameras",  label: "Live Cameras",  Icon: Cctv         },
   { id: "seating",       href: "/seating",       label: "Seat Map",      Icon: Armchair     },
   { id: "cameras",       href: "/cameras",       label: "Cameras",       Icon: Camera       },
+  { id: "camera-mode",   href: "/camera-mode",   label: "Camera Mode",   Icon: Video        },
   { id: "rota",          href: "/rota",          label: "Rota",          Icon: CalendarDays },
   { id: "sessions",      href: "/sessions",      label: "Sessions",      Icon: ClipboardList},
   { id: "analytics",     href: "/analytics",     label: "Analytics",     Icon: BarChart2    },
@@ -180,7 +181,11 @@ export function Sidebar() {
     };
   }, [username, role]);
 
-  const visibleNav = ALL_NAV.filter((item) => allowedPages.includes(item.id));
+  // Camera Mode (count with a camera plugged into this computer) isn't a
+  // permission page: admins and operators who can see Cameras get it.
+  const visibleNav = ALL_NAV.filter((item) => item.id === "camera-mode"
+    ? (role === "admin" || role === "operator") && allowedPages.includes("cameras")
+    : allowedPages.includes(item.id as typeof allowedPages[number]));
 
   // Mobile drawer state — sidebar is hidden by default at phone widths and
   // slides in when the top-bar hamburger is tapped. Auto-closes when the
@@ -193,8 +198,10 @@ export function Sidebar() {
       {/* Mobile top bar (only visible < md). Fixed so it stays put while
          the page content scrolls underneath. */}
       <div
-        className="md:hidden fixed top-0 inset-x-0 z-40 flex items-center justify-between px-4 h-14"
-        style={{ background: BG, borderBottom: `1px solid ${DIVIDER}` }}
+        className="md:hidden fixed top-0 inset-x-0 z-40 flex items-center justify-between px-4"
+        // Opened from the iPhone Home Screen, the page can run up under the
+        // clock and battery — keep the bar (and its ☰ button) below them.
+        style={{ background: BG, borderBottom: `1px solid ${DIVIDER}`, paddingTop: "env(safe-area-inset-top)", height: "calc(3.5rem + env(safe-area-inset-top))" }}
       >
         <div className="flex items-center gap-2.5">
           <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
@@ -215,7 +222,7 @@ export function Sidebar() {
       </div>
 
       {/* Spacer that pushes page content below the fixed mobile top bar. */}
-      <div className="md:hidden h-14 shrink-0" aria-hidden />
+      <div className="md:hidden shrink-0" style={{ height: "calc(3.5rem + env(safe-area-inset-top))" }} aria-hidden />
 
       {/* Backdrop for the mobile drawer. */}
       {mobileOpen && (
@@ -235,7 +242,7 @@ export function Sidebar() {
           (mobileOpen ? "translate-x-0" : "-translate-x-full") + " " +
           "md:static md:translate-x-0 md:w-56 md:transition-none"
         }
-        style={{ background: BG, borderRight: `1px solid ${DIVIDER}` }}
+        style={{ background: BG, borderRight: `1px solid ${DIVIDER}`, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
       {/* Brand — hidden on mobile because the top bar already shows it */}
       <div className="hidden md:flex px-5 pt-6 pb-5 items-center gap-3">

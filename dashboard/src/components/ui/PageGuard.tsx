@@ -36,7 +36,7 @@ function signOutToLogin() {
   localStorage.removeItem("kyro_token");
   sessionStorage.removeItem("kyro_active_login");
   sessionStorage.setItem("kyro_signed_out", "1");
-  window.location.href = "/login";
+  if (!window.location.pathname.startsWith("/login")) window.location.href = "/login";
 }
 
 export function PageGuard() {
@@ -48,8 +48,8 @@ export function PageGuard() {
   useEffect(() => {
     if (!isEdgeLive() || !edgeToken()) return;
     edgeRefreshSession().then((u) => {
-      if (!u) signOutToLogin();
-      else setRefreshed((n) => n + 1);
+      if (u === null) signOutToLogin();          // the server said no
+      else if (u) setRefreshed((n) => n + 1);   // undefined = couldn't check; stay signed in
     });
     const onExpired = () => signOutToLogin();
     window.addEventListener("kyro_session_expired", onExpired);

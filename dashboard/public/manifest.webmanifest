@@ -2,7 +2,7 @@
   "name": "Kyro — Vision Intelligence",
   "short_name": "Kyro",
   "description": "AI-powered church attendance and smart seating dashboard.",
-  "start_url": "/attendance",
+  "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",

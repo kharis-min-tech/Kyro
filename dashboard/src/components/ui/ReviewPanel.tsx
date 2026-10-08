@@ -657,7 +657,7 @@ function ArchivedRestoreBell() {
   return (
     <button
       onClick={restoreAllArchived}
-      className="fixed z-30 top-[4.25rem] md:top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-transform hover:scale-105"
+      className="fixed z-30 top-[calc(4.25rem+env(safe-area-inset-top))] md:top-4 right-4 flex items-center gap-2 px-3 py-2 rounded-full shadow-lg transition-transform hover:scale-105"
       style={{
         background: "var(--bg-card)",
         border: "1px solid rgba(245,158,11,0.5)",
@@ -698,7 +698,7 @@ export function ReviewPanel({ reviews, cameraId, onDismiss }: ReviewPanelProps) 
   return (
     <>
       {/* One question at a time — bottom right */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-2">
+      <div className="fixed bottom-[calc(1.5rem+env(safe-area-inset-bottom))] right-6 z-50 flex flex-col items-end gap-2">
         {queueLen > 1 && (
           <div className="text-xs px-3 py-1.5 rounded-full"
             style={{ background: "var(--border-subtle)", color: "var(--text-tertiary)", border: "1px solid #374151" }}>
