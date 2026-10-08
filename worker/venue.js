@@ -9,6 +9,7 @@
  * box's next report — nothing to set up on the website.
  */
 import { DurableObject } from "cloudflare:workers";
+import { notifyCount } from "./index.js";
 
 const enc = new TextEncoder();
 const json = (body, status = 200) =>
@@ -49,6 +50,9 @@ export class VenueHub extends DurableObject {
     const p = url.pathname;
     const role = request.headers.get("X-Kyro-Role") || "";   // set by index.js after checking the session
     try {
+      // ── Inside the Worker only (index.js never forwards /internal/*) ──
+      if (p === "/internal/day-peaks" && request.headers.get("X-Kyro-Internal") === "1") return json(await this.dayPeaks(url.searchParams.get("date") || "", url.searchParams.get("tz") || "UTC"));
+
       // ── Camera computer (device token) ──
       if (p === "/api/devices/pair" && request.method === "POST") return this.pair(request);
       if (p === "/api/devices/report" && request.method === "POST") return this.withDevice(request, (d) => this.report(d, request));
@@ -59,6 +63,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/cameras" && request.method === "GET") return json(await this.cameraList(url.searchParams.get("all") === "1"));
       if (p === "/api/live/venue" && request.method === "GET") return json(await this.venueTotal());
       if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
+      if (p === "/api/live/daily" && request.method === "GET") return json(this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
 
       if (p === "/api/live/browser-device" && request.method === "POST") {
@@ -199,6 +204,7 @@ export class VenueHub extends DurableObject {
     }
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
+    await this.capacityAlerts(cams, live);
 
     // Tell the box which cameras the website has switched off.
     const off = Object.values(cams).filter((c) => c.device_id === device.id && c.hidden).map((c) => c.key);
@@ -286,6 +292,101 @@ export class VenueHub extends DurableObject {
         total_entries: r.entries, total_exits: r.exits,
         occupancy_pct: r.capacity ? Math.round((r.current / r.capacity) * 1000) / 10 : 0,
       }));
+  }
+
+  /**
+   * Phone alerts when a room fills up. Each phone decides its own levels
+   * (Notifications page: "filling up" / "over capacity"); here we only send
+   * when the room crossed upwards past a new 5% step, at most once a minute
+   * per room. A room has to empty by 10% before the same step alerts again.
+   */
+  async capacityAlerts(cams, live) {
+    const marks = await this.get("alert_marks", {});
+    let dirty = false;
+    for (const [id, l] of Object.entries(live)) {
+      const c = cams[id];
+      if (!c || c.hidden || !c.zone_capacity || !this.isOnline(l)) continue;
+      const frac = (l.current || 0) / c.zone_capacity;
+      const m = marks[id] || { frac: 0, at: 0 };
+      if (frac < m.frac - 0.1) { marks[id] = { frac, at: m.at }; dirty = true; continue; }
+      if (Math.floor(frac * 20) > Math.floor(m.frac * 20) && frac >= 0.5 && Date.now() - m.at > 60_000) {
+        const prev = m.frac;
+        marks[id] = { frac, at: Date.now() }; dirty = true;
+        this.ctx.waitUntil(notifyCount(this.env, {
+          kind: "camera", zone: c.zone_name || c.name, count: l.current, capacity: c.zone_capacity, prev_fraction: prev,
+        }).catch(() => {}));
+      }
+    }
+    if (dirty) await this.ctx.storage.put("alert_marks", marks);
+  }
+
+  /** Each room's highest camera count on a day (for the end-of-service send). */
+  async dayPeaks(date, tz) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
+    const fmt = this.dateFmt(tz);
+    const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
+    const rows = this.ctx.storage.sql.exec("SELECT camera_id, ts, current FROM history WHERE ts >= ? AND ts < ?", start, end).toArray();
+    const peak = {};
+    for (const r of rows) if (fmt.format(new Date(r.ts)) === date) peak[r.camera_id] = Math.max(peak[r.camera_id] || 0, r.current || 0);
+    const cams = await this.get("cameras", {});
+    return Object.entries(peak)
+      .filter(([id]) => cams[id] && !cams[id].hidden && cams[id].location !== "queue")
+      .map(([id, count]) => ({ camera_id: id, zone: cams[id].zone_name || cams[id].name, count }));
+  }
+
+  dateFmt(tz) {
+    try { return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }); }
+    catch { return new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }); }
+  }
+
+  /**
+   * Analytics: one point per day (the most people in the building at once),
+   * when people arrived (by hour), and a summary. ?days=30&tz=Europe/London[&camera=id]
+   */
+  daily(url) {
+    const days = Math.min(400, Math.max(1, Number(url.searchParams.get("days")) || 30));
+    const tz = url.searchParams.get("tz") || "UTC";
+    const camera = url.searchParams.get("camera");
+    const since = Date.now() - days * 86400_000;
+    const rows = camera
+      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
+      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE ts >= ? ORDER BY ts", since).toArray();
+    const fmt = this.dateFmt(tz);
+    let hourFmt;
+    try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
+    catch { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", hour: "numeric", hourCycle: "h23" }); }
+    const STALE = 3 * 60_000;  // a camera that stopped reporting no longer counts towards the total
+    const byDay = new Map();   // date → { peak, capacity, at }
+    const arrivals = new Array(24).fill(0);
+    let day = "", last = new Map(), prevTotal = 0;
+    for (const r of rows) {
+      const d = fmt.format(new Date(r.ts));
+      if (d !== day) { day = d; last = new Map(); prevTotal = 0; }
+      last.set(r.camera_id, { current: r.current || 0, capacity: r.capacity || 0, ts: r.ts });
+      let total = 0, cap = 0;
+      for (const [k, v] of last) {
+        if (r.ts - v.ts > STALE) { last.delete(k); continue; }
+        total += v.current; cap += v.capacity;
+      }
+      if (total > prevTotal) arrivals[Number(hourFmt.format(new Date(r.ts))) % 24] += total - prevTotal;
+      prevTotal = total;
+      const cur = byDay.get(d);
+      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts });
+    }
+    const history = [...byDay.entries()].sort().map(([d, v]) => ({
+      timestamp: new Date(v.at).toISOString(), date: d, attendance: v.peak,
+      occupancy_pct: v.capacity ? Math.round((v.peak / v.capacity) * 1000) / 10 : 0,
+    }));
+    const n = history.length;
+    const arrival = arrivals.map((count, hour) => ({ hour, count, avg_count: n ? Math.round((count / n) * 10) / 10 : 0 }));
+    const summary = {
+      camera_id: camera || "all", total_sessions: n,
+      all_time_peak: n ? Math.max(...history.map((h) => h.attendance)) : 0,
+      avg_attendance: n ? Math.round(history.reduce((a, h) => a + h.attendance, 0) / n) : 0,
+      avg_occupancy_pct: n ? Math.round((history.reduce((a, h) => a + h.occupancy_pct, 0) / n) * 10) / 10 : 0,
+      first_session: n ? history[0].timestamp : null, last_session: n ? history[n - 1].timestamp : null,
+    };
+    return { history, arrival, summary };
   }
 
   /** An admin typed in a network camera's address on the website; the box picks it up on its next report. */

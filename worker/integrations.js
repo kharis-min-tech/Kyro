@@ -9,7 +9,8 @@
  *   GET  /api/integrations/preview?kind=test|live   exactly what would be sent now
  *   POST /api/integrations/send          { kind: "test" | "live" }
  *
- * What's sent: today's APPROVED manual counts (shared counts in KV), as JSON.
+ * What's sent: today's APPROVED manual counts (shared counts in KV) plus each
+ * camera room's highest count that day (worker/venue.js), as JSON.
  */
 import { currentUser } from "./accounts.js";
 
@@ -50,15 +51,33 @@ function publicCfg(c) {
   return { url: c.url || "", has_secret: !!c.secret, auto: c.auto, last_sent: c.last_sent || null };
 }
 
-/** The JSON that gets POSTed: today's approved manual counts. */
-export async function buildPayload(env, date, test) {
+/** Each camera room's highest count on that day, from the live camera hub (worker/venue.js). */
+async function cameraPeaks(env, date, tz) {
+  if (!env.VENUE) return [];
+  try {
+    const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
+    const res = await hub.fetch(`https://hub/internal/day-peaks?date=${date}&tz=${encodeURIComponent(tz)}`, { headers: { "X-Kyro-Internal": "1" } });
+    return res.ok ? await res.json() : [];
+  } catch { return []; }
+}
+
+/**
+ * The JSON that gets POSTed: today's APPROVED manual counts plus each camera
+ * room's count (the most people it saw at once that day). If a room has both,
+ * the approved manual count wins — someone checked it by hand.
+ */
+export async function buildPayload(env, date, test, tz = "Europe/London") {
   const page = await env.SUBS.list({ prefix: `mc:${date}:` });
   const rows = (await Promise.all(page.keys.map((k) => env.SUBS.get(k.name, "json")))).filter(Boolean);
   const approved = rows.filter((r) => r.approved);
   const manualTotal = approved.reduce((n, r) => n + (r.count || 0), 0);
+  const manualZones = new Set(approved.map((r) => String(r.zone || "").trim().toLowerCase()));
   // A test send adds a clearly fake camera zone (42 on "Main Floor") so the
-  // receiving system can tell it's a dry run; real sends have no cameras yet.
-  const cameraTotal = test ? 42 : 0;
+  // receiving system can tell it's a dry run.
+  const cameras = test
+    ? [{ zone: "Main Floor", count: 42 }]
+    : (await cameraPeaks(env, date, tz)).filter((c) => c.count > 0 && !manualZones.has(String(c.zone).trim().toLowerCase()));
+  const cameraTotal = cameras.reduce((n, c) => n + (c.count || 0), 0);
   return {
     service_date: date,
     counted_at: new Date().toISOString(),
@@ -66,7 +85,7 @@ export async function buildPayload(env, date, test) {
     totals: { camera_count: cameraTotal, manual_count: manualTotal, grand_total: cameraTotal + manualTotal },
     by_zone: [
       ...approved.map((r) => ({ zone: r.zone, count: r.count, source: "manual", approved_by: r.approved_by || null })),
-      ...(test ? [{ zone: "Main Floor", count: cameraTotal, source: "camera" }] : []),
+      ...cameras.map((c) => ({ zone: c.zone, count: c.count, source: "camera" })),
     ],
     source: "kyro",
     kyro_version: "0.3.0",
@@ -137,7 +156,7 @@ export async function handleIntegrations(request, env, url) {
 
   if (url.pathname === "/api/integrations/preview" && request.method === "GET") {
     const test = url.searchParams.get("kind") !== "live";
-    return json(await buildPayload(env, localParts(new Date(), tz).date, test));
+    return json(await buildPayload(env, localParts(new Date(), tz).date, test, tz));
   }
 
   if (url.pathname === "/api/integrations/send" && request.method === "POST") {
@@ -145,7 +164,7 @@ export async function handleIntegrations(request, env, url) {
     try { body = await request.json(); } catch {}
     const test = body.kind !== "live";
     if (!cfg.url) return json({ ok: false, error: "Save a webhook URL first" }, 400);
-    const payload = await buildPayload(env, localParts(new Date(), tz).date, test);
+    const payload = await buildPayload(env, localParts(new Date(), tz).date, test, tz);
     const result = await deliver(cfg, payload);
     if (!test) {
       await env.SUBS.put(CFG_KEY, JSON.stringify({ ...cfg, last_sent: { at: new Date().toISOString(), date: payload.service_date, how: "manual", ok: result.ok, status: result.status ?? null } }));
@@ -168,7 +187,7 @@ export async function runIntegrationTick(env, now) {
   if (!auto.days?.includes(p.weekday)) return;
   if (p.minutes < at || p.minutes >= at + 15) return;
   if (cfg.last_sent?.date === p.date && cfg.last_sent?.how === "auto") return; // already sent today
-  const payload = await buildPayload(env, p.date, false);
+  const payload = await buildPayload(env, p.date, false, tz);
   const result = await deliver(cfg, payload);
   await env.SUBS.put(CFG_KEY, JSON.stringify({ ...cfg, last_sent: { at: now.toISOString(), date: p.date, how: "auto", ok: result.ok, status: result.status ?? null, error: result.error } }));
 }

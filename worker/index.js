@@ -98,6 +98,7 @@ export default {
         const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
         const headers = new Headers(request.headers);
         headers.delete("X-Kyro-Role"); // never trust a role sent by the caller
+        headers.delete("X-Kyro-Internal");
         if (url.pathname.startsWith("/api/live/")) {
           const me = await currentUser(request, env);
           if (!me) return json({ error: "Please sign in again" }, 401);
@@ -392,10 +393,10 @@ export function buildCountMessage(ev, sub) {
               :                        `📋 ${ev.zone} counted`;
   return {
     title,
-    body: `${ev.count.toLocaleString("en-US")} people${ev.capacity ? ` of ${ev.capacity.toLocaleString("en-US")} seats` : ""}${pct}${ev.by ? ` · counted by ${ev.by}` : ""}`,
+    body: `${ev.count.toLocaleString("en-US")} people${ev.capacity ? ` of ${ev.capacity.toLocaleString("en-US")} seats` : ""}${pct}${ev.by ? ` · counted by ${ev.by}` : ""}${ev.kind === "camera" ? " · camera count" : ""}`,
     level,
     tag:  `kyro-count-${ev.zone.toLowerCase()}`,
-    url:  "/manual-count",
+    url:  ev.kind === "camera" ? "/live-cameras" : "/manual-count",
   };
 }
 
@@ -405,9 +406,9 @@ export function buildCountMessage(ev, sub) {
  * endpoint is gone, since anyone could post fake counts to it). Goes to
  * devices registered in Live mode only, never back to the sender.
  */
-async function notifyCount(env, body) {
+export async function notifyCount(env, body) {
   if (!pushReady(env)) return;
-  const kind = body.kind === "approved" ? "approved" : "count";
+  const kind = body.kind === "approved" ? "approved" : body.kind === "camera" ? "camera" : "count";
   const count = Math.round(Number(body.count));
   if (!Number.isFinite(count) || count < 0) return;
   const capRaw = Math.round(Number(body.capacity));
@@ -418,7 +419,14 @@ async function notifyCount(env, body) {
     by: cleanText(body.counted_by, 40),
   };
   const senderKey = typeof body.sender_endpoint === "string" ? await subKey(body.sender_endpoint) : null;
-  const subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey && s.mode !== "demo");
+  let subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey && s.mode !== "demo");
+  if (kind === "camera") {
+    // Camera counts change all the time: only tell a phone when the room has
+    // just reached that phone's own "filling up" or "over capacity" level.
+    const prev = Number(body.prev_fraction) || 0;
+    const rank = { info: 0, warning: 1, critical: 2 };
+    subs = subs.filter((s) => rank[levelFor(ev.fraction, s.warn, s.crit)] > rank[levelFor(prev, s.warn, s.crit)]);
+  }
   const vapid = vapidFromEnv(env);
   await Promise.all(subs.map(async (s) => {
     const res = await sendWebPush(s.subscription, buildCountMessage(ev, s), vapid).catch(() => null);
