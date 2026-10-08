@@ -32,6 +32,8 @@ function loadOff(): string[] { try { return JSON.parse(localStorage.getItem(OFF_
 export default function CameraModePage() {
   const [ready, setReady] = useState(false);          // after mount (no server/browser mismatch)
   const [allowed, setAllowed] = useState(false);
+  const [demo, setDemo] = useState(false);            // Demo: count on this computer only, nothing sent
+  const demoRef = useRef(false);
   const [phase, setPhase] = useState<"idle" | "starting" | "running">("idle");
   const [step, setStep] = useState("");
   const [progress, setProgress] = useState(0);
@@ -54,7 +56,9 @@ export default function CameraModePage() {
 
   useEffect(() => {
     const role = edgeTokenPayload()?.role;
-    setAllowed(isEdgeLive() && (role === "admin" || role === "operator"));
+    const isDemo = localStorage.getItem("kyro_mode") !== "live";
+    demoRef.current = isDemo; setDemo(isDemo);
+    setAllowed(isDemo || (isEdgeLive() && (role === "admin" || role === "operator")));
     try { setAuto(localStorage.getItem(AUTO_KEY) === "1"); } catch {}
     offRef.current = loadOff(); setOff(offRef.current);
     setReady(true);
@@ -142,7 +146,7 @@ export default function CameraModePage() {
 
   // ── Sending counts + pictures to the website ─────────────────────────────
   useEffect(() => {
-    if (phase !== "running") return;
+    if (phase !== "running" || demoRef.current) return;
     const tick = async () => {
       const list = [...cams.current.values()].filter((c) => c.stream);
       const reports: CameraReport[] = list.map((c) => ({
@@ -271,8 +275,8 @@ export default function CameraModePage() {
 
         {!ready ? null : !allowed ? (
           <div className="rounded-xl p-5 max-w-3xl" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-            <p className="text-sm text-white font-medium">Camera Mode works in Live mode, for administrators and operators.</p>
-            <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>Sign out, choose <b>Live</b>, and sign in with your Kyro account.</p>
+            <p className="text-sm text-white font-medium">Camera Mode is for administrators and operators.</p>
+            <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>Ask an administrator to give your account the Operator role.</p>
           </div>
         ) : (
           <div className="flex flex-col gap-5 max-w-5xl">
@@ -286,7 +290,7 @@ export default function CameraModePage() {
                     </div>
                     <p className="text-3xl font-bold text-white tabular-nums mt-1 flex items-center gap-2"><Users size={24} /> {total} <span className="text-base font-normal" style={{ color: "#9ca3af" }}>people now</span></p>
                     <p className="text-xs mt-1" style={{ color: sendError ? "#f59e0b" : "#6b7280" }}>
-                      {sendError ? `Not sending: ${sendError} — retrying` : lastSent ? `Sent to your Kyro dashboard ${Math.max(0, Math.round((Date.now() - lastSent) / 1000))} s ago` : "Connecting to Kyro…"}
+                      {demo ? "Demo mode: the count stays on this computer. Sign in with Live to send it to your dashboard." : sendError ? `Not sending: ${sendError} — retrying` : lastSent ? `Sent to your Kyro dashboard ${Math.max(0, Math.round((Date.now() - lastSent) / 1000))} s ago` : "Connecting to Kyro…"}
                     </p>
                     {engineInfo && <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{engineInfo}</p>}
                   </div>
@@ -308,7 +312,9 @@ export default function CameraModePage() {
                   <ol className="text-sm space-y-1.5 mb-4" style={{ color: "#9ca3af" }}>
                     <li><b className="text-white">1.</b> Plug your camera(s) into this computer.</li>
                     <li><b className="text-white">2.</b> Press <b className="text-white">Start counting</b> and allow the camera when the browser asks.</li>
-                    <li><b className="text-white">3.</b> Leave this page open. Counts appear on AI Count and Live Cameras for everyone.</li>
+                    <li><b className="text-white">3.</b> {demo
+                      ? "Demo mode: you'll see the count here. Sign in with Live to send it to AI Count and Live Cameras."
+                      : "Leave this page open. Counts appear on AI Count and Live Cameras for everyone."}</li>
                   </ol>
                   <button onClick={start} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: "#6366f1" }}>
                     <Play size={15} /> Start counting
