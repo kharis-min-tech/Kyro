@@ -14,7 +14,6 @@ Folder layout (~/.kyro-box):
 """
 from __future__ import annotations
 
-import io
 import json
 import logging
 import os
@@ -23,7 +22,6 @@ import subprocess
 import sys
 import time
 import urllib.request
-import zipfile
 from pathlib import Path
 from typing import Optional
 
@@ -64,32 +62,30 @@ def latest_version() -> tuple[str, str]:
 
 
 def download(commit: str, dest: Path) -> None:
-    """Fetch just ai/ and camera-box/ from that commit into `dest`."""
-    data = b""
-    for attempt in range(4):            # church internet can drop mid-download
-        try:
-            data = _get(f"https://codeload.github.com/{REPO}/zip/{commit}", "application/zip", timeout=300)
-            break
-        except Exception:  # noqa: BLE001
-            if attempt == 3:
-                raise
-            time.sleep(10 * (attempt + 1))
+    """Fetch just the ai/ and camera-box/ files of that commit into `dest`
+    (file by file — the whole repository also holds the website and is much bigger)."""
+    tree = json.loads(_get(f"https://api.github.com/repos/{REPO}/git/trees/{commit}?recursive=1"))
+    files = [e["path"] for e in tree.get("tree", [])
+             if e.get("type") == "blob" and e["path"].startswith(tuple(p + "/" for p in PARTS))]
+    if not files or tree.get("truncated"):
+        raise RuntimeError("Couldn't list the files of the new version")
     tmp = dest.with_name(dest.name + ".partial")
     shutil.rmtree(tmp, ignore_errors=True)
-    with zipfile.ZipFile(io.BytesIO(data)) as z:
-        for name in z.namelist():
-            parts = name.split("/", 1)
-            if len(parts) < 2 or not parts[1].startswith(tuple(p + "/" for p in PARTS)):
-                continue
-            rel = Path(parts[1])
-            if ".." in rel.parts or rel.is_absolute():
-                continue
-            target = tmp / rel
-            if name.endswith("/"):
-                target.mkdir(parents=True, exist_ok=True)
-            else:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(z.read(name))
+    for path in files:
+        rel = Path(path)
+        if ".." in rel.parts or rel.is_absolute():
+            continue
+        for attempt in range(4):            # church internet can drop mid-download
+            try:
+                data = _get(f"https://raw.githubusercontent.com/{REPO}/{commit}/{path}", "*/*", timeout=120)
+                break
+            except Exception:  # noqa: BLE001
+                if attempt == 3:
+                    raise
+                time.sleep(5 * (attempt + 1))
+        target = tmp / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
     shutil.rmtree(dest, ignore_errors=True)
     tmp.rename(dest)
 

@@ -61,6 +61,11 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
 
+      if (p === "/api/live/browser-device" && request.method === "POST") {
+        // Camera mode: a signed-in admin/operator's browser becomes a camera computer — no code needed.
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can use Camera mode" }, 403);
+        return this.registerBrowser(request);
+      }
       if (role !== "admin") return json({ error: "Only administrators can change camera settings" }, 403);
       if (p === "/api/live/pairing-code" && request.method === "POST") return this.newPairingCode();
       if (p === "/api/live/devices" && request.method === "GET") return json(await this.deviceList());
@@ -96,6 +101,19 @@ export class VenueHub extends DurableObject {
     const devices = await this.get("devices", {});
     devices[id] = {
       id, name: clean(body.name, 60) || "Camera computer", platform: clean(body.platform, 40),
+      token_hash: await sha256(token), paired_at: new Date().toISOString(), last_seen: null, version: clean(body.version, 20),
+    };
+    await this.ctx.storage.put("devices", devices);
+    return json({ device_id: id, token });
+  }
+
+  async registerBrowser(request) {
+    const body = await request.json().catch(() => ({}));
+    const id = `web-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
+    const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
+    const devices = await this.get("devices", {});
+    devices[id] = {
+      id, name: clean(body.name, 60) || "Camera mode", platform: "Web browser",
       token_hash: await sha256(token), paired_at: new Date().toISOString(), last_seen: null, version: clean(body.version, 20),
     };
     await this.ctx.storage.put("devices", devices);
@@ -146,9 +164,9 @@ export class VenueHub extends DurableObject {
       const camera_id = `${device.id}:${key}`;
       // Network cameras only exist once an admin adds them on the website; a
       // report for one that was just removed must not bring it back.
-      if (!cams[camera_id] && !key.startsWith("usb-")) continue;
+      if (!cams[camera_id] && !key.startsWith("usb-") && !key.startsWith("web-")) continue;
       if (!cams[camera_id]) {
-        // A newly plugged-in USB camera: add it with sensible defaults.
+        // A newly plugged-in camera (camera computer or Camera mode): add it with sensible defaults.
         const n = Object.keys(cams).length + 1;
         cams[camera_id] = {
           camera_id, device_id: device.id, key, kind: clean(c.kind, 10) || "usb",
@@ -215,7 +233,8 @@ export class VenueHub extends DurableObject {
       .filter((c) => (includeHidden || !c.hidden) && devices[c.device_id])
       .sort((a, b) => a.zone_order - b.zone_order)
       .map((c) => ({
-        camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? `USB camera ${Number(c.key.replace(/^usb-/, "")) + 1}` : c.address || "Network camera",
+        camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? `USB camera ${Number(c.key.replace(/^usb-/, "")) + 1}`
+          : c.kind === "web" ? `Camera mode · ${devices[c.device_id]?.name ?? "browser"}` : c.address || "Network camera",
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
         hidden: !!c.hidden, fps: live[c.camera_id]?.fps ?? 0, error_reason: live[c.camera_id]?.error_reason ?? null,
