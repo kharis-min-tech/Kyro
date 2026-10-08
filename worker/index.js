@@ -16,7 +16,7 @@ import { handleIntegrations, runIntegrationTick, isBlockedHost } from "./integra
  *      sent by a server holding the VAPID private key. The Worker signs and
  *      encrypts pushes itself (RFC 8291 aes128gcm + RFC 8292 VAPID).
  *
- * Only /api/* reaches this script (see run_worker_first in wrangler.jsonc);
+ * Only /api/* and /_next/* reach this script (see run_worker_first in wrangler.jsonc);
  * every other path is served straight from static assets.
  *
  * Routes:
@@ -82,8 +82,27 @@ export default {
       if (accountsRes) return accountsRes;
       const integrationsRes = await handleIntegrations(request, env, url);
       if (integrationsRes) return integrationsRes;
+      if (url.pathname === "/api/client-error" && request.method === "POST") {
+        // Crash reports from the website's error screen, kept 14 days.
+        const text = (await request.text()).slice(0, 4000);
+        if (env.SUBS && text) {
+          await env.SUBS.put(`err:${new Date().toISOString()}:${crypto.randomUUID().slice(0, 8)}`, text, { expirationTtl: 14 * 86400 });
+        }
+        return new Response(null, { status: 204 });
+      }
       if (url.pathname.startsWith("/api/")) {
         return json({ error: "Not found" }, 404);
+      }
+      if (url.pathname.startsWith("/_next/")) {
+        // A page left open from an older version asks for script files that
+        // no longer exist. Without this, the single-page fallback answers
+        // with the HTML home page, the browser tries to run HTML as code and
+        // shows "Application error". A real 404 lets the app reload itself.
+        const res = await env.ASSETS.fetch(request);
+        if (res.ok && (res.headers.get("content-type") || "").includes("text/html")) {
+          return new Response("Not found", { status: 404, headers: { "Cache-Control": "no-store" } });
+        }
+        return res;
       }
       return env.ASSETS.fetch(request);
     } catch (e) {

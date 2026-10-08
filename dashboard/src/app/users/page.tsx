@@ -413,7 +413,8 @@ export default function UsersPage() {
   const [revealingFor, setRevealingFor] = useState<string | null>(null);
   const [editingId, setEditingId]       = useState<number | null>(null);
   const [edgeMode, setEdgeMode]         = useState(false);
-  useEffect(() => { setEdgeMode(isEdgeLive()); }, []);
+  const [localMode, setLocalMode]       = useState(false);
+  useEffect(() => { setEdgeMode(isEdgeLive()); setLocalMode(localStore()); }, []);
 
   const [creating, setCreating]   = useState(false);
   const [newUsername, setNewUsername] = useState("");
@@ -580,7 +581,7 @@ export default function UsersPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs" style={{ color: "var(--text-muted)" }}>Password</label>
-                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required={!localStore()}
+                <input value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required={!localMode}
                   type="password" minLength={8} placeholder="min 8 chars"
                   autoComplete="new-password"
                   className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"

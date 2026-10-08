@@ -349,7 +349,7 @@ export default function AnalyticsPage() {
             <h1 className="text-lg font-bold text-white">Analytics</h1>
             <p className="text-xs mt-0.5" style={{ color:"#6b7280" }}>
               Attendance trends and seat utilisation
-              {inDemoMode() && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updates every 5s</span>}
+              {hydrated && inDemoMode() && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updates every 5s</span>}
             </p>
           </div>
           <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />
