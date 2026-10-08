@@ -8,7 +8,9 @@ import {
   sendReport, sendPicture, type Engine, type CameraReport,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, type Person } from "@/lib/peopleDetector";
-import { Video, Loader2, Play, Square, AlertTriangle, CheckCircle, Users, MonitorSmartphone } from "lucide-react";
+import { Video, Loader2, Play, Square, AlertTriangle, CheckCircle, Users, MonitorSmartphone, Terminal, Copy, Check, KeyRound } from "lucide-react";
+import { edgeVenueApi } from "@/lib/edgeVenue";
+import { HELP_URL } from "@/lib/help";
 
 const CARD_BG = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
@@ -316,7 +318,7 @@ export default function CameraModePage() {
                       ? "Demo mode: you'll see the count here. Sign in with Live to send it to AI Count and Live Cameras."
                       : "Leave this page open. Counts appear on AI Count and Live Cameras for everyone."}</li>
                   </ol>
-                  <button onClick={start} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold text-white" style={{ background: "#6366f1" }}>
+                  <button onClick={start} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold" style={{ background: "#6366f1", color: "#fff" }}>
                     <Play size={15} /> Start counting
                   </button>
                 </div>
@@ -388,6 +390,8 @@ export default function CameraModePage() {
                 <p><CheckCircle size={13} className="inline mr-1 text-green-500" />Keep the computer plugged in, with this page open and on screen. Use Chrome or Edge for the most accurate count.</p>
               </div>
             </div>
+
+            <InstallSection demo={demo} isAdmin={edgeTokenPayload()?.role === "admin"} />
           </div>
         )}
       </main>
@@ -408,4 +412,94 @@ function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, 
     ctx.strokeStyle = p.score >= 0.5 ? "#22c55e" : "#f59e0b";
     ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
   }
+}
+
+const INSTALL = {
+  windows: 'powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/kharis-min-tech/Kyro/main/camera-box/install/install-windows.ps1 | iex"',
+  mac: "curl -fsSL https://raw.githubusercontent.com/kharis-min-tech/Kyro/main/camera-box/install/install.sh | bash",
+};
+
+/** The installed version (Kyro Camera Box): one command in the terminal, for counting without a page open. */
+function InstallSection({ demo, isAdmin }: { demo: boolean; isAdmin: boolean }) {
+  const [os, setOs] = useState<"windows" | "mac">("windows");
+  const [copied, setCopied] = useState(false);
+  const [code, setCode] = useState<{ code: string; expires_at: string } | null>(null);
+  const [codeErr, setCodeErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => { if (/Mac|Linux|CrOS/.test(navigator.userAgent) && !/Windows/.test(navigator.userAgent)) setOs("mac"); }, []);
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(INSTALL[os]); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch {}
+  };
+  const getCode = async () => {
+    setBusy(true); setCodeErr(null);
+    try { setCode(await edgeVenueApi.pairingCode()); } catch (e) { setCodeErr(e instanceof Error ? e.message : "Couldn't get a code"); }
+    setBusy(false);
+  };
+
+  const tab = (id: "windows" | "mac", label: string) => (
+    <button onClick={() => setOs(id)} className="px-3 py-1.5 rounded-lg text-xs font-semibold"
+      style={os === id ? { background: "#6366f1", color: "#fff" } : { background: "var(--bg-hover)", color: "#9ca3af" }}>
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="rounded-xl p-5" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+      <h2 className="text-base font-semibold text-white flex items-center gap-2"><Terminal size={17} /> Want the installed version?</h2>
+      <p className="text-sm mt-1" style={{ color: "#9ca3af" }}>
+        Installing Kyro on the camera computer counts without this page being open, starts by itself when the
+        computer turns on, and installs every new AI update by itself. Run this once in the terminal on that
+        computer. Running it again later is safe — it just brings everything up to date.
+      </p>
+
+      <div className="flex gap-2 mt-4">{tab("windows", "Windows")}{tab("mac", "Mac / Linux")}</div>
+      <p className="text-xs mt-3" style={{ color: "#6b7280" }}>
+        {os === "windows"
+          ? "1. Click Start, type PowerShell and open it.  2. Paste this line and press Enter:"
+          : "1. Open Terminal (press Cmd + Space and type Terminal).  2. Paste this line and press Enter:"}
+      </p>
+      <div className="mt-2 flex items-stretch gap-2">
+        <code className="flex-1 min-w-0 rounded-lg px-3 py-2.5 text-xs break-all font-mono"
+          style={{ background: "var(--bg-hover)", color: "var(--text-primary, #e5e7eb)" }}>
+          {INSTALL[os]}
+        </code>
+        <button onClick={copy} className="shrink-0 flex items-center gap-1.5 px-3 rounded-lg text-xs font-semibold"
+          style={{ background: "#6366f1", color: "#fff" }} aria-label="Copy the command">
+          {copied ? <><Check size={14} /> Copied</> : <><Copy size={14} /> Copy</>}
+        </button>
+      </div>
+      <p className="text-xs mt-3" style={{ color: "#6b7280" }}>
+        3. The first time takes 10–20 minutes. When it asks for a <b>pairing code</b>, use the one below.
+        It&apos;s done when it says <b>All done!</b> — the computer then shows as Online on the Cameras page.
+      </p>
+
+      <div className="mt-4">
+        {demo ? (
+          <p className="text-xs" style={{ color: "#f59e0b" }}>The installed version sends counts to your Live dashboard — sign in with Live to get a pairing code.</p>
+        ) : isAdmin ? (
+          code ? (
+            <div className="rounded-lg p-3 inline-block" style={{ background: "var(--bg-hover)" }}>
+              <p className="text-xs" style={{ color: "#9ca3af" }}>Pairing code — type this when the installer asks</p>
+              <p className="text-2xl font-bold tracking-widest text-white font-mono mt-1">{code.code}</p>
+              <p className="text-xs mt-1" style={{ color: "#6b7280" }}>Works until {new Date(code.expires_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+          ) : (
+            <button onClick={getCode} disabled={busy} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
+              style={{ background: "var(--bg-hover)", color: "var(--text-primary, #e5e7eb)", border: `1px solid ${BORDER}` }}>
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <KeyRound size={14} />} Get a pairing code
+            </button>
+          )
+        ) : (
+          <p className="text-xs" style={{ color: "#9ca3af" }}>Ask an administrator for a pairing code (Cameras → Pair a camera computer).</p>
+        )}
+        {codeErr && <p className="text-xs mt-2" style={{ color: "#f87171" }}>{codeErr}</p>}
+      </div>
+
+      <p className="text-xs mt-4" style={{ color: "#6b7280" }}>
+        Step-by-step help: <a href={`${HELP_URL}/guides/camera-setup`} target="_blank" rel="noopener noreferrer" className="underline">camera setup guide</a>.
+      </p>
+    </div>
+  );
 }
