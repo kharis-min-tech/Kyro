@@ -388,7 +388,7 @@ export function buildCountMessage(ev, sub) {
     };
   }
   const level = levelFor(ev.fraction, sub.warn, sub.crit);
-  const title = level === "critical" ? `🚨 ${ev.zone} is over capacity`
+  const title = level === "critical" ? (ev.fraction !== null && ev.fraction >= 1 ? `🚨 ${ev.zone} is over capacity` : `🚨 ${ev.zone} is almost full`)
               : level === "warning"  ? `⚠️ ${ev.zone} is filling up`
               :                        `📋 ${ev.zone} counted`;
   return {
@@ -422,10 +422,12 @@ export async function notifyCount(env, body) {
   let subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey && s.mode !== "demo");
   if (kind === "camera") {
     // Camera counts change all the time: only tell a phone when the room has
-    // just reached that phone's own "filling up" or "over capacity" level.
+    // just reached that phone's own "filling up" or "almost full" level.
     const prev = Number(body.prev_fraction) || 0;
+    // Going past 100% is its own step: "almost full" → "over capacity" alerts again.
     const rank = { info: 0, warning: 1, critical: 2 };
-    subs = subs.filter((s) => rank[levelFor(ev.fraction, s.warn, s.crit)] > rank[levelFor(prev, s.warn, s.crit)]);
+    const step = (f, s) => (f !== null && f >= 1 ? 3 : rank[levelFor(f, s.warn, s.crit)]);
+    subs = subs.filter((s) => step(ev.fraction, s) > step(prev, s));
   }
   const vapid = vapidFromEnv(env);
   await Promise.all(subs.map(async (s) => {
@@ -468,7 +470,7 @@ export function demoAlertFor(n) {
   switch (kind) {
     case 0: return { title: `🪑 Seat ${seat} is free — ${z.zone}`, body: "A seat just opened up. Tap to see it on the seat map. · Demo", level: "seat", url: "/seating", camera_id: z.cam };
     case 1: return { title: `⚠️ ${z.zone} is filling up`, body: `82% of capacity (${pct(0.82)}) · Demo`, level: "warning", camera_id: z.cam };
-    case 2: return { title: `🚨 ${z.zone} is over capacity`, body: `93% of capacity (${pct(0.93)}) · Demo`, level: "critical", camera_id: z.cam };
+    case 2: return { title: `🚨 ${z.zone} is almost full`, body: `93% of capacity (${pct(0.93)}) · Demo`, level: "critical", camera_id: z.cam };
     case 3: return { title: "🎭 Kyro has a question", body: `Someone moved toward the front of ${z.zone} — were they ushered? · Demo`, level: "review", camera_id: z.cam };
     default: return { title: `🪑 2 seats free together — ${z.zone}`, body: `Seats ${seat} and ${row}${(n * 7) % 24 + 2} are free side by side. · Demo`, level: "seat", url: "/seating", camera_id: z.cam };
   }

@@ -160,6 +160,9 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   const loadBackgroundFromCamera = useCallback(async () => {
     setLoadingBg(true);
     setBgError(false);
+    // No Kyro server (Demo, or the website on its own): there's no camera
+    // picture to fetch — go straight to "upload one" instead of a failed request.
+    if (!process.env.NEXT_PUBLIC_API_URL) { setBgError(true); setLoadingBg(false); return; }
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
       const res = await fetch(camerasApi.snapshotUrl(cameraId), {

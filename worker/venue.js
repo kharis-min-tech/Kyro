@@ -297,8 +297,10 @@ export class VenueHub extends DurableObject {
   /**
    * Phone alerts when a room fills up. Each phone decides its own levels
    * (Notifications page: "filling up" / "over capacity"); here we only send
-   * when the room crossed upwards past a new 5% step, at most once a minute
-   * per room. A room has to empty by 10% before the same step alerts again.
+   * when the room crosses upwards past a new 5% step (each phone is then only
+   * told when it reaches that phone's own level — see notifyCount). A room has
+   * to empty by 10% before the same step alerts again, so a count wobbling
+   * around a level doesn't keep buzzing phones.
    */
   async capacityAlerts(cams, live) {
     const marks = await this.get("alert_marks", {});
@@ -309,7 +311,7 @@ export class VenueHub extends DurableObject {
       const frac = (l.current || 0) / c.zone_capacity;
       const m = marks[id] || { frac: 0, at: 0 };
       if (frac < m.frac - 0.1) { marks[id] = { frac, at: m.at }; dirty = true; continue; }
-      if (Math.floor(frac * 20) > Math.floor(m.frac * 20) && frac >= 0.5 && Date.now() - m.at > 60_000) {
+      if (Math.floor(frac * 20) > Math.floor(m.frac * 20) && frac >= 0.5) {
         const prev = m.frac;
         marks[id] = { frac, at: Date.now() }; dirty = true;
         this.ctx.waitUntil(notifyCount(this.env, {

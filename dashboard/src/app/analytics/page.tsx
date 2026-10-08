@@ -126,7 +126,11 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
   const values = data.map((d) => d.attendance);
   const max = Math.max(...values, 1), min = Math.min(...values), range = max - min || 1;
   const H = 140, W = data.length;
-  const pts = data.map((d, i) => `${(i/(W-1))*100},${H-((d.attendance-min)/range)*(H-20)-10}`).join(" ");
+  const yFor = (v: number) => H-((v-min)/range)*(H-20)-10;
+  // One day of data: draw it as a flat line across (a single point has no width).
+  const pts = W === 1
+    ? `0,${yFor(values[0])} 100,${yFor(values[0])}`
+    : data.map((d, i) => `${(i/(W-1))*100},${yFor(d.attendance)}`).join(" ");
   return (
     <div className="rounded-2xl p-5" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
       <div className="flex items-center justify-between mb-4">

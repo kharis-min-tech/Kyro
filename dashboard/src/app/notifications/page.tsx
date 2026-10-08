@@ -337,7 +337,7 @@ export default function NotificationsPage() {
               {edge && (
                 <p className="text-xs text-gray-400 mt-2 flex items-start gap-1.5">
                   <Info size={12} className="text-indigo-400 shrink-0 mt-0.5" />
-                  <span>Phones also get an alert when a camera room is filling up or over capacity, at the levels below.
+                  <span>Phones also get an alert when a camera room is filling up or almost full, at the levels below.
                   Each room needs its number of seats set on the Cameras page.</span>
                 </p>
               )}
@@ -498,7 +498,7 @@ export default function NotificationsPage() {
                 If your phone is off, alerts wait up to 24 hours and arrive when it's back on</li>
               {edge ? (
                 <li className="flex items-start gap-2"><CheckCircle size={13} className="text-green-400 shrink-0 mt-0.5" />
-                  A camera room filling up or over capacity (Camera Mode or a camera computer), at the levels set on this
+                  A camera room filling up or almost full (Camera Mode or a camera computer), at the levels set on this
                   page — the room needs its number of seats set on the Cameras page</li>
               ) : (
               <li className="flex items-start gap-2"><AlertTriangle size={13} className="text-amber-400 shrink-0 mt-0.5" />
