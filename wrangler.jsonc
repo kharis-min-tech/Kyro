@@ -38,6 +38,12 @@
     "run_worker_first": ["/api/*", "/_next/*"]
   },
 
+  // VenueHub: live link to the camera computer at church (worker/venue.js).
+  "durable_objects": {
+    "bindings": [{ "name": "VENUE", "class_name": "VenueHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["VenueHub"] }],
+
   // Every 15 min: automatic sample alerts for devices in Demo mode
   // (worker/index.js runDemoTick). Live-mode devices are never sent these.
   "triggers": { "crons": ["*/15 * * * *"] },

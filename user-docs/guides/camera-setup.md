@@ -1,9 +1,75 @@
-# Getting the best count from your cameras
+# Setting up cameras
+
+## Connect your cameras (one time, about 20 minutes)
+
+Cameras plug into a **camera computer** at church: any Windows PC, Mac or
+Linux computer that stays on during services. That computer runs the Kyro
+Camera Box program. It finds the cameras, counts people with Kyro's AI and
+sends the counts to the website.
+
+**1. Get a pairing code.** On the website, go to [Cameras](/pages/cameras) and
+press **Pair a camera computer**. Keep the code on screen (it works for 30 minutes).
+
+**2. Run the installer on the camera computer.**
+
+- **Windows:** open **PowerShell** (search for it in the Start menu), paste this
+  line and press Enter:
+
+  ```powershell
+  powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/kharis-min-tech/Kyro/main/camera-box/install/install-windows.ps1 | iex"
+  ```
+
+- **Mac or Linux:** open **Terminal**, paste this line and press Enter:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/kharis-min-tech/Kyro/main/camera-box/install/install.sh | bash
+  ```
+
+The first install downloads Python and the AI, which takes 10–20 minutes.
+When it asks, **type the pairing code** from step 1.
+
+**3. Plug in your cameras.** That's it. Each USB camera appears on the Cameras
+page within a few seconds. Give it a name, a room and the room's seat count.
+
+### After that, nothing to do
+
+- **Plug and play:** plug a USB camera in and it's counted. Unplug it and it
+  shows as offline. If you don't want a camera counted (for example a laptop's
+  built-in camera), press **Switch off** on the Cameras page.
+- **Starts by itself** whenever the computer turns on, and restarts itself if
+  anything goes wrong.
+- **Updates itself.** When Kyro's AI is improved, the camera computer
+  downloads the new version by itself. It only does this when the
+  cameras haven't seen anyone for 15 minutes, so a service is never
+  interrupted. If an update ever fails to start, it goes back to the
+  previous version on its own.
+
+::: tip Network (Wi-Fi or ethernet) cameras
+These don't plug into the computer, so the website needs their address. On
+the Cameras page, open **Add a network camera** and paste the camera's
+stream address (it starts with `rtsp://`; the camera's app or manual shows
+it). The camera computer connects to it within a few seconds.
+:::
+
+::: warning Keep the camera computer on
+Plug it into power and leave it on. On Windows, set it to sign in
+automatically after a restart, so Kyro can start. The installer already stops
+the computer going to sleep while it's plugged in.
+:::
+
+### How fast does it count?
+
+A computer with an **NVIDIA graphics card** counts several times a second with
+Kyro's most accurate settings. A **Mac with an Apple chip (M1 or newer)** is
+quick too. An ordinary PC without a graphics card still counts, but each
+count takes a few seconds. That's fine for a seated congregation.
+
+## Getting the best count from your cameras
 
 Kyro's AI finds people very reliably when it can see them. The camera's
 position is now the biggest thing that decides whether **everyone** is counted.
 
-## How good is the AI?
+### How good is the AI?
 
 Tested on crowded scenes where every person had been counted by hand, with a
 camera covering a whole hall:
@@ -18,7 +84,7 @@ camera covering a whole hall:
 Most of the people it still misses are hidden behind someone else, or so far
 away they're only a few pixels tall. Better camera placement fixes most of these.
 
-## Place cameras so everyone's head is visible
+### Place cameras so everyone's head is visible
 
 - **Mount high, angled down** (about 30–45°). From head height, the front rows
   hide everyone behind them. From above the stage, looking down the rows,
@@ -34,7 +100,7 @@ away they're only a few pixels tall. Better camera placement fixes most of these
 - **Overflow rooms and side rooms:** use a camera, or count them on
   [Manual Count](/pages/manual-count).
 
-## Check a camera
+### Check a camera
 
 Whoever looks after the Kyro computer can run the camera check during a
 service:

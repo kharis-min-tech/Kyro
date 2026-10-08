@@ -1,4 +1,5 @@
-import { handleAccounts } from "./accounts.js";
+import { handleAccounts, currentUser } from "./accounts.js";
+export { VenueHub } from "./venue.js";
 import { handleIntegrations, runIntegrationTick, isBlockedHost } from "./integrations.js";
 
 /**
@@ -89,6 +90,20 @@ export default {
           await env.SUBS.put(`err:${new Date().toISOString()}:${crypto.randomUUID().slice(0, 8)}`, text, { expirationTtl: 14 * 86400 });
         }
         return new Response(null, { status: 204 });
+      }
+
+      // Live cameras: the camera computer at church (device token) and the
+      // website (signed-in user) both talk to the VenueHub Durable Object.
+      if (env.VENUE && (url.pathname.startsWith("/api/devices/") || url.pathname.startsWith("/api/live/"))) {
+        const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
+        const headers = new Headers(request.headers);
+        headers.delete("X-Kyro-Role"); // never trust a role sent by the caller
+        if (url.pathname.startsWith("/api/live/")) {
+          const me = await currentUser(request, env);
+          if (!me) return json({ error: "Please sign in again" }, 401);
+          headers.set("X-Kyro-Role", me.role);
+        }
+        return hub.fetch(new Request(request, { headers }));
       }
       if (url.pathname.startsWith("/api/")) {
         return json({ error: "Not found" }, 404);

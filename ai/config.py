@@ -19,7 +19,9 @@ load_dotenv()
 # Paths
 # ---------------------------------------------------------------------------
 ROOT_DIR = Path(__file__).parent
-MODELS_DIR = ROOT_DIR / "models" / "weights"
+# KYRO_MODELS_DIR: the Camera Box keeps downloaded models outside the code
+# folder, so an automatic update doesn't download them all over again.
+MODELS_DIR = Path(os.getenv("KYRO_MODELS_DIR") or ROOT_DIR / "models" / "weights")
 MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
 # ---------------------------------------------------------------------------

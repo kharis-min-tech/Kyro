@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { camerasApi, seatsApi, ApiError } from "@/lib/api";
 import { DEMO_MODE, DEMO_CAMERAS } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import { edgeVenueApi } from "@/lib/edgeVenue";
 import type { Camera } from "@/types";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
@@ -65,6 +67,20 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   const [error,   setError]   = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
+    // Live mode on the Cloudflare build: real cameras reported by the camera
+    // computer at church (worker/venue.js). Checked before inDemoMode(),
+    // which is also true here because there's no API URL.
+    if (isEdgeLive()) {
+      try {
+        setCameras(await edgeVenueApi.cameras());
+        setError(null);
+      } catch (e: any) {
+        setError(e?.message ?? "Could not load cameras");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (inDemoMode()) {
       setCameras(loadDemoCameras());
       setLoading(false);
@@ -89,8 +105,28 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   // Hydrate on client mount — avoids SSR/client mismatch
   useEffect(() => { refresh(); }, [refresh]);
 
+  // Edge Live: poll so a newly plugged-in camera appears without a reload.
+  useEffect(() => {
+    if (!isEdgeLive()) return;
+    const id = setInterval(() => { refresh(); }, 10_000);
+    return () => clearInterval(id);
+  }, [refresh]);
+
   const updateCamera = useCallback(async (cameraId: string, fields: Partial<Camera>) => {
     setCameras((prev) => prev.map((c) => c.camera_id === cameraId ? { ...c, ...fields } : c));
+    if (isEdgeLive()) {
+      const f = fields as Partial<Camera> & { hidden?: boolean };
+      await edgeVenueApi.updateCamera(cameraId, {
+        name:          f.name          ?? undefined,
+        zone_name:     f.zone_name     ?? undefined,
+        zone_capacity: f.zone_capacity ?? undefined,
+        zone_order:    f.zone_order    ?? undefined,
+        // The Cameras page sends location: undefined for "Indoor (has seats)".
+        location:      "location" in f ? (f.location === "queue" ? "queue" : "indoor") : undefined,
+        hidden:        f.hidden,
+      });
+      return;
+    }
     if (inDemoMode()) { saveDemoOverride(cameraId, fields); return; }
     await camerasApi.update(cameraId, {
       name:          fields.name          ?? undefined,
@@ -105,6 +141,17 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   ) => {
     const isQueue = fields.location === "queue";
     const capacity = fields.zone_capacity ?? 0;
+
+    if (isEdgeLive()) {
+      // A network camera: the camera computer picks the address up on its next report.
+      const { camera_id } = await edgeVenueApi.addStream({
+        url: fields.stream_url, name: fields.name,
+        zone_name: fields.zone_name, zone_capacity: fields.zone_capacity,
+      });
+      if (isQueue) await edgeVenueApi.updateCamera(camera_id, { location: "queue" }).catch(() => {});
+      await refresh();
+      return;
+    }
 
     if (inDemoMode()) {
       const newCam: Camera = {
@@ -151,10 +198,11 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       seatsApi.autoGenerateLayout(created.camera_id, created.name, capacity)
         .catch(() => {}); // non-fatal — user can draw manually if this fails
     }
-  }, []);
+  }, [refresh]);
 
   const deleteCamera = useCallback(async (cameraId: string) => {
     setCameras((prev) => prev.filter((c) => c.camera_id !== cameraId));
+    if (isEdgeLive()) { await edgeVenueApi.removeCamera(cameraId); return; }
     if (inDemoMode()) {
       try {
         const deleted: string[] = JSON.parse(localStorage.getItem(mdeKey("deleted")) ?? "[]");

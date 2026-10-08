@@ -1,0 +1,7 @@
+# Kyro Camera Box — runs on the computer the cameras connect to.
+ultralytics==8.4.174
+opencv-python==4.10.0.84
+numpy>=1.26,<3
+scipy>=1.13
+filterpy==1.4.5
+python-dotenv>=1.0

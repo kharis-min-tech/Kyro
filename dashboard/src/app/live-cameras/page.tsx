@@ -11,13 +11,15 @@
  *   - "Can we fit the queue?" outside queue estimator
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useAuth } from "@/hooks/useAuth";
 import { camerasApi } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import { useEdgeSnapshot, useEdgeVenue, type EdgeCamera } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -35,6 +37,25 @@ const BORDER  = "var(--border-subtle)";
 // Thresholds
 const WARN_PCT     = 80;  // amber warning
 const CRITICAL_PCT = 90;  // red alert
+
+// Live mode on the Cloudflare build: counts come from /api/live/venue and
+// pictures from /api/live/snapshot (no backend WebSocket / MJPEG stream).
+const EdgeLiveContext = createContext<{ edge: boolean; zones: Record<string, ZoneLive> }>({ edge: false, zones: {} });
+
+/** Counts + status for one camera in edge Live mode (null when not in edge mode). */
+function useEdgeCameraLive(camera: Camera) {
+  const { edge, zones } = useContext(EdgeLiveContext);
+  if (!edge) return null;
+  const z = zones[camera.camera_id];
+  const ec = camera as EdgeCamera;
+  return {
+    current: z?.current ?? 0,
+    entries: z?.entries ?? 0,
+    exits:   z?.exits ?? 0,
+    isLive:  z ? z.is_running : !!camera.is_active,
+    error:   (z?.error_reason ?? ec.error_reason) || null,
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -58,6 +79,22 @@ function SnapshotImage({ cameraId }: { cameraId: string }) {
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
+  const { edge } = useContext(EdgeLiveContext);
+  // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
+  const snap = useEdgeSnapshot(cameraId, edge, 20_000);
+
+  if (edge) {
+    if (!snap.url) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ background: "var(--bg-inset)" }}>
+          <Video size={28} className="text-gray-700" />
+          <span className="text-xs text-gray-600 px-4 text-center">No picture yet — one arrives every 20 seconds while the camera is on</span>
+        </div>
+      );
+    }
+    // eslint-disable-next-line @next/next/no-img-element
+    return <img src={snap.url} alt="latest camera picture" className="w-full h-full object-cover" draggable={false} />;
+  }
 
   if (inDemoMode()) {
     return (
@@ -449,11 +486,13 @@ function CameraTile({
 }) {
   const streamRole = (role === "admin" || role === "operator") ? role as "admin" | "operator" : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
+  const edgeLive = useEdgeCameraLive(camera);
 
-  const current  = data?.attendance.current ?? 0;
-  const entries  = data?.attendance.entries ?? 0;
-  const exits    = data?.attendance.exits   ?? 0;
-  const isLive   = inDemoMode() ? true : connected && !!data;
+  const current  = edgeLive ? edgeLive.current : (data?.attendance.current ?? 0);
+  const entries  = edgeLive ? edgeLive.entries : (data?.attendance.entries ?? 0);
+  const exits    = edgeLive ? edgeLive.exits   : (data?.attendance.exits   ?? 0);
+  const isLive   = edgeLive ? edgeLive.isLive : inDemoMode() ? true : connected && !!data;
+  const edgeError = edgeLive?.error ?? null;
   const capacity = camera.zone_capacity ?? 0;
   const isQueue  = camera.location === "queue";
   const pct      = (!isQueue && capacity > 0) ? Math.min(100, Math.round((current / capacity) * 100)) : null;
@@ -528,6 +567,9 @@ function CameraTile({
             </div>
             <span className="text-xs text-gray-600 ml-auto">feeds queue estimator ↑</span>
           </div>
+          {edgeError && (
+            <p className="text-xs text-amber-400 flex items-start gap-1.5"><AlertTriangle size={12} className="shrink-0 mt-0.5" />{edgeError}</p>
+          )}
         </div>
       </div>
     );
@@ -673,6 +715,9 @@ function CameraTile({
             </span>
           )}
         </div>
+        {edgeError && (
+          <p className="text-xs text-amber-400 flex items-start gap-1.5"><AlertTriangle size={12} className="shrink-0 mt-0.5" />{edgeError}</p>
+        )}
       </div>
     </div>
   );
@@ -683,10 +728,11 @@ function CameraTile({
 function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string; onClose: () => void }) {
   const streamRole = (role === "admin" || role === "operator") ? role as "admin" | "operator" : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
-  const current   = data?.attendance.current ?? 0;
-  const entries   = data?.attendance.entries ?? 0;
-  const exits     = data?.attendance.exits ?? 0;
-  const isLive    = inDemoMode() ? true : connected && !!data;
+  const edgeLive  = useEdgeCameraLive(camera);
+  const current   = edgeLive ? edgeLive.current : (data?.attendance.current ?? 0);
+  const entries   = edgeLive ? edgeLive.entries : (data?.attendance.entries ?? 0);
+  const exits     = edgeLive ? edgeLive.exits   : (data?.attendance.exits ?? 0);
+  const isLive    = edgeLive ? edgeLive.isLive : inDemoMode() ? true : connected && !!data;
   const capacity  = camera.zone_capacity ?? 0;
   const pct       = capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : null;
   const seatsLeft = capacity > 0 ? Math.max(0, capacity - current) : null;
@@ -830,6 +876,14 @@ export default function LiveCamerasPage() {
   const [venueTotal, setVenueTotal] = useState<VenueTotal | null>(null);
   const [queueSize, setQueueSize]   = useState(0);
 
+  // Live mode on the Cloudflare build — decided after mount (reads localStorage).
+  const [edge, setEdge] = useState(false);
+  useEffect(() => { setEdge(isEdgeLive()); }, []);
+  const { venue: edgeVenue, error: edgeVenueErr } = useEdgeVenue(edge, 5_000);
+  useEffect(() => { if (edge && edgeVenue) setVenueTotal(edgeVenue); }, [edge, edgeVenue]);
+  const edgeZones: Record<string, ZoneLive> = {};
+  for (const z of edgeVenue?.zones ?? []) edgeZones[z.camera_id] = z;
+
   // Live counts reported by each CameraTile — avoids duplicate WebSocket connections
   const [liveCounts, setLiveCounts] = useState<Record<string, { current: number; capacity: number }>>({});
 
@@ -842,7 +896,7 @@ export default function LiveCamerasPage() {
 
   // Poll venue totals every 5 s for real mode
   useEffect(() => {
-    if (inDemoMode() || cameras.length === 0) return;
+    if (isEdgeLive() || inDemoMode() || cameras.length === 0) return;
     const poll = async () => {
       try { setVenueTotal(await camerasApi.venueTotal()); } catch {}
     };
@@ -853,7 +907,7 @@ export default function LiveCamerasPage() {
 
   // In real mode, sync outside queue from queue camera live counts
   useEffect(() => {
-    if (inDemoMode()) return;
+    if (inDemoMode() && !isEdgeLive()) return;
     const queueCams = cameras.filter((c) => c.location === "queue");
     const queueTotal = queueCams.reduce((s, c) => s + (liveCounts[c.camera_id]?.current ?? 0), 0);
     setQueueSize(queueTotal);
@@ -861,7 +915,7 @@ export default function LiveCamerasPage() {
 
   // In demo mode, build venueTotal from reported live counts
   useEffect(() => {
-    if (!inDemoMode()) return;
+    if (!inDemoMode() || isEdgeLive()) return;
     // Separate queue cameras from indoor cameras
     const indoorCams = cameras.filter((c) => c.location !== "queue");
     const queueCams  = cameras.filter((c) => c.location === "queue");
@@ -941,6 +995,7 @@ export default function LiveCamerasPage() {
   const expandedCamera = expandedId ? cameras.find((c) => c.camera_id === expandedId) ?? null : null;
 
   return (
+    <EdgeLiveContext.Provider value={{ edge, zones: edgeZones }}>
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
       {/* min-w-0: without it this flex child grows to its widest content (the
@@ -951,8 +1006,11 @@ export default function LiveCamerasPage() {
         <div className="mb-6">
           <h1 className="text-xl font-bold text-white">Live Cameras</h1>
           <p className="text-sm mt-0.5" style={{ color: "#6b7280" }}>
-            All floors and rooms · snapshots every 2 s
+            {edge ? "All floors and rooms · a new picture every 20 s" : "All floors and rooms · snapshots every 2 s"}
           </p>
+          {edge && edgeVenueErr && (
+            <p className="text-xs text-amber-400 mt-1">Couldn't refresh live counts: {edgeVenueErr}</p>
+          )}
         </div>
 
         {/* Overcrowding alert banner */}
@@ -972,8 +1030,12 @@ export default function LiveCamerasPage() {
         {!loading && cameras.length === 0 && (
           <div className="rounded-2xl p-8 text-center" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
             <Video size={32} className="text-gray-700 mx-auto mb-3" />
-            <p className="text-sm text-gray-400">No cameras registered yet.</p>
-            <p className="text-xs text-gray-600 mt-1">Go to the Cameras page to add your first camera.</p>
+            <p className="text-sm text-gray-400">{edge ? "No cameras connected yet." : "No cameras registered yet."}</p>
+            <p className="text-xs text-gray-600 mt-1">
+              {edge
+                ? "Pair your camera computer on the Cameras page — cameras plugged into it appear here by themselves."
+                : "Go to the Cameras page to add your first camera."}
+            </p>
           </div>
         )}
 
@@ -994,5 +1056,6 @@ export default function LiveCamerasPage() {
         <ExpandedModal camera={expandedCamera} role={role} onClose={() => setExpandedId(null)} />
       )}
     </div>
+    </EdgeLiveContext.Provider>
   );
 }

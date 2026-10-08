@@ -206,11 +206,15 @@ class FaceReId:
 
     def __init__(self, config: Optional[FaceReIdConfig] = None) -> None:
         self.cfg = config or FaceReIdConfig()
-        self._face_detector = (
-            cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-            if self.cfg.enabled else None
-        )
-        self._hog = cv2.HOGDescriptor((64, 128), (16, 16), (8, 8), (8, 8), 9) if self.cfg.enabled else None
+        # OpenCV 5 moved the face finder out of the main package: without it
+        # re-id just skips the face signal instead of stopping the counting.
+        self._face_detector = None
+        if self.cfg.enabled and hasattr(cv2, "CascadeClassifier"):
+            self._face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+        elif self.cfg.enabled:
+            logger.warning("Re-id: this OpenCV has no face finder — continuing without the face signal")
+        self._hog = (cv2.HOGDescriptor((64, 128), (16, 16), (8, 8), (8, 8), 9)
+                     if self.cfg.enabled and hasattr(cv2, "HOGDescriptor") else None)
 
         self._deep_net: Optional[cv2.dnn.Net] = None
         if self.cfg.enabled and os.path.isfile(self.cfg.deep_model_path):

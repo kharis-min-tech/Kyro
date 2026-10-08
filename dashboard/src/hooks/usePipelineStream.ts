@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PipelineUpdate, ReviewRequest } from "@/types";
+import { isEdgeLive } from "@/lib/edgeAuth";
 import { DEMO_MODE, DemoFeed, DEMO_REVIEWS, getNextDemoReviews, registerDemoFeed, resetDemoFeed } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
@@ -170,6 +171,9 @@ export function usePipelineStream(
 
   useEffect(() => {
     if (inDemoMode() && !isLiveMode()) return; // skip WebSocket in demo mode
+    // Live mode on the Cloudflare build has no backend WebSocket — live counts
+    // come from /api/live/venue instead (see lib/edgeVenue.ts).
+    if (isEdgeLive()) return;
     mountedRef.current = true;
 
     function connect() {

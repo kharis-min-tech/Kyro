@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
@@ -13,6 +13,13 @@ import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
+import { isEdgeLive } from "@/lib/edgeAuth";
+import { aggregateEdgeHistory, edgeCounterSeries, edgeVenueApi, useEdgeSnapshot, type EdgeHistoryPoint } from "@/lib/edgeVenue";
+import type { ZoneLive } from "@/types";
+
+// Live mode on the Cloudflare build: counts come from /api/live/venue (polled
+// by the page) instead of per-camera WebSockets. Provided by AttendancePage.
+const EdgeVenueContext = createContext<{ edge: boolean; zones: Record<string, ZoneLive> }>({ edge: false, zones: {} });
 
 /**
  * Local-timezone "YYYY-MM-DD".
@@ -157,13 +164,15 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const [health, setHealth] = useState<{ is_running: boolean; status: string; error_reason: string | null } | null>(null);
   const [streamErr, setStreamErr] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  const { edge, zones } = useContext(EdgeVenueContext);
+  const snap = useEdgeSnapshot(camera.camera_id, edge, 20_000);
 
   // Poll the camera's real health status (online/offline/error) — this is
   // the ground truth from the vision worker's heartbeat, not just "is the
   // dashboard's websocket connected", which can stay "connected" even
   // when the camera feed itself has failed.
   useEffect(() => {
-    if (inDemoMode()) return;
+    if (inDemoMode() || isEdgeLive()) return;
     let cancelled = false;
     async function poll() {
       try {
@@ -175,6 +184,46 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
     const id = setInterval(poll, 5000);
     return () => { cancelled = true; clearInterval(id); };
   }, [camera.camera_id]);
+
+  if (edge) {
+    // Edge Live: latest picture (refreshed every 20 s) + status from /api/live/venue.
+    const z = zones[camera.camera_id];
+    const live = !!z?.is_running;
+    const err = live && z?.status === "error";
+    return (
+      <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
+        {snap.url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={snap.url} alt={camera.zone_name ?? camera.name}
+            className="absolute inset-0 w-full h-full object-cover" draggable={false} />
+        ) : (
+          <div className="absolute inset-0 flex flex-col items-center justify-center"
+            style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}>
+            <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>No picture yet</span>
+          </div>
+        )}
+        <div className="absolute top-2 left-2 flex items-center gap-1 px-2 py-0.5 rounded-full"
+          style={{ background: "rgba(0,0,0,0.6)" }}
+          title={err ? (z?.error_reason ?? "Camera error") : undefined}>
+          <span className={`w-1.5 h-1.5 rounded-full ${err ? "bg-amber-500" : live ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
+          <span style={{ fontSize: 10, color: err ? "#fcd34d" : live ? "#4ade80" : "#9ca3af", fontWeight: 600 }}>
+            {err ? "CAMERA ERROR" : live ? "LIVE" : "OFFLINE"}
+          </span>
+        </div>
+        {live && (
+          <div className="absolute top-2 right-2 px-2 py-0.5 rounded-full" style={{ background: "rgba(0,0,0,0.6)" }}>
+            <span style={{ fontSize: 11, color: "#fff", fontWeight: 700 }}>{(z?.current ?? 0).toLocaleString()} people</span>
+          </div>
+        )}
+        <div className="absolute bottom-2 left-2 right-2">
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.95)", fontWeight: 600, textShadow: "0 1px 2px rgba(0,0,0,0.5)" }}>{camera.zone_name ?? camera.name}</span>
+          {err && z?.error_reason && (
+            <span className="block" style={{ fontSize: 10, color: "#fcd34d", textShadow: "0 1px 2px rgba(0,0,0,0.6)" }}>{z.error_reason}</span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const isLive = inDemoMode() || (health?.is_running ?? (connected && !!data));
   const isError = !inDemoMode() && health?.status === "error";
@@ -232,9 +281,16 @@ function useLiveRow(camera: Camera, role: string) {
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
   const { data } = usePipelineStream(camera.camera_id, streamRole);
   const [history, setHistory] = useState<number[]>([]);
+  const { edge, zones } = useContext(EdgeVenueContext);
+  const zone = edge ? zones[camera.camera_id] : undefined;
   useEffect(() => {
     if (data) setHistory((h) => [...h.slice(-20), data.attendance.current]);
   }, [data]);
+  // Edge Live: one sample per venue poll (the zones object is replaced each poll).
+  useEffect(() => {
+    if (zone) setHistory((h) => [...h.slice(-20), zone.current]);
+  }, [zone]);
+  if (edge) return { current: zone?.current ?? 0, peak: zone?.peak ?? 0, history };
   return {
     current: data?.attendance.current ?? 0,
     peak:    data?.attendance.peak    ?? 0,
@@ -467,8 +523,12 @@ function AIAlertsPanel() {
 // showed "Live" everywhere.
 const ST_LIVE = "#4ade80", ST_WARN = "#fbbf24", ST_DOWN = "#f87171", ST_IDLE = "var(--text-muted)";
 
-function SystemStatus({ camerasTotal, camerasRunning, feedAt }: {
+function SystemStatus({ camerasTotal, camerasRunning, feedAt, edge = false, feedError = null }: {
   camerasTotal: number;
+  /** Live mode on the Cloudflare build — health comes from /api/live/venue. */
+  edge?: boolean;
+  /** Edge Live: the last venue poll failed with this message. */
+  feedError?: string | null;
   /** From the venue-total poll; undefined until the first successful poll. */
   camerasRunning?: number;
   /** Epoch ms of the last successful venue-total poll. */
@@ -505,6 +565,25 @@ function SystemStatus({ camerasTotal, camerasRunning, feedAt }: {
   let ai: Row, cams: Row, feed: Row;
   if (demoChosen) {
     ai = cams = feed = { value: "Live (demo)", color: ST_LIVE };
+  } else if (edge) {
+    // Counting runs on the camera computer at church; the server only relays.
+    const running = camerasRunning ?? 0;
+    const fresh = feedAt !== null && now - feedAt < 20_000;
+    if (camerasRunning === undefined) {
+      ai = cams = feed = feedError ? { value: "Can't reach server", color: ST_DOWN } : { value: "Checking…", color: ST_IDLE };
+    } else {
+      ai = camerasTotal === 0 ? { value: "No camera computer", color: ST_IDLE }
+         : running > 0 ? { value: "Live", color: ST_LIVE }
+         : { value: "Offline", color: ST_DOWN };
+      cams = camerasTotal === 0 ? { value: "None set up", color: ST_IDLE }
+           : running === 0 ? { value: `Offline (0 of ${camerasTotal})`, color: ST_DOWN }
+           : running < camerasTotal ? { value: `${running} of ${camerasTotal} live`, color: ST_WARN }
+           : { value: `Live (${running} of ${camerasTotal})`, color: ST_LIVE };
+      feed = !fresh ? { value: "Not updating", color: ST_DOWN }
+           : camerasTotal === 0 ? { value: "No data", color: ST_IDLE }
+           : running === 0 ? { value: "No cameras sending", color: ST_DOWN }
+           : { value: "Live", color: ST_LIVE };
+    }
   } else if (!hasBackend) {
     ai   = { value: "Not connected", color: ST_IDLE };
     cams = { value: "Not connected", color: ST_IDLE };
@@ -590,6 +669,10 @@ export default function AttendancePage() {
   // Running total of today's Manual Counts across all zones — summed from
   // localStorage and refreshed whenever the Manual Count page writes.
   const [manualTotalToday, setManualTotalToday] = useState(0);
+  // Live mode on the Cloudflare build — decided after mount (reads localStorage).
+  const [edge, setEdge] = useState(false);
+  const [edgeFeedErr, setEdgeFeedErr] = useState<string | null>(null);
+  useEffect(() => { setEdge(isEdgeLive()); }, []);
 
   useEffect(() => {
     setHydrated(true);
@@ -610,12 +693,14 @@ export default function AttendancePage() {
 
   // Real-mode: poll venue total every 5s
   useEffect(() => {
-    if (inDemoMode() || cameras.length === 0) return;
+    // Edge Live polls even with no cameras, so System Status can say so honestly.
+    if (!edge && (inDemoMode() || cameras.length === 0)) return;
     const poll = async () => {
       try {
-        const vt = await camerasApi.venueTotal();
+        const vt = edge ? await edgeVenueApi.venue() : await camerasApi.venueTotal();
         setVenueTotal(vt);
         setVenueFeedAt(Date.now());
+        if (edge) setEdgeFeedErr(null);
         setVenueHistory((h) => [...h.slice(-80), vt.total_current]);
         setMetricHistory((m) => ({
           people:    [...m.people.slice(-80),    vt.total_current],
@@ -623,12 +708,14 @@ export default function AttendancePage() {
           entries:   [...m.entries.slice(-80),   vt.total_entries],
           exits:     [...m.exits.slice(-80),     vt.total_exits],
         }));
-      } catch {}
+      } catch (e) {
+        if (edge) setEdgeFeedErr(e instanceof Error ? e.message : "Couldn't reach the server");
+      }
     };
     poll();
     const t = setInterval(poll, 5_000);
     return () => clearInterval(t);
-  }, [cameras.length]);
+  }, [cameras.length, edge]);
 
   // Demo-mode: sum all camera streams
   const indoorCameras = cameras.filter((c) => c.location !== "queue");
@@ -775,6 +862,24 @@ export default function AttendancePage() {
       return;
     }
 
+    // Live mode on the Cloudflare build: per-minute history kept by the server.
+    if (edge) {
+      let cancelled = false;
+      const caps: Record<string, number> = {};
+      for (const c of cameras) if (c.location !== "queue") caps[c.camera_id] = c.zone_capacity ?? 0;
+      const load = () => edgeVenueApi.history(dateStr_, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
+        .then((rows) => {
+          if (cancelled || !Array.isArray(rows)) return;
+          const series = aggregateEdgeHistory(rows.filter((r) => r.camera_id in caps), caps);
+          const history = series[metric];
+          setHistoricalData({ date: dateStr_, history, timestamps: series.timestamps, total: Math.max(...history, 0) });
+        })
+        .catch(() => { /* non-fatal — chart falls back to live samples */ });
+      load();
+      const t = isToday_ ? setInterval(load, 60_000) : undefined;
+      return () => { cancelled = true; if (t) clearInterval(t); };
+    }
+
     // Live mode without a backend: no history to show.
     if (!process.env.NEXT_PUBLIC_API_URL) {
       setHistoricalData(null);
@@ -803,7 +908,7 @@ export default function AttendancePage() {
         setHistoricalData({ date: dateStr_, history, timestamps, total: Math.max(...history, 0) });
       })
       .catch(() => {});
-  }, [selectedDate, cameras, metric]);
+  }, [selectedDate, cameras, metric, edge]);
 
   // Arrival / exit times for the selected day — per-camera cumulative
   // entry/exit counters, bucketed into time slots by <ArrivalTimes>.
@@ -817,6 +922,21 @@ export default function AttendancePage() {
       setArrivalSeries([pts]);
       setArrivalEmpty("No arrivals yet today — doors open at 8:30 AM in the sample.");
       return;
+    }
+    if (edge) {
+      const ids = new Set(cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
+      if (ids.size === 0) { setArrivalSeries(null); setArrivalEmpty("No cameras connected yet."); return; }
+      let cancelled = false;
+      const load = () => edgeVenueApi.history(toLocalDateStr(selectedDate), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
+        .then((rows: EdgeHistoryPoint[]) => {
+          if (cancelled) return;
+          setArrivalSeries(edgeCounterSeries(rows.filter((r) => ids.has(r.camera_id))));
+          setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
+        })
+        .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });
+      load();
+      const t = isToday_ ? setInterval(load, 120_000) : undefined;
+      return () => { cancelled = true; if (t) clearInterval(t); };
     }
     if (!process.env.NEXT_PUBLIC_API_URL) {
       setArrivalSeries(null);
@@ -849,7 +969,7 @@ export default function AttendancePage() {
     // Today keeps filling in as the backend snapshots every couple of minutes.
     const t = isToday_ ? setInterval(load, 120_000) : undefined;
     return () => { cancelled = true; if (t) clearInterval(t); };
-  }, [selectedDate, cameras]);
+  }, [selectedDate, cameras, edge]);
 
   const now = new Date();
   const dateStr = selectedDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -862,12 +982,12 @@ export default function AttendancePage() {
   // comes from live polling instead of waiting for the next snapshot).
   const activeMetricHistory = metricHistory[metric] ?? [];
   const metricNow = activeMetricHistory[activeMetricHistory.length - 1] ?? 0;
-  const chartHistory = isToday && !inDemoMode()
+  const chartHistory = isToday && (edge || !inDemoMode())
     ? [...(historicalData?.history ?? []), metricNow]
     : isToday
       ? activeMetricHistory  // demo mode: unchanged, pure live-poll based
       : (historicalData?.history ?? []);
-  const chartTimestamps = isToday && !inDemoMode() && historicalData
+  const chartTimestamps = isToday && (edge || !inDemoMode()) && historicalData
     ? [...historicalData.timestamps, Date.now()]
     : historicalData?.timestamps;
   // Manual counts submitted today should be added to the headline number
@@ -918,11 +1038,16 @@ export default function AttendancePage() {
     : (historicalData?.total ?? 0)) + (manualApplies ? manualTotalToday : 0);
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
+  // Edge Live: "Live" only while at least one camera is actually reporting.
+  const edgeLiveNow = (venueTotal?.cameras_running ?? 0) > 0;
+  const edgeZones: Record<string, ZoneLive> = {};
+  if (edge) for (const z of venueTotal?.zones ?? []) edgeZones[z.camera_id] = z;
   const metricTitle = isToday
     ? { people: "Total people in building", occupancy: "Venue occupancy", entries: "Total entries today", exits: "Total exits today" }[metric]
     : `${METRIC_LABELS[metric]} on ${selectedDate.toLocaleDateString("en-US",{month:"short",day:"numeric"})}`;
 
   return (
+    <EdgeVenueContext.Provider value={{ edge, zones: edgeZones }}>
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
       <Sidebar />
       <main className="flex-1 pt-14 md:pt-0 overflow-auto p-3 sm:p-5 flex flex-col gap-5 min-w-0">
@@ -1021,18 +1146,28 @@ export default function AttendancePage() {
               onClick={() => { setShowLiveMenu((p) => !p); setShowDatePicker(false); setShowMetricMenu(false); }}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-colors hover:opacity-80"
               style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-              <span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Live</span>
+              {edge && !edgeLiveNow
+                ? <><span className="w-2 h-2 rounded-full bg-gray-500" /><span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>Not live</span></>
+                : <><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /><span style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Live</span></>}
               <ChevRight size={10} style={{ color: "#6b7280", transform: showLiveMenu ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }} />
             </button>
             {showLiveMenu && (
               <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden shadow-2xl"
                 style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}`, minWidth: 220 }}>
                 <div className="px-4 py-3 flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
-                    <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
-                  </div>
+                  {edge && !edgeLiveNow ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-gray-500 shrink-0" />
+                      <p style={{ fontSize: 12, color: "#9ca3af", fontWeight: 600 }}>
+                        {edgeFeedErr ? "Can't reach the server" : (venueTotal?.cameras_total ?? 0) === 0 ? "No cameras connected" : "No cameras sending"}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse shrink-0" />
+                      <p style={{ fontSize: 12, color: "#4ade80", fontWeight: 600 }}>Connected</p>
+                    </div>
+                  )}
                   <p style={{ fontSize: 11, color: "#6b7280" }}>
                     {isToday ? "Showing today's data" : `Showing data for ${dateStr}`}
                   </p>
@@ -1226,11 +1361,14 @@ export default function AttendancePage() {
             {(role === "admin" || role === "operator") && <AIAlertsPanel />}
 
             {/* System Status — admin only */}
-            {role === "admin" && <SystemStatus camerasTotal={cameras.length} camerasRunning={venueTotal?.cameras_running} feedAt={venueFeedAt} />}
+            {role === "admin" && (edge
+              ? <SystemStatus edge camerasTotal={venueTotal?.cameras_total ?? 0} camerasRunning={venueTotal?.cameras_running} feedAt={venueFeedAt} feedError={edgeFeedErr} />
+              : <SystemStatus camerasTotal={cameras.length} camerasRunning={venueTotal?.cameras_running} feedAt={venueFeedAt} />)}
 
           </div>
         </div>
       </main>
     </div>
+    </EdgeVenueContext.Provider>
   );
 }
