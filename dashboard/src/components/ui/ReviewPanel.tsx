@@ -6,6 +6,7 @@ import { recordDemoAnswer } from "@/lib/demo";
 import { inDemoMode } from "@/lib/liveMode";
 import { ZoomableImage } from "@/components/ui/ZoomableImage";
 import type { ReviewRequest } from "@/types";
+import { useTheme } from "@/lib/theme";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -26,6 +27,21 @@ const TYPE_COLOURS: Record<string, { border: string; badge: string; text: string
   zone_proposal:        { border: "#8b5cf6", badge: "#4c1d95", text: "#c4b5fd" },
   altar_call_question:  { border: "#f59e0b", badge: "#7c2d12", text: "#fed7aa" },
 };
+
+// Light mode: a pale tint of the same colour with dark text (the dark-mode
+// badges are dark fills with pale text, which can't be read on white).
+const LIGHT_TYPE_COLOURS: Record<string, { border: string; badge: string; text: string }> = {
+  stage_question:       { border: "#6366f1", badge: "#e0e7ff", text: "#3730a3" },
+  front_rush_question:  { border: "#f59e0b", badge: "#fef3c7", text: "#92400e" },
+  absence_question:     { border: "#10b981", badge: "#d1fae5", text: "#065f46" },
+  zone_proposal:        { border: "#8b5cf6", badge: "#ede9fe", text: "#5b21b6" },
+  altar_call_question:  { border: "#f59e0b", badge: "#ffedd5", text: "#9a3412" },
+};
+
+function typeColours(type: string, theme: string) {
+  const table = theme === "light" ? LIGHT_TYPE_COLOURS : TYPE_COLOURS;
+  return table[type] ?? table.absence_question;
+}
 
 // ─── Desktop push notification for new AI question ───────────────────────────
 function fireDesktopNotification(review: ReviewRequest) {
@@ -244,7 +260,8 @@ function ReviewCard({
   const [answering, setAnswering] = useState(false);
   const [timeLeft, setTimeLeft]   = useState(90); // 90 seconds to answer
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const colours = TYPE_COLOURS[review.review_type] ?? TYPE_COLOURS.absence_question;
+  const { theme } = useTheme();
+  const colours = typeColours(review.review_type, theme);
   const icon    = TYPE_ICONS[review.review_type] ?? "❓";
 
   // Fire desktop notification when card appears
@@ -371,6 +388,7 @@ function clampToViewport(p: PanelPos): PanelPos {
 }
 
 function UnansweredPanel({ cameraId }: { cameraId: string }) {
+  const { theme } = useTheme();
   const [items, setItems]         = useState<ReviewRequest[]>([]);
   const [open, setOpen]           = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -557,7 +575,7 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
         <div className="mt-2 flex flex-col gap-1.5 overflow-y-auto"
           style={{ maxHeight: "60vh" }}>
           {items.map((r) => {
-            const colours   = TYPE_COLOURS[r.review_type] ?? TYPE_COLOURS.absence_question;
+            const colours   = typeColours(r.review_type, theme);
             const icon      = TYPE_ICONS[r.review_type] ?? "❓";
             const ago       = Math.round((Date.now() / 1000 - r.created_at) / 60);
             const isExpanded = expandedId === r.review_id;

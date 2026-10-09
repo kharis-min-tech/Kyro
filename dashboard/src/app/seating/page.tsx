@@ -629,7 +629,7 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
             {seat.state !== "occupied" && seat.state !== "reserved" && seat.state !== "rota_hold" && (
               <button onClick={() => onAction({ seatId: seat.seat_id, action: "mark_occupied" })}
                 className="w-full py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider"
-                style={{ background: "#ff4d6d22", color: "#ff4d6d", border: "1px solid #ff4d6d40" }}>
+                style={{ background: "#ff4d6d22", color: "var(--danger-text, #ff4d6d)", border: "1px solid #ff4d6d40" }}>
                 Mark Occupied
               </button>
             )}
