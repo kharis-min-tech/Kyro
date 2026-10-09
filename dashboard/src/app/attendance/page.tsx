@@ -191,7 +191,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
     const live = !!z?.is_running;
     const err = live && z?.status === "error";
     return (
-      <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
+      <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
         {snap.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={snap.url} alt={camera.zone_name ?? camera.name}
@@ -234,7 +234,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const placeholderText = streamErr ? "Stream lost — tap to retry" : "Connecting…";
 
   return (
-    <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
+    <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
       {(!hasBackend) ? (
         <div className="absolute inset-0 flex flex-col items-center justify-center"
           style={{ background: "linear-gradient(135deg,#1e1b4b,#172554,#052e16)" }}>

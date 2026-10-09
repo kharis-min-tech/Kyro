@@ -517,7 +517,7 @@ function CameraTile({
       <div className="rounded-2xl overflow-hidden flex flex-col"
         style={{ background: CARD_BG, border: `1px solid ${borderColor}` }}>
         {/* Snapshot */}
-        <div className="relative" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
+        <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
           <SnapshotImage cameraId={camera.camera_id} />
           <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
@@ -528,9 +528,9 @@ function CameraTile({
           </div>
           {/* Big count overlay */}
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
-            <span className="text-5xl font-bold text-white tabular-nums drop-shadow-lg">{current.toLocaleString()}</span>
+            <span className="text-5xl font-bold text-white keep-white tabular-nums drop-shadow-lg">{current.toLocaleString()}</span>
             <span className="text-xs font-medium px-2.5 py-1 rounded-full"
-              style={{ background: "rgba(245,158,11,0.8)", color: "#fff" }}>
+              style={{ background: "rgba(180,83,9,0.92)", color: "#fff" }}>
               people outside
             </span>
           </div>
@@ -586,7 +586,7 @@ function CameraTile({
       }}
     >
       {/* Snapshot area */}
-      <div className="relative" style={{ aspectRatio: "16/9", background: "var(--bg-inset)" }}>
+      <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
         <SnapshotImage cameraId={camera.camera_id} />
 
         {/* Alert overlay — shown when overcrowded */}
@@ -620,7 +620,7 @@ function CameraTile({
         )}
         {level === "warning" && (
           <div className="absolute top-2.5 left-1/2 -translate-x-1/2 flex items-center gap-1.5 rounded-full px-3 py-1"
-            style={{ background: "rgba(245,158,11,0.85)", backdropFilter: "blur(4px)" }}>
+            style={{ background: "rgba(180,83,9,0.92)", backdropFilter: "blur(4px)" }}>
             <AlertTriangle size={11} className="text-white" />
             <span className="text-xs font-bold text-white">FILLING UP</span>
           </div>

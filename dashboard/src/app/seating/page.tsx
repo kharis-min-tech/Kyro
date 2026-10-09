@@ -252,7 +252,7 @@ function DotSeatMap({ seats, onSelect, selectedId, zoom }: {
       <div className="flex flex-col items-center w-max mx-auto" style={{ gap }}>
         {rowKeys.map((row) => (
           <div key={row} className="flex items-center" style={{ gap }}>
-            <span style={{ fontSize: 9, color: "var(--border-subtle)", width: 12, textAlign: "right", marginRight: 4, fontFamily: "monospace" }}>{row}</span>
+            <span style={{ fontSize: 9, color: "var(--text-faint)", width: 12, textAlign: "right", marginRight: 4, fontFamily: "monospace" }}>{row}</span>
             {rows[row].sort((a, b) => a.number - b.number).map((seat) => {
               const s = seat as SeatState & { _ignored?: boolean; _zone_labels?: string[] };
               const ignored = s._ignored === true;
