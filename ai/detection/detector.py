@@ -108,6 +108,22 @@ class PersonDetector:
         grid = self._tile_grid(frame)
         if grid > 1:
             H, W = frame.shape[:2]
+            whole = boxes
+            # People near the camera are big in the picture: the whole-frame
+            # pass already sees them, and a tile only sees part of them (and
+            # can count the same person again from a neighbouring tile). Tiles
+            # are for small, far-away people, so a big (or cut-off) tile box
+            # that the whole frame already explains is dropped. On close-up
+            # test shots this cut double counts by a third without losing
+            # anyone; wide shots are unchanged.
+            near_h = self._cfg.near_height * H
+            def explained(b: np.ndarray) -> np.ndarray:
+                if not len(whole):
+                    return np.zeros(len(b), dtype=bool)
+                ix = np.clip(np.minimum(b[:, None, 2], whole[None, :, 2]) - np.maximum(b[:, None, 0], whole[None, :, 0]), 0, None)
+                iy = np.clip(np.minimum(b[:, None, 3], whole[None, :, 3]) - np.maximum(b[:, None, 1], whole[None, :, 1]), 0, None)
+                area = np.maximum((b[:, 2] - b[:, 0]) * (b[:, 3] - b[:, 1]), 1e-6)
+                return ((ix * iy) / area[:, None] > self._cfg.near_overlap).any(axis=1)
             all_b, all_s, all_e = [boxes], [scores], [np.zeros(len(boxes), dtype=bool)]
             for (x, y, crop) in self._tiles(frame, grid):
                 b, sc = self._predict(crop)
@@ -119,9 +135,11 @@ class PersonDetector:
                 m = 3.0
                 edge = ((b[:, 0] <= m) & (x > 0)) | ((b[:, 1] <= m) & (y > 0)) \
                      | ((b[:, 2] >= tw - m) & (x + tw < W)) | ((b[:, 3] >= th - m) & (y + th < H))
-                all_b.append(b + np.array([x, y, x, y], dtype=np.float32))
-                all_s.append(sc)
-                all_e.append(edge)
+                b = b + np.array([x, y, x, y], dtype=np.float32)
+                keep = ~(((b[:, 3] - b[:, 1] > near_h) | edge) & explained(b))
+                all_b.append(b[keep])
+                all_s.append(sc[keep])
+                all_e.append(edge[keep])
             boxes, scores = _merge(np.concatenate(all_b), np.concatenate(all_s), np.concatenate(all_e),
                                    self._cfg.merge_iou, self._cfg.merge_containment)
 

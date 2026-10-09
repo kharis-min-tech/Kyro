@@ -76,6 +76,10 @@ class DetectionConfig:
     merge_iou: float = float(os.getenv("DETECTION_MERGE_IOU", "0.55"))
     # A tile-edge box this much inside a bigger box is a half-person fragment.
     merge_containment: float = float(os.getenv("DETECTION_MERGE_CONTAINMENT", "0.6"))
+    # A tile box taller than this share of the frame is a "near" person; it's
+    # dropped when a whole-frame box already covers more than near_overlap of it.
+    near_height: float = float(os.getenv("DETECTION_NEAR_HEIGHT", "0.18"))
+    near_overlap: float = float(os.getenv("DETECTION_NEAR_OVERLAP", "0.5"))
     # Test-time augmentation: also run a flipped / rescaled copy. A little
     # more recall for ~2–3× the compute.
     tta: bool = os.getenv("DETECTION_TTA", "false").lower() == "true"
