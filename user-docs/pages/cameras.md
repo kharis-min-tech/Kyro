@@ -8,6 +8,26 @@ Only **administrators** can add, change or remove cameras. Everyone else sees th
 
 <Shot name="cameras" alt="Cameras page listing registered cameras with their zone, stream address and seat capacity, and the Add a camera section" />
 
+## In Live mode: cameras add themselves
+
+In **Live** mode you don't add USB cameras by hand. A camera appears here by itself, within a few seconds, when it's counting:
+
+- with [Camera Mode](/pages/camera-mode) on any computer, or
+- plugged into a **camera computer** that has the installed version (see [Setting up cameras](/guides/camera-setup)).
+
+For each camera, an administrator can:
+
+- tap the **pencil** to set its **name**, the **room** (zone) it covers and the room's **seat count**. Set the seat count so **Seats left** and the **filling up** phone alerts work.
+- tap **Switch off** to stop counting a camera you don't want (for example a laptop's built-in camera). Switched-off cameras are listed under **Switched off**, with **Switch back on**.
+
+**Camera computers** lists every computer that counts for you, with a green dot when it's **Online**, its version and when it was last seen. **Pair a camera computer** gives the code the installer asks for.
+
+**Add a network camera** is for Wi-Fi or network cameras, which don't plug into a computer. Paste the camera's stream address (it starts with `rtsp://`; the camera's app or manual shows it). A camera computer with the installed version then connects to it.
+
+::: info The steps below
+The rest of this page describes Demo mode, and Kyro set up with its own server.
+:::
+
 ## Add a camera
 
 1. Open **Add a camera**.

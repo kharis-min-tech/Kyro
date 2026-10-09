@@ -37,7 +37,27 @@ Arrival times come from the cameras. Without them there's nothing to show yet.
 ## Cameras
 
 **A camera shows Offline.**
-The camera or the Kyro computer at church may be off or disconnected. Check that the camera has power and network, then tap **Start worker** on [Cameras](/pages/cameras) and ask whoever looks after the Kyro computer to run the command.
+The computer counting with that camera has stopped or lost its internet connection.
+- **Camera Mode:** check the [Camera Mode](/pages/camera-mode) page is still open, on screen, and says **Counting**. If not, press **Start counting**.
+- **Installed version:** check the camera computer is on and online. It shows **Online** on [Cameras](/pages/cameras) when it's working.
+- Check the camera's cable (USB cameras) or power and network (Wi-Fi cameras).
+
+## Camera Mode
+
+**The browser says it wasn't allowed to use the camera.**
+Click the **camera icon** in the address bar (or the padlock), choose **Allow** for the camera, then press **Start counting** again.
+
+**"No camera found".**
+Plug the camera in, wait a few seconds, then press **Start counting**. If another program (Zoom, Teams, OBS…) is using the camera, close it first.
+
+**It says "Lighter AI".**
+That computer's graphics are too slow for the most accurate AI, so Kyro uses a lighter one. It still counts, but finds fewer people far from the camera. Use a computer with better graphics, in **Chrome** or **Edge**, for the best count.
+
+**The count stopped or slowed down.**
+Keep the Camera Mode page **on screen**. Browsers slow down pages in hidden tabs and minimised windows. Also stop the computer from going to sleep.
+
+**The count isn't on the dashboard.**
+Camera Mode only sends counts in **Live** mode. In **Demo** mode the count stays on that computer.
 
 **I can't press Start session.**
 The camera isn't sending pictures yet. See above.

@@ -4,7 +4,7 @@
 
 Every page has the sidebar down the left. It lists the pages you have access to, in this order:
 
-**AI Count · Manual Count · Live Cameras · Seat Map · Cameras · Rota · Sessions · Analytics · Seat Editor · Integrations · Notifications · Users**
+**AI Count · Manual Count · Live Cameras · Seat Map · Cameras · Camera Mode · Rota · Sessions · Analytics · Seat Editor · Integrations · Notifications · Users**
 
 You only see the pages your role allows. See [Roles & access](/getting-started/roles).
 

@@ -2,6 +2,8 @@
 
 ## Easiest: Camera Mode (nothing to install)
 
+Full details, with pictures: [Camera Mode](/pages/camera-mode).
+
 1. Plug your camera(s) into any computer at church (Windows, Mac or Chromebook).
 2. On that computer, open **kyro.kharischurch.com** in **Chrome** or **Edge**, sign in, and open **Camera Mode** in the menu.
 3. Press **Start counting** and click **Allow** when the browser asks to use the camera.
@@ -14,14 +16,16 @@ you only need to open the page.
 - **Plug in more cameras any time.** Each one is picked up within a few seconds.
 - **Keep the page open and on screen** during the service, and keep the computer plugged in.
 - **Accuracy:** on a computer with decent graphics it uses Kyro's most accurate
-  AI (in tests it found 83% of people in crowded whole-hall shots, about the
-  same as the installed version). On a computer with weak graphics it switches
-  to a lighter AI by itself, which finds fewer people at the back.
+  AI, about as accurate as the installed version. On a computer with weak
+  graphics it switches to a lighter AI by itself, which finds fewer people at
+  the back.
 
 ## Or: install Kyro on the camera computer (one time, about 20 minutes)
 
 Choose this if you'd rather not keep a web page open. The installed version
-also runs when nobody is signed in.
+also runs when nobody is signed in. The command is also on the
+[Camera Mode](/pages/camera-mode#want-the-installed-version) page, with a
+**Copy** button.
 
 Cameras plug into a **camera computer** at church: any Windows PC, Mac or
 Linux computer that stays on during services. That computer runs the Kyro

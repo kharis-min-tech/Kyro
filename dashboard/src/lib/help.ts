@@ -10,6 +10,7 @@ const GUIDE_PAGES: Record<string, string> = {
   "live-cameras": "/pages/live-cameras",
   seating: "/pages/seat-map",
   cameras: "/pages/cameras",
+  "camera-mode": "/pages/camera-mode",
   rota: "/pages/rota",
   sessions: "/pages/sessions",
   analytics: "/pages/analytics",

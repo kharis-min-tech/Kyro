@@ -6,6 +6,9 @@ import { chromium } from "playwright";
 const APP = process.env.APP_URL ?? "https://kyro.kharischurch.com";
 const GUIDE = process.env.GUIDE_URL ?? "https://kyro-help.kharischurch.com";
 const OUT_DIR = process.argv[2];
+// Camera Mode needs a camera: a still picture played as a pretend webcam.
+const CAMERA_Y4M = process.argv[3] ?? process.env.CAMERA_Y4M;
+import { writeFileSync } from "node:fs";
 const W = 1280, H = 720;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -55,17 +58,42 @@ const OVERLAY = `
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount); else mount();
 })();`;
 
-const browser = await chromium.launch();
-const context = await browser.newContext({
-  viewport: { width: W, height: H },
-  recordVideo: { dir: OUT_DIR, size: { width: W, height: H } },
-  colorScheme: "dark",
+const browser = await chromium.launch({
+  args: CAMERA_Y4M ? ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", `--use-file-for-fake-video-capture=${CAMERA_Y4M}`] : [],
 });
+const contextOpts = { viewport: { width: W, height: H }, colorScheme: "dark", permissions: ["camera", "clipboard-read", "clipboard-write"], serviceWorkers: "block" };
+// Show the pretend webcam under a friendly name instead of its file path.
+const CAMERA_NAME = () => {
+  const md = navigator.mediaDevices;
+  if (!md?.enumerateDevices) return;
+  const orig = md.enumerateDevices.bind(md);
+  md.enumerateDevices = async () => (await orig()).map((d) => d.kind !== "videoinput" ? d
+    : { deviceId: d.deviceId, groupId: d.groupId, kind: d.kind, label: "Main Hall camera", toJSON() { return this; } });
+};
+const context = await browser.newContext({ ...contextOpts, recordVideo: { dir: OUT_DIR, size: { width: W, height: H } } });
+await context.addInitScript(CAMERA_NAME);
+// Warm-up page (its recording is thrown away): download Camera Mode's AI once
+// into this browser, so the tour doesn't sit on "Downloading the AI model".
+{
+  const wp = await context.newPage();
+  await wp.goto(APP + "/login/");
+  await wp.evaluate(() => { localStorage.clear(); localStorage.setItem("kyro_mode", "demo"); localStorage.setItem("kyro_token", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTcwMDAwMDAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.demo_signature_not_verified"); localStorage.setItem("kyro_demo_role", "admin"); sessionStorage.setItem("kyro_active_login", "1"); });
+  await wp.goto(APP + "/camera-mode/");
+  await wp.getByRole("button", { name: /Start counting/ }).click().catch(() => {});
+  for (let i = 0; i < 90; i++) { await sleep(2000); if (/Counts every/.test(await wp.locator("main").innerText().catch(() => ""))) break; }
+  await wp.close();
+}
+
 await context.addInitScript(OVERLAY);
 await context.addInitScript(() => {
   try { Object.defineProperty(Notification, "permission", { get: () => "default" }); } catch {}
 });
 const page = await context.newPage();
+// When each narrated part starts (seconds into the video) — narrate-tour.py
+// lines the voice-over up with these.
+const t0 = Date.now();
+const timeline = [];
+const mark = (id) => timeline.push({ id, t: +((Date.now() - t0) / 1000).toFixed(2) });
 
 // ── Helpers ──
 const caption = async (step, text) => page.evaluate(([s, t]) => window.__tourCaption(s ? `<b>${s}</b>${t}` : t), [step, text]);
@@ -136,16 +164,19 @@ await page.goto(APP + "/login/", { waitUntil: "networkidle" });
 await page.evaluate(() => { localStorage.clear(); localStorage.setItem("kyro_theme", "dark"); });
 await page.goto(APP + "/login/", { waitUntil: "networkidle" });
 await page.evaluate(() => window.__tourTitle("Kyro", "A quick tour of the main features", "Live attendance · seating · alerts — Kharis Church"));
+mark("intro");
 await sleep(3800);
 await page.evaluate(() => window.__tourTitle(null));
 await sleep(400);
 
 // ── Help is always one tap away ──
+mark("help");
 await caption("Tip", "Stuck at any point? Tap <i>Help</i> — the guide opens even before you sign in");
 await moveTo(page.getByRole("link", { name: /Help/ }).first());
 await sleep(3200);
 
 // ── 1. Sign in ──
+mark("signin");
 await caption("Step 1", "Open Kyro and choose <i>Demo mode</i> to explore with sample data");
 await sleep(2200);
 await click(page.getByRole("button", { name: /Demo mode/ }), 1200);
@@ -156,6 +187,7 @@ await click(page.getByRole("button", { name: /Full access/ }), 2500);
 // ── 2. AI questions — Demo asks the first one ~8s after signing in ──
 {
   const question = page.getByText("Kyro needs input").first();
+  mark("ai_question");
   await caption("Step 2 · AI questions", "Kyro opens on <i>AI Count</i>. Within a few seconds the AI may ask you something…");
   if (await question.waitFor({ timeout: 20000 }).then(() => true).catch(() => false)) {
     await caption("Step 2 · AI questions", "When the AI isn't sure, it asks you — just tap the answer");
@@ -172,6 +204,7 @@ await click(page.getByRole("button", { name: /Full access/ }), 2500);
 }
 
 // ── 2. AI Count ──
+mark("ai_count");
 await caption("Step 3 · AI Count", "How many people are in the building right now");
 await moveTo(page.getByText(/Total people in building/i).first());
 await sleep(2500);
@@ -187,6 +220,7 @@ async function pick(menuButton, option, pause) {
 await pick(page.getByRole("button", { name: /People Count/ }).first(), page.getByRole("button", { name: /^Occupancy %$/ }).first(), 1800);
 await pick(page.getByRole("button", { name: /Occupancy %/ }).first(), page.getByRole("button", { name: /^People Count$/ }).first(), 1200);
 
+mark("arrivals");
 await caption("Step 4 · Arrival times", "See when people arrive and leave the most");
 const arrivals = page.getByText("Arrival & exit times").first();
 await moveTo(arrivals);
@@ -202,6 +236,7 @@ await click(page.getByRole("button", { name: /Chart/ }), 800);
 await smoothScroll(0);
 
 // ── 5. Manual Count ──
+mark("manual");
 await caption("Step 5 · Manual Count", "Ushers count rooms that don't have a camera");
 await nav("Manual Count");
 await type(page.locator('input[placeholder^="e.g. Overflow"]'), "Youth Hall");
@@ -212,11 +247,13 @@ await click(page.getByRole("button", { name: "+10" }), 800);
 await caption("Step 5 · Manual Count", "Tap <i>Review &amp; submit</i>, check it, then <i>Confirm &amp; save</i>");
 await click(page.getByRole("button", { name: /Review & submit/ }), 1300);
 await click(page.getByRole("button", { name: /Confirm & save/ }), 1800);
+mark("approve");
 await caption("Step 6 · Approve", "At the end of the service, approve the final count so it's added to the total");
 await click(page.getByRole("button", { name: /Approve final count/ }), 1800);
 await click(page.getByRole("button", { name: /^Approve$/ }), 2200);
 
 // ── 7. Live Cameras ──
+mark("live_cameras");
 await caption("Step 7 · Live Cameras", "Every room at a glance — how full it is and how many seats are left");
 await nav("Live Cameras");
 await moveTo(page.getByText(/SEATS LEFT/i).first());
@@ -231,29 +268,56 @@ if (await expand.count()) {
   await click(page.getByRole("button", { name: "Close" }).first(), 900);
 }
 
-// ── 8. Seat Map ──
-await caption("Step 8 · Seat Map", "Every seat as a dot: red is taken, dark is free, purple is reserved");
+// ── 8. Camera Mode ──
+mark("camera_mode");
+await caption("Step 8 · Camera Mode", "Plug a camera into any computer and open <i>Camera Mode</i> — nothing to install");
+await nav("Camera Mode");
+await sleep(1200);
+await caption("Step 8 · Camera Mode", "Press <i>Start counting</i> and allow the camera");
+await click(page.getByRole("button", { name: /Start counting/ }), 600);
+for (let i = 0; i < 60; i++) { if (/Counts every/.test(await page.locator("main").innerText().catch(() => ""))) break; await sleep(500); }
+mark("camera_mode_counting");
+await caption("Step 8 · Camera Mode", "Kyro draws a box round everyone it counts — and the count goes to your dashboard");
+await moveTo(page.getByText(/people now/).first());
+await sleep(1800);
+await moveTo(page.locator("video").first());
+await sleep(3200);
+// Stop before moving on, so the page is quick to respond again.
+await page.getByRole("button", { name: /^Stop$/ }).click().catch(() => {});
+mark("camera_mode_install");
+await caption("Step 8 · Camera Mode", "Want it running without a page open? Copy this one line into the computer's terminal");
+const installCard = page.getByText("Want the installed version?").first();
+await moveTo(installCard, 900);
+await sleep(2400);
+await click(page.getByRole("button", { name: /Copy the command/ }), 4200);
+await smoothScroll(0);
+
+// ── 9. Seat Map ──
+mark("seat_map");
+await caption("Step 9 · Seat Map", "Every seat as a dot: red is taken, dark is free, purple is reserved");
 await nav("Seat Map");
 await sleep(1600);
 const freeSeat = page.locator('button[title*="· available"]').first();
-await caption("Step 8 · Seat Map", "Tap a free seat to reserve it for a guest");
+await caption("Step 9 · Seat Map", "Tap a free seat to reserve it for a guest");
 await click(freeSeat, 1300);
 await click(page.getByRole("button", { name: /Reserve Unit/ }), 700);
 await page.keyboard.type("Guest speaker", { delay: 70 });
 await sleep(500);
 await click(page.getByRole("button", { name: /^Confirm$/ }), 2200);
 
-// ── 9. Notifications ──
-await caption("Step 9 · Notifications", "Turn on alerts once — they reach your phone even when it's locked");
+// ── 10. Notifications ──
+mark("notifications");
+await caption("Step 10 · Notifications", "Turn on alerts once — they reach your phone even when it's locked");
 await nav("Notifications");
 // Turn on is greyed out in the recording browser (no phone push), so point at
 // the card it lives on.
 await moveTo(page.getByText(/Notifications (off|enabled)|Browser not supported/).first());
 await sleep(2600);
-await caption("Step 9 · Notifications", "Choose when Kyro should alert you");
+await caption("Step 10 · Notifications", "Choose when Kyro should alert you");
 await click(page.getByRole("button", { name: /Adjust thresholds/ }), 2200);
 
 // ── 10. Help guide ──
+mark("help_guide");
 await caption("Need help?", "<i>Help guide</i> in the menu opens the guide for the page you're on");
 await moveTo(page.getByRole("link", { name: /Help guide/ }).first());
 await sleep(2800);
@@ -265,9 +329,12 @@ await click(page.getByRole("link", { name: "Get started" }).first(), 2600);
 
 // ── End card ──
 await hideCaption();
+mark("end");
 await page.evaluate(() => window.__tourTitle("You're ready", "Start in Demo mode, then sign in to Live for the real thing", "Guide: kyro-help.kharischurch.com"));
-await sleep(4200);
+await sleep(5600);
 
+mark("finish");
+writeFileSync(OUT_DIR + "/timeline.json", JSON.stringify(timeline, null, 1));
 const video = page.video();
 await context.close();
 await browser.close();

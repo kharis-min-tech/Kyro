@@ -500,7 +500,7 @@ function InstallSection({ demo, isAdmin }: { demo: boolean; isAdmin: boolean }) 
       </div>
 
       <p className="text-xs mt-4" style={{ color: "#6b7280" }}>
-        Step-by-step help: <a href={`${HELP_URL}/guides/camera-setup`} target="_blank" rel="noopener noreferrer" className="underline">camera setup guide</a>.
+        Step-by-step help: <a href={`${HELP_URL}/pages/camera-mode#want-the-installed-version`} target="_blank" rel="noopener noreferrer" className="underline">Camera Mode guide</a>.
       </p>
     </div>
   );

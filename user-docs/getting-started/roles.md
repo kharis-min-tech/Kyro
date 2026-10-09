@@ -7,13 +7,14 @@ Every Kyro user has a role, and each role comes with a set of pages. An administ
 | Role | Shown as | Pages they see by default |
 |---|---|---|
 | **Admin** | Administrator | All 12 pages |
-| **Operator** | Operator | AI Count, Manual Count, Live Cameras, Seat Map, Cameras, Rota, Sessions, Analytics, Notifications |
+| **Operator** | Operator | AI Count, Manual Count, Live Cameras, Seat Map, Cameras, Camera Mode, Rota, Sessions, Analytics, Notifications |
 | **Viewer** | Viewer | Manual Count, Seat Map, Cameras. Good for ushers. |
 
 ## What else changes with the role
 
 - **Manual Count:** everyone with the page can enter counts. Only **admins and operators** can approve the final count.
 - **Cameras:** only **admins** can add, change or remove cameras. Everyone else sees them read-only.
+- **Camera Mode:** admins and operators can count with a camera plugged into their computer. Viewers don't see it.
 - **System Status** on AI Count is shown to admins only.
 - The **People Count / Occupancy / Entries / Exits** switch and the **Detailed Zone Analytics** table on AI Count are for admins and operators.
 - **AI questions:** admins get questions about the room (*"Is this the stage?"*, *"Does this count look right?"*). Operators and admins get questions about people (*"Did they leave or go to the toilet?"*). Viewers don't get AI questions.

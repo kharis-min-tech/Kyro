@@ -13,6 +13,7 @@ Cameras in each room count people as they come in and leave, and watch which sea
 | See how many people are here right now | [AI Count](/pages/ai-count) |
 | Count a room that has no camera | [Manual Count](/pages/manual-count) |
 | See how full every room is, and if the queue will fit | [Live Cameras](/pages/live-cameras) |
+| Count people with a camera plugged into any computer | [Camera Mode](/pages/camera-mode) |
 | Find free seats, reserve seats, answer AI questions | [Seat Map](/pages/seat-map) |
 | Tell Kyro who's on stage and when | [Rota](/pages/rota) |
 | Start and stop recording a service | [Sessions](/pages/sessions) |

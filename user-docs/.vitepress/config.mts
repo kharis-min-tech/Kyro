@@ -44,6 +44,7 @@ export default defineConfig({
           { text: "Live Cameras", link: "/pages/live-cameras" },
           { text: "Seat Map", link: "/pages/seat-map" },
           { text: "Cameras", link: "/pages/cameras" },
+          { text: "Camera Mode", link: "/pages/camera-mode" },
           { text: "Rota", link: "/pages/rota" },
           { text: "Sessions", link: "/pages/sessions" },
           { text: "Analytics", link: "/pages/analytics" },
@@ -60,7 +61,7 @@ export default defineConfig({
           { text: "Getting alerts on your phone", link: "/guides/phone-alerts" },
           { text: "AI questions & seat alerts", link: "/guides/ai-questions" },
           { text: "Sending attendance to another system", link: "/guides/send-attendance" },
-          { text: "Getting the best count from your cameras", link: "/guides/camera-setup" },
+          { text: "Setting up cameras", link: "/guides/camera-setup" },
         ],
       },
       {
