@@ -114,6 +114,7 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
   const minScore = opts.minScore ?? 0.1;
   const size = opts.size ?? MODEL_SIZE;
   const pass = async (sx: number, sy: number, sw: number, sh: number) => {
+    await new Promise((r) => setTimeout(r, 0));   // let the page handle clicks between looks
     const { tensor, r, ox, oy } = toTensor(px, sx, sy, sw, sh, size);
     return decode(await run(tensor), r, ox, oy, sx, sy, minScore);
   };

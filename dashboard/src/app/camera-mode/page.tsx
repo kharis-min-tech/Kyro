@@ -142,7 +142,9 @@ export default function CameraModePage() {
         did = true;
       }
       refreshViews();
-      await new Promise((r) => setTimeout(r, did ? 30 : 500));
+      // A short breather between rounds keeps the page responsive to clicks
+      // (on a computer without fast graphics the AI runs on the same thread).
+      await new Promise((r) => setTimeout(r, did ? 350 : 500));
     }
   }, [refreshViews]);
 
