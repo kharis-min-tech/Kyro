@@ -25,6 +25,10 @@ export interface DetectOptions {
   minScore?: number;
   mergeIou?: number;
   mergeContainment?: number;
+  /** A tile box taller than this share of the picture is a "near" person. */
+  nearHeight?: number;
+  /** Drop a near tile box whose overlap with a whole-picture box covers this share of it. */
+  nearOverlap?: number;
   /** The model's input size (640, or 1280 for the high-detail model). */
   size?: number;
 }
@@ -120,7 +124,14 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
 
   const W = px.width, H = px.height, ov = opts.tileOverlap ?? 0.25;
   const tw = Math.floor(W / (grid - (grid - 1) * ov)), th = Math.floor(H / (grid - (grid - 1) * ov));
-  const all: (Person & { edge: boolean })[] = whole.map((p) => ({ ...p, edge: false }));
+  const all: (Person & { edge: boolean; tile?: boolean })[] = whole.map((p) => ({ ...p, edge: false }));
+  // People near the camera are big in the picture: the whole-picture pass
+  // already sees them well, and a tile only sees part of them (and can count
+  // the same person again from another tile). The tiles are there for small,
+  // far-away people — so a big tile box that the whole picture already
+  // explains is dropped.
+  const nearH = (opts.nearHeight ?? 0.18) * H, nearOv = opts.nearOverlap ?? 0.5;
+  const explained = (b: Person["box"]) => whole.some((q) => overlap(b, q.box) / (area(b) || 1) > nearOv);
   for (let gy = 0; gy < grid; gy++) {
     for (let gx = 0; gx < grid; gx++) {
       const x = Math.floor(((W - tw) * gx) / (grid - 1)), y = Math.floor(((H - th) * gy) / (grid - 1));
@@ -129,7 +140,8 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
         const [x1, y1, x2, y2] = p.box;
         // Cut off by an INNER tile edge (not the picture's edge) → maybe half a person.
         const edge = (x1 <= x + m && x > 0) || (y1 <= y + m && y > 0) || (x2 >= x + tw - m && x + tw < W) || (y2 >= y + th - m && y + th < H);
-        all.push({ ...p, edge });
+        if ((y2 - y1 > nearH || edge) && explained(p.box)) continue;
+        all.push({ ...p, edge, tile: true });
       }
     }
   }
