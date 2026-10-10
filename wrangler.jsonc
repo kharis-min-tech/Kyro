@@ -29,7 +29,10 @@
   // kyro.kharischurch.com is served by this Worker (route on the proxied
   // record; the old office tunnel origin is no longer used for it).
   "routes": [
-    { "pattern": "kyro.kharischurch.com/*", "zone_name": "kharischurch.com" }
+    // Custom domain: Cloudflare creates and manages the DNS record for this
+    // Worker itself, so the site doesn't depend on any other record (the old
+    // tunnel record it used to sit on was deleted and took the site offline).
+    { "pattern": "kyro.kharischurch.com", "custom_domain": true }
   ],
   "assets": {
     "directory": "./dashboard/out",
