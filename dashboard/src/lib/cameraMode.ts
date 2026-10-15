@@ -5,135 +5,64 @@
  * counts + a picture just like the Kyro Camera Box does.
  */
 import { edgeFetch } from "@/lib/edgeAuth";
-import { detectPeople, type Person, type RunModel } from "@/lib/peopleDetector";
+import type { Person } from "@/lib/peopleDetector";
+import { startEngine, countWith } from "@/lib/countEngine";
+export { MODELS } from "@/lib/countEngine";
 
-const ORT_VERSION = "1.30.0";
-const ORT_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
 const DEVICE_KEY = "kyro_camera_mode_device";
 export const CAMERA_MODE_VERSION = "web-1.0";
 
-/** Model files (split to fit the website's 25 MB-per-file limit). Bump the name when the model changes. */
-export const MODELS = {
-  // Computers with WebGPU: YOLO11m looking at 1280×1280 + tiles — in tests on
-  // crowded whole-hall shots it found 83% of people (the camera computer: 84%).
-  accurate: { name: "yolo11m1280-w16-v1", parts: 2, size: 1280, tiles: "auto" as const },
-  // Without WebGPU (slower processor-only): YOLO11s at 640 + tiles — found 68%.
-  light:    { name: "yolo11s-w16-v1", parts: 1, size: 640, tiles: "auto" as const },
-};
+// ─── The counting AI (runs in a background worker) ─────────────────────────
 
-// ─── Model loading ─────────────────────────────────────────────────────────
+/** The AI, as seen from the page. It runs in a background worker so the camera
+ *  pictures and buttons stay smooth while it counts. */
+export interface Engine { kind: "accurate" | "light"; backend: string; count(px: ImageData): Promise<Person[]> }
 
-type Ort = any; // onnxruntime-web, loaded from the CDN at runtime
-
-let ortPromise: Promise<Ort> | null = null;
-function loadOrt(): Promise<Ort> {
-  if (ortPromise) return ortPromise;
-  ortPromise = new Promise((resolve, reject) => {
-    const w = window as unknown as { ort?: Ort };
-    if (w.ort) return resolve(w.ort);
-    const s = document.createElement("script");
-    s.src = `${ORT_BASE}ort.webgpu.min.js`;
-    s.crossOrigin = "anonymous";
-    s.onload = () => (w.ort ? resolve(w.ort) : reject(new Error("The AI engine didn't load")));
-    s.onerror = () => { ortPromise = null; reject(new Error("Couldn't download the AI engine — check the internet connection")); };
-    document.head.appendChild(s);
-  });
-  return ortPromise;
+function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<Engine> {
+  return startEngine(onProgress).then((e) => ({ kind: e.kind, backend: e.backend, count: (px) => countWith(e, px) }));
 }
 
-/** Downloads the model once and keeps it in the browser, so later visits start in seconds. */
-async function fetchModel(name: string, parts: number, onProgress: (pct: number) => void): Promise<Uint8Array> {
-  const cache = "caches" in window ? await caches.open("kyro-models").catch(() => null) : null;
-  const chunks: Uint8Array[] = [];
-  for (let i = 0; i < parts; i++) {
-    const url = `/models/${name}.part${i}.bin`;
-    let res = cache ? await cache.match(url) : undefined;
-    if (!res) {
-      const net = await fetch(url);
-      if (!net.ok) throw new Error(`Couldn't download the AI model (${net.status})`);
-      if (cache) await cache.put(url, net.clone()).catch(() => {});
-      res = net;
-    }
-    const total = Number(res.headers.get("content-length")) || 0;
-    const reader = res.body!.getReader();
-    const got: Uint8Array[] = [];
-    let n = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      got.push(value); n += value.length;
-      if (total) onProgress(((i + n / total) / parts) * 100);
-    }
-    const all = new Uint8Array(n);
-    let o = 0;
-    for (const g of got) { all.set(g, o); o += g.length; }
-    chunks.push(all);
-    onProgress(((i + 1) / parts) * 100);
+export function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
+  let worker: Worker;
+  try {
+    worker = new Worker(new URL("./countWorker.ts", import.meta.url));
+  } catch {
+    return engineOnPage(onProgress);
   }
-  const size = chunks.reduce((a, c) => a + c.length, 0);
-  const model = new Uint8Array(size);
-  let o = 0;
-  for (const c of chunks) { model.set(c, o); o += c.length; }
-  // Old model versions are no longer needed.
-  if (cache) for (const req of await cache.keys()) if (!req.url.includes(name)) cache.delete(req).catch(() => {});
-  return model;
-}
-
-export interface Engine { run: RunModel; tiles: number | "auto"; size: number; kind: "accurate" | "light"; backend: string }
-
-async function hasRealGpu(): Promise<boolean> {
-  const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<any> } }).gpu;
-  if (!gpu) return false;
-  const adapter = await gpu.requestAdapter().catch(() => null);
-  if (!adapter) return false;
-  // A software stand-in (no real graphics chip) is far slower than the processor path.
-  const arch = String(adapter.info?.architecture ?? "").toLowerCase();
-  return !adapter.isFallbackAdapter && !arch.includes("swiftshader");
-}
-
-async function startModel(ort: Ort, kind: "accurate" | "light", useGpu: boolean, onProgress: (pct: number, step: string) => void) {
-  const m = MODELS[kind];
-  const bytes = await fetchModel(m.name, m.parts, (p) => onProgress(p * 0.85, "Downloading the AI model (first time only)…"));
-  onProgress(88, "Starting the AI…");
-  const session = await ort.InferenceSession.create(bytes, {
-    executionProviders: useGpu ? ["webgpu", "wasm"] : ["wasm"],
-    graphOptimizationLevel: "all",
-  });
-  const input = session.inputNames[0], output = session.outputNames[0];
-  const run: RunModel = async (t) => {
-    const res = await session.run({ [input]: new ort.Tensor("float32", t, [1, 3, m.size, m.size]) });
-    const out = res[output];
-    return (out.getData ? await out.getData() : out.data) as Float32Array;
-  };
-  // Warm up (the first run prepares the graphics chip) and time a second run.
-  onProgress(94, "Checking how fast this computer is…");
-  const blank = new Float32Array(3 * m.size * m.size);
-  await run(blank);
-  const t0 = performance.now();
-  await run(blank);
-  return { run, m, seconds: (performance.now() - t0) / 1000 };
-}
-
-/** Slowest single look the accurate AI may take (a count is about 5 looks). */
-const MAX_ACCURATE_PASS_S = 2.5;
-
-export async function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
-  onProgress(0, "Loading the AI engine…");
-  const ort = await loadOrt();
-  ort.env.wasm.wasmPaths = ORT_BASE;
-  const gpu = await hasRealGpu();
-  if (gpu) {
-    try {
-      const a = await startModel(ort, "accurate", true, onProgress);
-      if (a.seconds <= MAX_ACCURATE_PASS_S) {
-        onProgress(100, "Ready");
-        return { run: a.run, tiles: a.m.tiles, size: a.m.size, kind: "accurate", backend: "graphics chip" };
+  const waiting = new Map<number, { ok: (p: Person[]) => void; fail: (e: Error) => void }>();
+  let nextId = 1;
+  return new Promise<Engine>((resolve, reject) => {
+    let ready = false;
+    worker.onmessage = (ev: MessageEvent) => {
+      const m = ev.data;
+      if (m.type === "progress") onProgress(m.pct, m.step);
+      else if (m.type === "ready") {
+        ready = true;
+        resolve({
+          kind: m.kind, backend: m.backend,
+          count: (px) => new Promise<Person[]>((ok, fail) => {
+            const id = nextId++;
+            waiting.set(id, { ok, fail });
+            const data = px.data;
+            worker.postMessage({ type: "count", id, px: { data, width: px.width, height: px.height } }, [data.buffer]);
+          }),
+        });
+      } else if (m.type === "result" || m.type === "count-error") {
+        const w = waiting.get(m.id);
+        waiting.delete(m.id);
+        if (m.type === "result") w?.ok(m.people); else w?.fail(new Error(m.message));
+      } else if (m.type === "load-error") {
+        worker.terminate();
+        reject(new Error(m.message));
       }
-    } catch { /* fall through to the lighter AI */ }
-  }
-  const l = await startModel(ort, "light", gpu, onProgress);
-  onProgress(100, "Ready");
-  return { run: l.run, tiles: l.m.tiles, size: l.m.size, kind: "light", backend: gpu ? "graphics chip" : "processor" };
+    };
+    worker.onerror = (e) => {
+      // The worker couldn't start at all (very old browser): count on the page instead.
+      if (!ready) { worker.terminate(); engineOnPage(onProgress).then(resolve, reject); }
+      else for (const [, w] of waiting) w.fail(new Error(e.message || "The AI stopped"));
+    };
+    worker.postMessage({ type: "load" });
+  });
 }
 
 // ─── Reading a camera ───────────────────────────────────────────────────────
@@ -148,8 +77,8 @@ export function grab(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
   return ctx.getImageData(0, 0, w, h);
 }
 
-export async function countPeople(engine: Engine, px: ImageData): Promise<Person[]> {
-  return detectPeople(px, engine.run, { tiles: engine.tiles, size: engine.size });
+export function countPeople(engine: Engine, px: ImageData): Promise<Person[]> {
+  return engine.count(px);
 }
 
 /** Opens one camera at the highest detail it offers (more pixels per person = far people found). */

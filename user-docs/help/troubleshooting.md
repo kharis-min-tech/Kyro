@@ -38,6 +38,7 @@ Arrival times come from the cameras. Without them there's nothing to show yet.
 
 **A camera shows Offline.**
 The computer counting with that camera has stopped or lost its internet connection.
+- **A camera that says "Camera mode" under its name** was added by Camera Mode, so it only counts while the Camera Mode page is open. Switching it on in Cameras doesn't make it count by itself. For everyday counting, [install the Kyro counter](/guides/camera-setup) on the computer the camera is plugged into. That camera then appears again as **USB camera** and counts on its own.
 - **Camera Mode:** check the [Camera Mode](/pages/camera-mode) page is still open, on screen, and says **Counting**. If not, press **Start counting**.
 - **Installed version:** check the camera computer is on and online. It shows **Online** on [Cameras](/pages/cameras) when it's working.
 - Check the camera's cable (USB cameras) or power and network (Wi-Fi cameras).

@@ -8,7 +8,7 @@ import { edgeFetch, edgeToken } from "@/lib/edgeAuth";
 import type { Camera, VenueTotal } from "@/types";
 
 export interface EdgeCamera extends Camera {
-  kind: "usb" | "network";
+  kind: "usb" | "network" | "web";
   device_id: string;
   hidden: boolean;
   fps: number;

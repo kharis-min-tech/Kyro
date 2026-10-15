@@ -2,6 +2,10 @@
 
 Camera Mode counts people with a camera plugged into **any computer**, right in the web page. There's nothing to install. Plug the camera in, open the page, press **Start counting**.
 
+::: warning For emergencies and quick tests
+Camera Mode only counts **while this page is open**. For every Sunday, [install the Kyro counter](/guides/camera-setup) on the computer your cameras plug into: it counts by itself with no page open, and the cameras show **Online** on the [Cameras](/pages/cameras) page.
+:::
+
 <Shot name="camera-mode" alt="Camera Mode counting: 'Counting', the number of people now, and the camera picture with a box around each person counted" />
 
 ::: tip Watch it
