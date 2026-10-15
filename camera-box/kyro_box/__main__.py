@@ -160,7 +160,8 @@ class Box:
 
     # Main thread: count ----------------------------------------------------
     def run(self) -> int:
-        from kyro_box.counting import Counter
+        from kyro_box.cameras import NO_SIGNAL, no_signal
+        from kyro_box.counting import CameraStats, Counter
         from kyro_box.updater import UPDATE_EXIT_CODE
 
         threading.Thread(target=self.scanner, name="scanner", daemon=True).start()
@@ -178,9 +179,15 @@ class Box:
             counted = False
             for cam in cams:
                 frame = cam.latest()
-                if frame is not None:
-                    self.counter.count(cam.key, frame)
-                    counted = True
+                if frame is None:
+                    continue
+                if no_signal(frame):
+                    # Camera / transmitter off or out of range: say so instead of counting 0.
+                    st = self.counter.stats.setdefault(cam.key, CameraStats())
+                    st.current, st.error, st.counted_at = 0, NO_SIGNAL, time.time()
+                    continue
+                self.counter.count(cam.key, frame)
+                counted = True
             if self.updater.due(self.counter.people_seen_recently(self.updater.QUIET_FOR_S)):
                 self.exit_code = UPDATE_EXIT_CODE
                 break

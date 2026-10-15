@@ -108,6 +108,19 @@ def _open_usb(index: int) -> Optional[cv2.VideoCapture]:
     return cap
 
 
+NO_SIGNAL = "No picture — check the camera is on (and its wireless transmitter, if it uses one, is on and in range)"
+
+
+def no_signal(frame: np.ndarray) -> bool:
+    """A flat, single-colour picture: what an HDMI capture card / wireless video
+    receiver shows when the camera or transmitter is off or out of range (or a
+    camera with its lens covered). Counting it would wrongly say 0 people."""
+    small = cv2.resize(frame, (64, 36), interpolation=cv2.INTER_AREA).reshape(-1, 3).astype(np.int16)
+    base = np.median(small, axis=0)
+    same = np.abs(small - base).max(axis=1) <= 12      # pixels the same colour as most of the picture
+    return float(same.mean()) >= 0.95                  # (a small "NO SIGNAL" message still counts as flat)
+
+
 class Camera:
     """One camera: reads continuously on its own thread, keeps only the newest picture."""
 

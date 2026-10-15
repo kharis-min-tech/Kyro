@@ -102,6 +102,32 @@ Kyro's most accurate settings. A **Mac with an Apple chip (M1 or newer)** is
 quick too. An ordinary PC without a graphics card still counts, but each
 count takes a few seconds. That's fine for a seated congregation.
 
+## Wireless: a camera far from the computer
+
+### With a wireless video transmitter
+
+A wireless HDMI video transmitter sends the camera's picture across the hall with no cable:
+
+```
+[camera] ─HDMI─ [transmitter] ~~~ wireless ~~~ [receiver] ─HDMI─ [HDMI-to-USB capture card] ─USB─ [camera computer]
+```
+
+1. Connect the camera's **HDMI out** to the **transmitter** (the camera needs an HDMI port, usually micro-HDMI, and must be in video mode so it shows the live picture).
+2. At the camera computer, connect the **receiver** to an **HDMI-to-USB capture card**, and the capture card to the computer's USB port. Some receivers have a **USB-C output** that works as a webcam: then you don't need a capture card.
+3. Kyro sees the capture card as a plugged-in camera and asks *"We see you've connected … Do you want it on Kyro?"* Click **Yes, add it**.
+
+If the camera or transmitter is switched off or goes out of range, the receiver shows a blank or "no signal" screen. Kyro notices, shows **Needs attention: No picture** on the Cameras page and doesn't count it as 0 people.
+
+::: tip Tips
+- Turn off the camera's on-screen display (battery, time, recording icons) if it has the option, so only the room is shown.
+- Keep the transmitter and receiver in sight of each other. Walls and crowds shorten the range.
+- Power the camera and transmitter from the mains or a power bank. Batteries rarely last a whole service.
+:::
+
+### With the camera computer next to the camera
+
+Put the small camera computer beside the camera (short USB cable) and let **the computer** connect to the church **Wi-Fi**. Only a power plug is needed. If the Wi-Fi is weak, the live video sends smaller pictures instead of freezing. The counting itself happens on the computer, so it isn't affected.
+
 ## Getting the best count from your cameras
 
 Kyro's AI finds people very reliably when it can see them. The camera's
