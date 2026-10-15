@@ -879,7 +879,7 @@ export default function LiveCamerasPage() {
   // Live mode on the Cloudflare build — decided after mount (reads localStorage).
   const [edge, setEdge] = useState(false);
   useEffect(() => { setEdge(isEdgeLive()); }, []);
-  const { venue: edgeVenue, error: edgeVenueErr } = useEdgeVenue(edge, 5_000);
+  const { venue: edgeVenue, error: edgeVenueErr } = useEdgeVenue(edge, 2_000);
   useEffect(() => { if (edge && edgeVenue) setVenueTotal(edgeVenue); }, [edge, edgeVenue]);
   const edgeZones: Record<string, ZoneLive> = {};
   for (const z of edgeVenue?.zones ?? []) edgeZones[z.camera_id] = z;

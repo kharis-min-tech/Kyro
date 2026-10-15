@@ -218,7 +218,7 @@ export class VenueHub extends DurableObject {
     const streams = Object.values(cams)
       .filter((c) => c.device_id === device.id && c.kind === "network" && !c.hidden && urls[c.camera_id])
       .map((c) => ({ key: c.key, url: urls[c.camera_id] }));
-    return json({ ok: true, disabled: off, streams, report_every_s: 5, snapshot_every_s: 20 });
+    return json({ ok: true, disabled: off, streams, report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */

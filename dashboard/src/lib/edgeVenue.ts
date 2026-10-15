@@ -77,7 +77,7 @@ export function todayLocal(): { date: string; tz: string } {
  * Polls /api/live/venue every `everyMs` while `enabled`. Failures are
  * non-fatal: the last good value is kept and `error` carries a short message.
  */
-export function useEdgeVenue(enabled: boolean, everyMs = 5000) {
+export function useEdgeVenue(enabled: boolean, everyMs = 2000) {
   const [venue, setVenue] = useState<VenueTotal | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {

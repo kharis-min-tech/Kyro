@@ -713,7 +713,7 @@ export default function AttendancePage() {
       }
     };
     poll();
-    const t = setInterval(poll, 5_000);
+    const t = setInterval(poll, edge ? 2_000 : 5_000);
     return () => clearInterval(t);
   }, [cameras.length, edge]);
 
