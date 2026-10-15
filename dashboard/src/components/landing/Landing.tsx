@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight, Check, Radio, Video, Armchair, Hash, BellRing, Send, PlayCircle, FlaskConical, Church, BookOpen,
 } from "lucide-react";
 import { HELP_URL } from "@/lib/help";
+import { SeatField } from "./SeatField";
 import s from "./landing.module.css";
 
 /**
@@ -13,15 +14,10 @@ import s from "./landing.module.css";
  * the difference between Demo mode and Live mode, so nobody arrives at the
  * sign-in screen unsure which to pick.
  *
- * Background: Kyro's real people-counting AI run on a photo from a Kharis
- * service (the same photo the Kairos site uses), rendered as a short loop.
- * The counter below is synced to the moment each person is found in it.
+ * Background: Kyro's Seat Map brought to life — an auditorium filling up seat
+ * by seat (SeatField), with floating cards showing what Kyro tells the team.
+ * The small photo card is Kyro's real AI on a photo from a Kharis service.
  */
-
-// Seconds into the 12 s loop at which each of the 32 people is found.
-const FOUND_AT = [0.67, 0.7, 0.93, 1.05, 1.35, 1.36, 1.44, 1.65, 1.85, 1.93, 2.24, 2.54, 2.64, 3.01, 3.13, 3.54, 3.57,
-  3.85, 3.9, 4.13, 4.26, 4.27, 4.36, 4.67, 4.77, 4.8, 5.15, 5.21, 5.3, 5.38, 5.5, 5.82];
-const LOOP_FADE_AT = 10.8;
 
 const FEATURES = [
   { Icon: Radio, title: "AI Count", text: "How many people are in the building right now, room by room — and when they arrived." },
@@ -35,35 +31,13 @@ const FEATURES = [
 export function Landing() {
   const [solidNav, setSolidNav] = useState(false);
   const [motion, setMotion] = useState(false);
-  const [useVideo, setUseVideo] = useState(false);
-  const [count, setCount] = useState(FOUND_AT.length);
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const [still, setStill] = useState(false);
+  const [live, setLive] = useState({ occupied: 0, total: 0 });
+  const onCount = useCallback((occupied: number, total: number) => setLive({ occupied, total }), []);
 
-  // Video only when it's welcome: not for reduced motion or data-saver.
-  useEffect(() => {
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
-    const saveData = !!conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? "");
-    setUseVideo(!reduce && !saveData);
-  }, []);
-
-  // Counter follows the video.
-  useEffect(() => {
-    if (!useVideo) return;
-    const v = videoRef.current;
-    if (!v) return;
-    let raf = 0;
-    const tick = () => {
-      const t = v.currentTime;
-      // Until the video is really playing (or if it can't), show the full count.
-      const playing = v.readyState >= 2 && !v.paused && !v.error;
-      setCount(!playing || t >= LOOP_FADE_AT ? FOUND_AT.length : FOUND_AT.filter((x) => x <= t).length);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    v.play().catch(() => setCount(FOUND_AT.length));
-    return () => cancelAnimationFrame(raf);
-  }, [useVideo]);
+  // A calm still picture for people who prefer less motion.
+  useEffect(() => { setStill(!!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches); }, []);
+  const pct = live.total ? live.occupied / live.total : 0;
 
   // Top bar turns solid once you scroll; sections fade in as they appear.
   useEffect(() => {
@@ -102,15 +76,8 @@ export function Landing() {
 
       {/* ── Hero ── */}
       <section className={s.hero}>
-        <div className={s.heroMedia} style={{ backgroundImage: "url(/landing/hero-ai-poster.jpg)" }}>
-          {useVideo ? (
-            <video ref={videoRef} autoPlay muted loop playsInline preload="auto" poster="/landing/hero-ai-poster.jpg" aria-hidden="true">
-              <source src="/landing/hero-ai.webm" type="video/webm" />
-              <source src="/landing/hero-ai.mp4" type="video/mp4" />
-            </video>
-          ) : (
-            <img src="/landing/hero-ai-poster.jpg" alt="" />
-          )}
+        <div className={s.heroMedia}>
+          <SeatField onCount={onCount} still={still} />
         </div>
         <div className={s.heroShade} />
 
@@ -133,14 +100,34 @@ export function Landing() {
           </div>
         </div>
 
-        <div className={`${s.counter} ${s.rise} ${s.d5}`} aria-live="off">
-          <span className={s.pulse} aria-hidden="true" />
+        {/* What Kyro shows the team — floating over the room */}
+        <figure className={`${s.float} ${s.photoCard} ${s.rise} ${s.d4}`}>
+          <img src="/landing/hero-ai-poster.jpg" alt="Kyro's AI marking each person at a Kharis Church service" />
+          <figcaption>
+            <span>Sunday service · Kharis</span>
+            <b>32 found by Kyro AI</b>
+          </figcaption>
+        </figure>
+
+        <div className={`${s.float} ${s.roomCard} ${s.rise} ${s.d5}`} aria-hidden="true">
+          <div className={s.cardLabel}>Main Hall</div>
+          <div className={s.roomNum}>{live.occupied}<small>/ {live.total} seats</small></div>
+          <div className={s.bar}><span style={{ width: `${Math.round(pct * 100)}%` }} /></div>
+          <div className={s.roomFoot}><span>{Math.round(pct * 100)}% full</span><span>{Math.max(0, live.total - live.occupied)} seats left</span></div>
+        </div>
+
+        <div className={`${s.float} ${s.alertCard} ${pct >= 0.8 ? s.alertOn : ""}`} aria-hidden="true">
+          <BellRing size={16} />
+          <div><b>Main Hall is filling up</b><span>{Math.round(pct * 100)}% full · sent to the team</span></div>
+        </div>
+
+        <div className={`${s.counter} ${s.rise} ${s.d5}`} aria-hidden="true">
+          <span className={s.pulse} />
           <div>
-            <div className={s.counterLabel}>Kyro AI · counting</div>
-            <div className={s.counterNum}>{count}<small>people</small></div>
+            <div className={s.counterLabel}>Kyro · live count</div>
+            <div className={s.counterNum}>{live.occupied}<small>people in</small></div>
           </div>
         </div>
-        <p className={s.caption}>Kyro&apos;s real AI finding everyone in a Kharis service.</p>
         <span className={s.scroll} aria-hidden="true" />
       </section>
 
