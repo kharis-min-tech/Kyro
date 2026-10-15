@@ -88,7 +88,7 @@ function SnapshotImage({ cameraId }: { cameraId: string }) {
       return (
         <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ background: "var(--bg-inset)" }}>
           <Video size={28} className="text-gray-700" />
-          <span className="text-xs text-gray-600 px-4 text-center">No picture yet — one arrives every 20 seconds while the camera is on</span>
+          <span className="text-xs text-gray-600 px-4 text-center">No picture yet — it appears as soon as the camera computer is on</span>
         </div>
       );
     }

@@ -99,18 +99,32 @@ export function useEdgeVenue(enabled: boolean, everyMs = 5000) {
 }
 
 /**
- * The latest picture from a camera as an object URL. The snapshot endpoint
- * needs the Authorization header, so an <img src> can't load it directly.
- * Returns null until a picture exists (404 = none yet).
+ * A camera's picture as an object URL — live video when the camera computer
+ * can send it (a WebSocket to worker/venue.js: newest picture each time, about
+ * 15 a second), otherwise the latest photo, refreshed every `everyMs`.
+ * `live` is true while video is arriving. Pauses while the tab is hidden.
  */
 export function useEdgeSnapshot(cameraId: string | null, enabled: boolean, everyMs = 20000) {
   const [url, setUrl] = useState<string | null>(null);
   const [takenAt, setTakenAt] = useState<string | null>(null);
+  const [live, setLive] = useState(false);
   const current = useRef<string | null>(null);
   useEffect(() => {
     if (!enabled || !cameraId) return;
     let alive = true;
+    let ws: WebSocket | null = null;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    let lastFrame = 0;
+    const show = (blob: Blob, at: string | null) => {
+      if (!alive) return;
+      const next = URL.createObjectURL(blob.type ? blob : new Blob([blob], { type: "image/jpeg" }));
+      if (current.current) URL.revokeObjectURL(current.current);
+      current.current = next;
+      setUrl(next);
+      setTakenAt(at);
+    };
     const load = async () => {
+      if (Date.now() - lastFrame < 5000) return;   // live video is arriving
       try {
         const token = edgeToken();
         const res = await fetch(`/api/live/snapshot/${enc(cameraId)}`, {
@@ -118,25 +132,51 @@ export function useEdgeSnapshot(cameraId: string | null, enabled: boolean, every
           cache: "no-store",
         });
         if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("image/")) return;
-        const blob = await res.blob();
-        if (!alive) return;
-        const next = URL.createObjectURL(blob);
-        if (current.current) URL.revokeObjectURL(current.current);
-        current.current = next;
-        setUrl(next);
-        setTakenAt(res.headers.get("X-Taken-At"));
+        show(await res.blob(), res.headers.get("X-Taken-At"));
       } catch { /* non-fatal — keep the last picture */ }
     };
+    const connect = () => {
+      if (!alive || document.visibilityState === "hidden") return;
+      const token = edgeToken();
+      if (!token || typeof WebSocket === "undefined") return;
+      try {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${location.host}/api/live/watch/${enc(cameraId)}`, ["kyro", token]);
+      } catch { return; }
+      ws.binaryType = "blob";
+      ws.onmessage = (ev) => {
+        if (typeof ev.data === "string") return;
+        lastFrame = Date.now();
+        setLive(true);
+        show(ev.data as Blob, new Date().toISOString());
+      };
+      ws.onclose = () => {
+        ws = null;
+        setLive(false);
+        lastFrame = 0;
+        if (alive) retry = setTimeout(connect, 3000);
+      };
+    };
+    const onVis = () => {
+      if (document.visibilityState === "hidden") { clearTimeout(retry); ws?.close(); }
+      else if (!ws) { load(); connect(); }
+    };
+    // No new frame for a while (camera computer offline): fall back to photos.
+    const stale = setInterval(() => { if (lastFrame && Date.now() - lastFrame > 5000) setLive(false); }, 2000);
     load();
+    connect();
     const id = setInterval(load, everyMs);
+    document.addEventListener("visibilitychange", onVis);
     return () => {
       alive = false;
-      clearInterval(id);
+      clearInterval(id); clearInterval(stale); clearTimeout(retry);
+      document.removeEventListener("visibilitychange", onVis);
+      ws?.close();
       if (current.current) { URL.revokeObjectURL(current.current); current.current = null; }
-      setUrl(null);
+      setUrl(null); setLive(false);
     };
   }, [cameraId, enabled, everyMs]);
-  return { url, takenAt };
+  return { url, takenAt, live };
 }
 
 export interface EdgeVenueSeries {

@@ -65,7 +65,7 @@ def cmd_check() -> int:
     import numpy  # noqa: F401
     import ultralytics  # noqa: F401
     from ai.pipeline import VisionPipeline  # noqa: F401
-    from kyro_box import cameras, counting, updater  # noqa: F401
+    from kyro_box import cameras, counting, streaming, updater  # noqa: F401
     print(f"Kyro Camera Box {__version__}: everything needed is installed.")
     return 0
 
@@ -162,6 +162,8 @@ class Box:
 
         threading.Thread(target=self.scanner, name="scanner", daemon=True).start()
         threading.Thread(target=self.reporter, name="reporter", daemon=True).start()
+        from kyro_box.streaming import Streamer
+        threading.Thread(target=Streamer(self.cameras, self.stop).run, name="live-video", daemon=True).start()
         self.counter = Counter()
         log.info("Kyro Camera Box %s running", __version__)
         started = time.time()

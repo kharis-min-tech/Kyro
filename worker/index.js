@@ -100,7 +100,14 @@ export default {
         headers.delete("X-Kyro-Role"); // never trust a role sent by the caller
         headers.delete("X-Kyro-Internal");
         if (url.pathname.startsWith("/api/live/")) {
-          const me = await currentUser(request, env);
+          // A browser can't add headers to a WebSocket, so live video sends the
+          // sign-in token as its second "protocol" instead: ["kyro", token].
+          const proto = request.headers.get("Sec-WebSocket-Protocol");
+          if (proto && !headers.get("Authorization")) {
+            const [name, token] = proto.split(",").map((x) => x.trim());
+            if (name === "kyro" && token) headers.set("Authorization", `Bearer ${token}`);
+          }
+          const me = await currentUser(new Request(request.url, { headers }), env);
           if (!me) return json({ error: "Please sign in again" }, 401);
           headers.set("X-Kyro-Role", me.role);
         }

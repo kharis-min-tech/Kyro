@@ -57,6 +57,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/devices/pair" && request.method === "POST") return this.pair(request);
       if (p === "/api/devices/report" && request.method === "POST") return this.withDevice(request, (d) => this.report(d, request));
       if (p === "/api/devices/snapshot" && request.method === "PUT") return this.withDevice(request, (d) => this.snapshot(d, request, url));
+      if (p === "/api/devices/stream") return this.withDevice(request, (d) => this.boxStream(d, request));
 
       // ── Website (signed-in user) ──
       if (!role) return json({ error: "Please sign in again" }, 401);
@@ -65,6 +66,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
       if (p === "/api/live/daily" && request.method === "GET") return json(this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
+      if (p.startsWith("/api/live/watch/")) return this.watch(decodeURIComponent(p.split("/").pop()), request);
 
       if (p === "/api/live/browser-device" && request.method === "POST") {
         // Camera mode: a signed-in admin/operator's browser becomes a camera computer — no code needed.
@@ -256,6 +258,70 @@ export class VenueHub extends DurableObject {
     if (!s) return new Response("No picture yet", { status: 404 });
     return new Response(s.data, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store", "X-Taken-At": new Date(s.at).toISOString() } });
   }
+
+  // ── Live video ─────────────────────────────────────────────────────────────
+  // The camera computer keeps a WebSocket open here. While someone is watching a
+  // camera, it sends that camera's newest picture over and over (live video);
+  // each picture goes straight on to everyone watching. Nobody watching → it
+  // sends nothing, so no internet is used for video.
+
+  boxStream(device, request) {
+    if (request.headers.get("Upgrade") !== "websocket") return json({ error: "Expected a WebSocket" }, 426);
+    for (const old of this.ctx.getWebSockets(`box:${device.id}`)) { try { old.close(1000, "Replaced"); } catch {} }
+    const [client, server] = Object.values(new WebSocketPair());
+    this.ctx.acceptWebSocket(server, ["box", `box:${device.id}`]);
+    server.serializeAttachment({ kind: "box", device: device.id });
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+    this.tellBox(device.id, null, server);
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  async watch(camera_id, request) {
+    if (request.headers.get("Upgrade") !== "websocket") return json({ error: "Expected a WebSocket" }, 426);
+    const cams = await this.get("cameras", {});
+    const cam = cams[camera_id];
+    if (!cam) return json({ error: "No such camera" }, 404);
+    const [client, server] = Object.values(new WebSocketPair());
+    this.ctx.acceptWebSocket(server, ["watch", `watch:${camera_id}`]);
+    server.serializeAttachment({ kind: "watch", camera_id, device: cam.device_id });
+    this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
+    // Show the last picture straight away while the video starts.
+    const snap = await this.ctx.storage.get(`snap:${camera_id}`);
+    if (snap?.data) { try { server.send(snap.data); } catch {} }
+    this.tellBox(cam.device_id);
+    return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": "kyro" } });
+  }
+
+  /** Tells a camera computer which of its cameras someone is watching. */
+  tellBox(device_id, leaving = null, only = null) {
+    const keys = new Set();
+    for (const w of this.ctx.getWebSockets("watch")) {
+      if (w === leaving) continue;
+      const a = w.deserializeAttachment();
+      if (a?.device === device_id) keys.add(a.camera_id.slice(device_id.length + 1));
+    }
+    const msg = JSON.stringify({ watch: [...keys] });
+    for (const b of only ? [only] : this.ctx.getWebSockets(`box:${device_id}`)) { try { b.send(msg); } catch {} }
+  }
+
+  webSocketMessage(ws, msg) {
+    const a = ws.deserializeAttachment();
+    if (a?.kind !== "box" || typeof msg === "string") return;
+    // [key length][key][JPEG]
+    const bytes = new Uint8Array(msg);
+    const n = bytes[0];
+    const camera_id = `${a.device}:${new TextDecoder().decode(bytes.subarray(1, 1 + n))}`;
+    const jpeg = msg.slice(1 + n);
+    for (const w of this.ctx.getWebSockets(`watch:${camera_id}`)) { try { w.send(jpeg); } catch {} }
+  }
+
+  webSocketClose(ws, code) {
+    const a = ws.deserializeAttachment();
+    try { ws.close(code === 1005 || code === 1006 ? 1000 : code); } catch {}
+    if (a?.kind === "watch") this.tellBox(a.device, ws);
+  }
+
+  webSocketError(ws) { this.webSocketClose(ws, 1011); }
 
   // ── What the website reads ────────────────────────────────────────────────
 
