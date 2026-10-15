@@ -20,8 +20,11 @@ from kyro_box import settings
 log = logging.getLogger("kyro.box.streaming")
 
 MAX_FPS = 15
-MAX_WIDTH = 1280
+# Picture sizes to choose from: the full one on good internet, smaller ones when
+# sending is slow (e.g. the camera box is on weak Wi-Fi far across the hall).
+WIDTHS = (1280, 960, 640)
 JPEG_QUALITY = 72
+SLOW_SEND_S = 0.25          # a picture taking longer than this to send = internet is struggling
 
 
 class Streamer:
@@ -61,6 +64,8 @@ class Streamer:
     def _serve(self, ws) -> None:
         last_ping = time.time()
         sent: dict[str, int] = {}
+        size = 0                      # index into WIDTHS
+        slow = fast = 0
         while not self.stop.is_set():
             started = time.time()
             # Messages from the website: which cameras are being watched.
@@ -85,13 +90,26 @@ class Streamer:
                     continue
                 sent[key] = id(frame)
                 h, w = frame.shape[:2]
-                if w > MAX_WIDTH:
-                    frame = cv2.resize(frame, (MAX_WIDTH, round(h * MAX_WIDTH / w)), interpolation=cv2.INTER_AREA)
+                width = WIDTHS[size]
+                if w > width:
+                    frame = cv2.resize(frame, (width, round(h * width / w)), interpolation=cv2.INTER_AREA)
                 ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
                 if not ok:
                     continue
                 k = key.encode()[:255]
+                t0 = time.time()
                 ws.send_binary(bytes([len(k)]) + k + jpg.tobytes())  # waits while the internet is busy
+                # Adapt to the connection: smaller pictures when slow, back up when it recovers.
+                if time.time() - t0 > SLOW_SEND_S:
+                    slow, fast = slow + 1, 0
+                    if slow >= 3 and size < len(WIDTHS) - 1:
+                        size, slow = size + 1, 0
+                        log.info("Live video: slow internet — sending %d-wide pictures", WIDTHS[size])
+                else:
+                    fast, slow = fast + 1, 0
+                    if fast >= 150 and size > 0:
+                        size, fast = size - 1, 0
+                        log.info("Live video: internet is quicker — sending %d-wide pictures", WIDTHS[size])
             pause = 1 / MAX_FPS - (time.time() - started)
             if pause > 0:
                 time.sleep(pause)
