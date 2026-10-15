@@ -38,8 +38,8 @@ export function GlobalReviewOverlay() {
     return () => { clearInterval(t); window.removeEventListener("storage", check); };
   }, []);
 
-  // Never show on the login page, even if a stale token is present.
-  if (pathname === "/login" || pathname?.startsWith("/login/")) return null;
+  // Never show on the welcome or login page, even if a stale token is present.
+  if (pathname === "/" || pathname === "/login" || pathname?.startsWith("/login/")) return null;
   if (!authed) return null;
 
   return (

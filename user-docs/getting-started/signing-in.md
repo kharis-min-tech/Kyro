@@ -1,6 +1,8 @@
 # Signing in
 
-Open Kyro and you'll see two cards: **Demo mode** and **Live mode**. Pick one, then sign in.
+Open **kyro.kharischurch.com** and you'll land on the **welcome page**. It explains what Kyro does and the difference between Demo mode and Live mode. Tap **Open Demo mode**, **Sign in to Live** or **Sign in** at the top.
+
+On the sign-in screen you'll see two cards: **Demo mode** and **Live mode**. Pick one, then sign in. **← Kyro home** at the top left takes you back to the welcome page. Once you're signed in, opening Kyro takes you straight to your dashboard.
 
 <Shot name="login" alt="Kyro sign-in screen with the Demo mode and Live mode cards, and the Help and light/dark buttons at the top right" />
 

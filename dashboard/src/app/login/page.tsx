@@ -106,6 +106,12 @@ function PreLoginThemeToggle() {
     color: "var(--text-primary)",
   };
   return (
+    <>
+    {/* Back to the welcome page (what Kyro is, Demo vs Live). */}
+    <a href="/" className="fixed top-4 left-4 z-50 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium"
+      style={pill}>
+      ← Kyro home
+    </a>
     <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
       {/* The user guide is open to everyone — no sign-in needed. */}
       <a href={HELP_URL} target="_blank" rel="noopener noreferrer"
@@ -124,6 +130,7 @@ function PreLoginThemeToggle() {
         <Icon size={16} />
       </button>
     </div>
+    </>
   );
 }
 
@@ -149,6 +156,14 @@ export default function LoginPage() {
 
   useEffect(() => {
     setAccounts(loadDemoAccounts());
+  }, []);
+
+  // Arriving from the welcome page's "Demo mode" / "Live mode" buttons
+  // (/login/?mode=demo or ?mode=live): open that option straight away.
+  useEffect(() => {
+    const m = new URLSearchParams(window.location.search).get("mode");
+    if (m === "demo") { setDemoMode(); setAccounts(loadDemoAccounts()); setScreen("demo"); }
+    else if (m === "live") { setLiveMode(); setScreen("live"); }
   }, []);
 
   async function handleDemoLogin(username: string, password: string) {
