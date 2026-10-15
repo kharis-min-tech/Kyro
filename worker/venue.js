@@ -239,7 +239,7 @@ export class VenueHub extends DurableObject {
       .filter((c) => (includeHidden || !c.hidden) && devices[c.device_id])
       .sort((a, b) => a.zone_order - b.zone_order)
       .map((c) => ({
-        camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? `USB camera ${Number(c.key.replace(/^usb-/, "")) + 1}`
+        camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? (/^usb-\d+$/.test(c.key) ? `USB camera ${Number(c.key.slice(4)) + 1}` : "USB camera")
           : c.kind === "web" ? `Camera mode · ${devices[c.device_id]?.name ?? "browser"}` : c.address || "Network camera",
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,

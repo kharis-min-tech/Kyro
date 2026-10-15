@@ -14,6 +14,8 @@ import threading
 import time
 from typing import Optional
 
+import hashlib
+
 import cv2
 import numpy as np
 
@@ -31,6 +33,34 @@ def _usb_backend() -> int:
     if system == "Darwin":
         return cv2.CAP_AVFOUNDATION
     return cv2.CAP_V4L2
+
+
+def _mac_cameras() -> Optional[list[tuple[str, str, bool]]]:
+    """On a Mac: (key, name, skip) for each camera slot, in the same order OpenCV
+    numbers them. The key stays the same when other cameras come and go (an
+    iPhone's Continuity Camera appearing shifts the slot numbers), so the
+    website keeps each camera's name and room. iPhone/iPad cameras and Desk
+    View are skipped — they come and go and are never the room camera.
+    None = not a Mac (or names unavailable): fall back to slot numbers."""
+    if platform.system() != "Darwin":
+        return None
+    try:
+        import AVFoundation as av  # pyobjc
+        devices = list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeVideo)) + \
+            list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeMuxed))
+    except Exception:  # noqa: BLE001
+        return None
+    out, seen = [], {}
+    for d in devices:
+        name = str(d.localizedName() or "").strip() or "USB camera"
+        model = str(d.modelID() or name)
+        # Same model + nth of that model: survives moving the camera to another USB port.
+        n = seen[model] = seen.get(model, 0) + 1
+        key = "usb-" + hashlib.sha1(f"{model}#{n}".encode()).hexdigest()[:8]
+        skip = model.startswith(("iPhone", "iPad")) or "desk view" in name.lower() \
+            or "Continuity" in str(d.deviceType() or "")
+        out.append((key, name, skip))
+    return out
 
 
 def _open_usb(index: int) -> Optional[cv2.VideoCapture]:
@@ -161,9 +191,15 @@ class CameraManager:
                     cam.stop()
                     del self.cameras[key]
             in_use = {c.key for c in self.cameras.values()}
+        named = _mac_cameras()
         misses = 0
-        for i in range(MAX_USB_SLOTS):
-            key = f"usb-{i}"
+        for i in range(MAX_USB_SLOTS if named is None else len(named)):
+            if named is None:
+                key, label = f"usb-{i}", f"USB camera {i + 1}"
+            else:
+                key, label, skip = named[i]
+                if skip:
+                    continue
             if key in in_use:
                 misses = 0
                 continue
@@ -172,13 +208,13 @@ class CameraManager:
             cap = _open_usb(i)
             if cap is None:
                 misses += 1
-                if misses >= 2:
+                if named is None and misses >= 2:
                     break  # slots are numbered without gaps; two empty ones in a row = done
                 continue
             misses = 0
-            log.info("Found USB camera in slot %d", i)
+            log.info("Found %s in slot %d", label, i)
             with self._lock:
-                self.cameras[key] = Camera(key, "usb", f"USB camera {i + 1}", cap)
+                self.cameras[key] = Camera(key, "usb", label, cap)
 
     def sync_network(self, streams: list[dict]) -> None:
         """Match the network cameras to the list the website sent."""

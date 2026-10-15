@@ -5,3 +5,4 @@ numpy>=1.26,<3
 scipy>=1.13
 filterpy==1.4.5
 python-dotenv>=1.0
+pyobjc-framework-AVFoundation>=10; sys_platform == "darwin"   # Mac: real camera names, steady identities
