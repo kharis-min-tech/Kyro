@@ -17,6 +17,7 @@ import {
   Users, MapPin, AlertCircle, Trash2, Cpu, Power, KeyRound, ExternalLink,
 } from "lucide-react";
 import type { Camera as CameraType } from "@/types";
+import { InstallCommand } from "@/components/ui/InstallCommand";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -507,17 +508,15 @@ function PairingSteps({ code, expiresAt }: { code: string; expiresAt: string }) 
       style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.35)" }}>
       <p className="text-xs text-gray-400">Your pairing code</p>
       <p className="font-mono font-bold text-white tracking-widest break-all" style={{ fontSize: "clamp(28px, 9vw, 40px)" }}>{code}</p>
-      <ol className="text-sm text-gray-300 flex flex-col gap-1.5 list-decimal pl-5">
-        <li>
-          On the church computer, run the Kyro installer{" "}
-          (<a href={SETUP_GUIDE} target="_blank" rel="noopener noreferrer"
-            className="text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1">
-            how to get it <ExternalLink size={11} />
-          </a>).
-        </li>
-        <li>When it asks, type this code.</li>
-        <li>Plug in your cameras — they appear here by themselves.</li>
-      </ol>
+      <p className="text-sm text-gray-300">
+        Install Kyro on the computer the camera plugs into — yours or the church&apos;s, any one works. This line
+        includes the code, so there&apos;s nothing to type. Then plug in your cameras: they appear here by themselves.{" "}
+        <a href={SETUP_GUIDE} target="_blank" rel="noopener noreferrer"
+          className="text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1">
+          Step-by-step help <ExternalLink size={11} />
+        </a>
+      </p>
+      <InstallCommand code={code} />
       <p className="text-xs text-gray-500">
         This code works once and expires at {new Date(expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
       </p>

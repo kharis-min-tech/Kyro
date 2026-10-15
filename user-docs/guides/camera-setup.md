@@ -1,6 +1,12 @@
 # Setting up cameras
 
-## Easiest: Camera Mode (nothing to install)
+::: tip Any computer works
+A camera has to plug into a computer that runs Kyro, but it can be **any** computer: yours, the church's, a Windows PC, a Mac or Linux. You can move the camera between computers whenever you like. Kyro recognises it and it keeps its **name, room, seat count and history**. Each computer only needs Kyro set up once (below).
+:::
+
+For every Sunday, [install Kyro on the camera computer](#install-kyro-on-the-camera-computer-one-time-about-20-minutes): it counts by itself with no page open. Camera Mode is for emergencies and quick tests.
+
+## In an emergency: Camera Mode (nothing to install)
 
 Full details, with pictures: [Camera Mode](/pages/camera-mode).
 
@@ -20,9 +26,9 @@ you only need to open the page.
   graphics it switches to a lighter AI by itself, which finds fewer people at
   the back.
 
-## Or: install Kyro on the camera computer (one time, about 20 minutes)
+## Install Kyro on the camera computer (one time, about 20 minutes)
 
-Choose this if you'd rather not keep a web page open. The installed version
+This is the everyday way: no web page needs to be open, and it
 also runs when nobody is signed in. The command is also on the
 [Camera Mode](/pages/camera-mode#want-the-installed-version) page, with a
 **Copy** button.
@@ -33,9 +39,11 @@ Camera Box program. It finds the cameras, counts people with Kyro's AI and
 sends the counts to the website.
 
 **1. Get a pairing code.** On the website, go to [Cameras](/pages/cameras) and
-press **Pair a camera computer**. Keep the code on screen (it works for 30 minutes).
+press **Pair a camera computer**. The code works for 30 minutes. The page also shows the
+install line **with the code already in it**: press **Copy** there and you won't
+need to type the code at all.
 
-**2. Run the installer on the camera computer.**
+**2. Run the installer on the camera computer.** (These lines don't include a code, so the installer asks for one.)
 
 - **Windows:** open **PowerShell** (search for it in the Start menu), paste this
   line and press Enter:
@@ -58,6 +66,8 @@ page within a few seconds. Give it a name, a room and the room's seat count.
 
 ### After that, nothing to do
 
+- **Move cameras freely:** plug a camera into another computer that has Kyro and it
+  keeps its name, room, seat count and history.
 - **Plug and play:** plug a USB camera in and it's counted. Unplug it and it
   shows as offline. If you don't want a camera counted (for example a laptop's
   built-in camera), press **Switch off** on the Cameras page.

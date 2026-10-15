@@ -35,32 +35,50 @@ def _usb_backend() -> int:
     return cv2.CAP_V4L2
 
 
-def _mac_cameras() -> Optional[list[tuple[str, str, bool]]]:
-    """On a Mac: (key, name, skip) for each camera slot, in the same order OpenCV
-    numbers them. The key stays the same when other cameras come and go (an
-    iPhone's Continuity Camera appearing shifts the slot numbers), so the
-    website keeps each camera's name and room. iPhone/iPad cameras and Desk
-    View are skipped — they come and go and are never the room camera.
-    None = not a Mac (or names unavailable): fall back to slot numbers."""
-    if platform.system() != "Darwin":
-        return None
+def _key(name: str, model: str, seen: dict) -> str:
+    """Same model + nth of that model: stays the same when other cameras come and
+    go or the camera moves to another USB port, so the website keeps its name,
+    room and seats (and recognises it when it's moved to another computer)."""
+    n = seen[model] = seen.get(model, 0) + 1
+    return "usb-" + hashlib.sha1(f"{model}#{n}".encode()).hexdigest()[:8]
+
+
+def _named_cameras() -> Optional[list[tuple[int, str, str, bool]]]:
+    """(slot, key, name, skip) for each camera, in the order OpenCV numbers them.
+    iPhone/iPad cameras and Desk View are skipped — they come and go and are never
+    the room camera. None = names unavailable: fall back to slot numbers."""
+    system = platform.system()
+    seen: dict = {}
     try:
-        import AVFoundation as av  # pyobjc
-        devices = list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeVideo)) + \
-            list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeMuxed))
+        if system == "Darwin":
+            import AVFoundation as av  # pyobjc
+            devices = list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeVideo)) + \
+                list(av.AVCaptureDevice.devicesWithMediaType_(av.AVMediaTypeMuxed))
+            out = []
+            for i, d in enumerate(devices):
+                name = str(d.localizedName() or "").strip() or "USB camera"
+                model = str(d.modelID() or name)
+                skip = model.startswith(("iPhone", "iPad")) or "desk view" in name.lower() \
+                    or "Continuity" in str(d.deviceType() or "")
+                out.append((i, _key(name, model, seen), name, skip))
+            return out
+        if system == "Windows":
+            from pygrabber.dshow_graph import FilterGraph  # DirectShow: the same list OpenCV opens
+            return [(i, _key(n, n, seen), n.strip() or "USB camera", False)
+                    for i, n in enumerate(FilterGraph().get_input_devices())]
+        if system == "Linux":
+            from pathlib import Path
+            out = []
+            nodes = sorted(Path("/sys/class/video4linux").glob("video*"), key=lambda p: int(p.name[5:] or 0))
+            for p in nodes:
+                if (p / "index").exists() and (p / "index").read_text().strip() != "0":
+                    continue  # a camera's second (metadata) node
+                name = (p / "name").read_text().strip() if (p / "name").exists() else "USB camera"
+                out.append((int(p.name[5:]), _key(name, name, seen), name, False))
+            return out
     except Exception:  # noqa: BLE001
         return None
-    out, seen = [], {}
-    for d in devices:
-        name = str(d.localizedName() or "").strip() or "USB camera"
-        model = str(d.modelID() or name)
-        # Same model + nth of that model: survives moving the camera to another USB port.
-        n = seen[model] = seen.get(model, 0) + 1
-        key = "usb-" + hashlib.sha1(f"{model}#{n}".encode()).hexdigest()[:8]
-        skip = model.startswith(("iPhone", "iPad")) or "desk view" in name.lower() \
-            or "Continuity" in str(d.deviceType() or "")
-        out.append((key, name, skip))
-    return out
+    return None
 
 
 def _open_usb(index: int) -> Optional[cv2.VideoCapture]:
@@ -191,15 +209,12 @@ class CameraManager:
                     cam.stop()
                     del self.cameras[key]
             in_use = {c.key for c in self.cameras.values()}
-        named = _mac_cameras()
+        named = _named_cameras()
         misses = 0
-        for i in range(MAX_USB_SLOTS if named is None else len(named)):
-            if named is None:
-                key, label = f"usb-{i}", f"USB camera {i + 1}"
-            else:
-                key, label, skip = named[i]
-                if skip:
-                    continue
+        slots = [(i, f"usb-{i}", f"USB camera {i + 1}", False) for i in range(MAX_USB_SLOTS)] if named is None else named
+        for i, key, label, skip in slots:
+            if skip:
+                continue
             if key in in_use:
                 misses = 0
                 continue

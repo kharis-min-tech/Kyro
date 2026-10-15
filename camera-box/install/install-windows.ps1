@@ -63,7 +63,10 @@ $env:PYTHONPATH = "$code;$code\camera-box"
 & $venvPy -m kyro_box status | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Say "Pair this computer with your Kyro website"
-    do { & $venvPy -m kyro_box pair } while ($LASTEXITCODE -ne 0)
+    # The command copied from the website already includes the code.
+    $paired = $false
+    if ($env:KYRO_PAIR_CODE) { & $venvPy -m kyro_box pair $env:KYRO_PAIR_CODE; $paired = ($LASTEXITCODE -eq 0) }
+    if (-not $paired) { do { & $venvPy -m kyro_box pair } while ($LASTEXITCODE -ne 0) }
 }
 Remove-Item Env:PYTHONPATH
 

@@ -61,7 +61,10 @@ CODE="$HOME2/app/$(cat "$HOME2/current")"
 export PYTHONPATH="$CODE:$CODE/camera-box"
 if ! "$VPY" -m kyro_box status >/dev/null 2>&1; then
   say "Pair this computer with your Kyro website"
-  until "$VPY" -m kyro_box pair < /dev/tty; do :; done
+  # The command copied from the website already includes the code.
+  if [ -z "${KYRO_PAIR_CODE:-}" ] || ! "$VPY" -m kyro_box pair "$KYRO_PAIR_CODE"; then
+    until "$VPY" -m kyro_box pair < /dev/tty; do :; done
+  fi
 fi
 unset PYTHONPATH
 

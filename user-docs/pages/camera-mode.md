@@ -67,14 +67,15 @@ At the bottom of the page, **Want the installed version?** gives you one line to
 - counts without a web page being open
 - starts by itself when the computer turns on
 - installs every new AI update by itself, between services
+- works on any computer, and a camera moved to another computer keeps its name, room and seat count
 
 <Shot name="camera-mode-install" alt="Want the installed version? section with Windows and Mac / Linux tabs, the command with a Copy button, and a pairing code" />
 
 1. Pick **Windows** or **Mac / Linux**.
-2. Press **Copy**.
+2. Press **Get a pairing code** (administrators). The code goes straight into the line, so you won't need to type it. Then press **Copy**.
 3. **Windows:** click Start, type **PowerShell** and open it. **Mac:** press Cmd + Space, type **Terminal** and open it.
 4. Paste the line and press Enter.
-5. When it asks for a **pairing code**, press **Get a pairing code** on the page (administrators) and type the code it shows.
+5. If it asks for a **pairing code** (you copied the line without one), type the code shown on the page.
 6. Wait for **All done!** The first time takes 10–20 minutes. The computer then shows as **Online** on the [Cameras](/pages/cameras) page.
 
 Running the command again later is safe: it just brings everything up to date. See [Setting up cameras](/guides/camera-setup) for more.

@@ -173,11 +173,15 @@ export class VenueHub extends DurableObject {
       if (!cams[camera_id]) {
         // A newly plugged-in camera (camera computer or Camera mode): add it with sensible defaults.
         const n = Object.keys(cams).length + 1;
+        const label = clean(c.label, 60);
         cams[camera_id] = {
-          camera_id, device_id: device.id, key, kind: clean(c.kind, 10) || "usb",
-          name: clean(c.label, 60) || `Camera ${n}`, zone_name: clean(c.label, 60) || `Camera ${n}`,
+          camera_id, device_id: device.id, key, kind: clean(c.kind, 10) || "usb", label,
+          name: label || `Camera ${n}`, zone_name: label || `Camera ${n}`,
           zone_capacity: 0, zone_order: n, location: "indoor", hidden: false, created_at: new Date(now).toISOString(),
         };
+        // The same camera moved from another computer? It keeps its name, room, seats and history.
+        const old = this.movedFrom(cams, live, camera_id, device.id, label);
+        if (old) await this.takeOver(cams, live, old, camera_id);
         changed = true;
       }
       if (cams[camera_id].hidden) continue;
@@ -213,6 +217,30 @@ export class VenueHub extends DurableObject {
       .filter((c) => c.device_id === device.id && c.kind === "network" && !c.hidden && urls[c.camera_id])
       .map((c) => ({ key: c.key, url: urls[c.camera_id] }));
     return json({ ok: true, disabled: off, streams, report_every_s: 5, snapshot_every_s: 20 });
+  }
+
+  /** An offline camera on another computer with the same (specific) name — the camera was moved. */
+  movedFrom(cams, live, camera_id, device_id, label) {
+    const norm = (x) => String(x || "").toLowerCase().replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/, "").replace(/\s+/g, " ").trim();
+    const want = norm(label);
+    // Names every computer has (or that say nothing about the camera) can't identify one.
+    if (!want || /^(usb camera|camera|webcam|usb video device)( \d+)?$/.test(want)
+      || /facetime|integrated|built-?in|iphone|ipad|desk view|virtual|obs/.test(want)) return null;
+    const matches = Object.values(cams).filter((o) => o.camera_id !== camera_id && o.device_id !== device_id
+      && o.kind !== "network" && norm(o.label ?? o.name) === want && !this.isOnline(live[o.camera_id]));
+    // Most recently used first.
+    matches.sort((a, b) => (live[b.camera_id]?.updated_at ?? 0) - (live[a.camera_id]?.updated_at ?? 0));
+    return matches[0] ?? null;
+  }
+
+  /** Moves a camera's settings and history onto its new record, and removes the old one. */
+  async takeOver(cams, live, old, camera_id) {
+    const c = cams[camera_id];
+    for (const k of ["name", "zone_name", "zone_capacity", "zone_order", "location", "hidden", "created_at"]) c[k] = old[k];
+    this.ctx.storage.sql.exec("UPDATE history SET camera_id = ? WHERE camera_id = ?", camera_id, old.camera_id);
+    delete cams[old.camera_id];
+    delete live[old.camera_id];
+    await this.ctx.storage.delete(`snap:${old.camera_id}`);
   }
 
   async snapshot(device, request, url) {
