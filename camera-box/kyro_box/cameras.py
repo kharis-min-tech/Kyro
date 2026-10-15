@@ -15,6 +15,7 @@ import time
 from typing import Optional
 
 import hashlib
+import re
 
 import cv2
 import numpy as np
@@ -43,10 +44,18 @@ def _key(name: str, model: str, seen: dict) -> str:
     return "usb-" + hashlib.sha1(f"{model}#{n}".encode()).hexdigest()[:8]
 
 
+BUILT_IN = re.compile(r"facetime|integrated|built-?in|truevision|iphone|ipad|desk view|virtual|obs", re.I)
+
+
+def _not_a_room_camera(name: str) -> bool:
+    """A laptop's own camera, a phone, or a virtual camera: never used for counting."""
+    return bool(BUILT_IN.search(name or ""))
+
+
 def _named_cameras() -> Optional[list[tuple[int, str, str, bool]]]:
     """(slot, key, name, skip) for each camera, in the order OpenCV numbers them.
-    iPhone/iPad cameras and Desk View are skipped — they come and go and are never
-    the room camera. None = names unavailable: fall back to slot numbers."""
+    The computer's own built-in camera, iPhone/iPad cameras, Desk View and virtual
+    cameras are never opened — only cameras plugged in for counting are used. None = names unavailable: fall back to slot numbers."""
     system = platform.system()
     seen: dict = {}
     try:
@@ -58,13 +67,13 @@ def _named_cameras() -> Optional[list[tuple[int, str, str, bool]]]:
             for i, d in enumerate(devices):
                 name = str(d.localizedName() or "").strip() or "USB camera"
                 model = str(d.modelID() or name)
-                skip = model.startswith(("iPhone", "iPad")) or "desk view" in name.lower() \
-                    or "Continuity" in str(d.deviceType() or "")
+                skip = _not_a_room_camera(name) or model.startswith(("iPhone", "iPad")) \
+                    or "BuiltIn" in str(d.deviceType() or "") or "Continuity" in str(d.deviceType() or "")
                 out.append((i, _key(name, model, seen), name, skip))
             return out
         if system == "Windows":
             from pygrabber.dshow_graph import FilterGraph  # DirectShow: the same list OpenCV opens
-            return [(i, _key(n, n, seen), n.strip() or "USB camera", False)
+            return [(i, _key(n, n, seen), n.strip() or "USB camera", _not_a_room_camera(n))
                     for i, n in enumerate(FilterGraph().get_input_devices())]
         if system == "Linux":
             from pathlib import Path
@@ -74,7 +83,7 @@ def _named_cameras() -> Optional[list[tuple[int, str, str, bool]]]:
                 if (p / "index").exists() and (p / "index").read_text().strip() != "0":
                     continue  # a camera's second (metadata) node
                 name = (p / "name").read_text().strip() if (p / "name").exists() else "USB camera"
-                out.append((int(p.name[5:]), _key(name, name, seen), name, False))
+                out.append((int(p.name[5:]), _key(name, name, seen), name, _not_a_room_camera(name)))
             return out
     except Exception:  # noqa: BLE001
         return None

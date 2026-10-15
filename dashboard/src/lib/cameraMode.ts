@@ -89,9 +89,12 @@ export function openCamera(deviceId: string): Promise<MediaStream> {
   });
 }
 
+const NOT_A_ROOM_CAMERA = /facetime|integrated|built-?in|truevision|iphone|ipad|desk view|virtual|obs/i;
+
 export async function listCameras(): Promise<MediaDeviceInfo[]> {
   const all = await navigator.mediaDevices.enumerateDevices();
-  return all.filter((d) => d.kind === "videoinput" && d.deviceId);
+  // Never the computer's own built-in camera, a phone, or a virtual camera — only cameras plugged in for counting.
+  return all.filter((d) => d.kind === "videoinput" && d.deviceId && !NOT_A_ROOM_CAMERA.test(d.label));
 }
 
 /** A stable short key for a camera on this browser (the device id is long and private). */

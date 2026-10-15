@@ -18,7 +18,7 @@ In **Live** mode you don't add USB cameras by hand. A camera appears here by its
 For each camera, an administrator can:
 
 - tap the **pencil** to set its **name**, the **room** (zone) it covers and the room's **seat count**. Set the seat count so **Seats left** and the **filling up** phone alerts work.
-- tap **Switch off** to stop counting a camera you don't want (for example a laptop's built-in camera). Switched-off cameras are listed under **Switched off**, with **Switch back on**.
+- tap **Switch off** to stop counting a camera you don't want. (A computer's own built-in camera is never used, so it never appears here.) Switched-off cameras are listed under **Switched off**, with **Switch back on**.
 
 **Camera computers** lists every computer that counts for you, with a green dot when it's **Online**, its version and when it was last seen. **Pair a camera computer** gives the code the installer asks for.
 

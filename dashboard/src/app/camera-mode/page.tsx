@@ -215,8 +215,12 @@ export default function CameraModePage() {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't use cameras. Use Chrome or Edge.");
       setStep("Asking to use the cameras…");
       // One request so the browser asks permission and reveals camera names.
-      const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      probe.getTracks().forEach((t) => t.stop());
+      // Only if not already allowed: asking opens the computer's default camera for a moment.
+      const perm = await navigator.permissions?.query({ name: "camera" as PermissionName }).catch(() => null);
+      if (perm?.state !== "granted") {
+        const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        probe.getTracks().forEach((t) => t.stop());
+      }
       if (!engine.current) {
         engine.current = await loadEngine((p, s) => { setProgress(Math.round(p)); setStep(s); });
         setEngineInfo(engine.current.kind === "accurate"
@@ -224,7 +228,7 @@ export default function CameraModePage() {
           : "Lighter AI — this computer’s graphics are too slow for the most accurate AI (a computer with better graphics, in Chrome or Edge, counts more people)");
       }
       await syncCameras();
-      if (![...cams.current.values()].some((c) => c.stream)) throw new Error("No camera found. Plug a camera into this computer, then press Start again.");
+      if (![...cams.current.values()].some((c) => c.stream)) throw new Error("No camera found. Plug your camera into this computer, then press Start again. (The computer's own built-in camera is never used.)");
       running.current = true;
       setPhase("running");
       countLoop();

@@ -39,7 +39,7 @@ Tick **Start counting by itself whenever this page is opened on this computer**.
 
 ## More than one camera
 
-Plug in as many cameras as the computer takes. Each one appears on the page within a few seconds and gets its own picture and count. To stop counting one camera (for example a laptop's built-in camera), untick **Count** under its picture.
+Plug in as many cameras as the computer takes. Each one appears on the page within a few seconds and gets its own picture and count. To stop counting one camera, untick **Count** under its picture. The computer's own built-in camera (like a MacBook's FaceTime camera) is never used.
 
 Each camera shows up on the [Cameras](/pages/cameras) page by itself. There, an administrator can give it a **name**, the **room** it covers and the room's **seat count**. Set the seat count so **Seats left** works and phones get **filling up** alerts.
 

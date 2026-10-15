@@ -69,8 +69,9 @@ page within a few seconds. Give it a name, a room and the room's seat count.
 - **Move cameras freely:** plug a camera into another computer that has Kyro and it
   keeps its name, room, seat count and history.
 - **Plug and play:** plug a USB camera in and it's counted. Unplug it and it
-  shows as offline. If you don't want a camera counted (for example a laptop's
-  built-in camera), press **Switch off** on the Cameras page.
+  shows as offline. The computer's own built-in camera (like a MacBook's FaceTime camera), phones
+  and virtual cameras are never used. Only cameras you plug in are. To stop
+  counting a plugged-in camera, press **Switch off** on the Cameras page.
 - **Starts by itself** whenever the computer turns on, and restarts itself if
   anything goes wrong.
 - **Updates itself.** When Kyro's AI is improved, the camera computer
