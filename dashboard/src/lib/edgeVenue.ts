@@ -11,6 +11,11 @@ export interface EdgeCamera extends Camera {
   kind: "usb" | "network" | "web";
   device_id: string;
   hidden: boolean;
+  /** Plugged in, waiting for an admin to say "yes, add it". */
+  pending?: boolean;
+  /** Its camera computer says it's plugged in right now. */
+  present?: boolean;
+  device_name?: string;
   fps: number;
   error_reason: string | null;
 }

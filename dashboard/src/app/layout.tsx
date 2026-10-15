@@ -7,6 +7,7 @@ import { SeatAlertProvider } from "@/lib/SeatAlertContext";
 import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 import { GlobalReviewOverlay } from "@/components/ui/GlobalReviewOverlay";
 import { GlobalSeatAlertOverlay } from "@/components/ui/GlobalSeatAlertOverlay";
+import { NewCameraPrompt } from "@/components/ui/NewCameraPrompt";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
 import { PageGuard } from "@/components/ui/PageGuard";
@@ -71,6 +72,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <GlobalReviewOverlay />
                 {/* Global "seat available" alert overlay — visible on every page */}
                 <GlobalSeatAlertOverlay />
+                {/* "We see you've connected a camera — add it to Kyro?" (admins, Live) */}
+                <NewCameraPrompt />
               </SeatAlertProvider>
             </ReviewProvider>
           </CameraProvider>

@@ -826,7 +826,7 @@ export default function CamerasPage() {
           <h1 className="text-xl font-bold text-white">Cameras</h1>
           <p className="text-sm text-gray-400 mt-0.5">
             {edge
-              ? (canManage ? "Cameras plugged into your camera computer appear here by themselves" : "The cameras Kyro is watching")
+              ? (canManage ? "Plug a camera into your camera computer and Kyro asks whether to add it" : "The cameras Kyro is watching")
               : (canManage ? "Add cameras and rename zones any time" : "The cameras Kyro is watching")}
           </p>
         </div>

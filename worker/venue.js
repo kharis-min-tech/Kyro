@@ -35,6 +35,7 @@ export class VenueHub extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
     this.lastSample = new Map();
+    this.seenAt = new Map();   // camera_id → when its computer last said it's plugged in
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
@@ -176,17 +177,22 @@ export class VenueHub extends DurableObject {
         // A newly plugged-in camera (camera computer or Camera mode): add it with sensible defaults.
         const n = Object.keys(cams).length + 1;
         const label = clean(c.label, 60);
+        const kind = clean(c.kind, 10) || "usb";
         cams[camera_id] = {
-          camera_id, device_id: device.id, key, kind: clean(c.kind, 10) || "usb", label,
+          camera_id, device_id: device.id, key, kind, label,
           name: label || `Camera ${n}`, zone_name: label || `Camera ${n}`,
           zone_capacity: 0, zone_order: n, location: "indoor", hidden: false, created_at: new Date(now).toISOString(),
+          // A camera plugged into a camera computer waits for an admin to say
+          // "yes, add it" (the website asks). Camera Mode cameras were started on purpose.
+          pending: kind === "usb",
         };
-        // The same camera moved from another computer? It keeps its name, room, seats and history.
+        // The same camera moved from another computer? It keeps its name, room, seats and history — no need to ask.
         const old = this.movedFrom(cams, live, camera_id, device.id, label);
-        if (old) await this.takeOver(cams, live, old, camera_id);
+        if (old) { await this.takeOver(cams, live, old, camera_id); cams[camera_id].pending = false; }
         changed = true;
       }
-      if (cams[camera_id].hidden) continue;
+      this.seenAt.set(camera_id, now);
+      if (cams[camera_id].hidden || cams[camera_id].pending || c.status === "standby") continue;
       live[camera_id] = {
         current: num(c.current, 0, 100000), peak: num(c.peak, 0, 100000),
         entries: num(c.entries, 0, 10000000), exits: num(c.exits, 0, 10000000),
@@ -212,13 +218,15 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("live", live);
     await this.capacityAlerts(cams, live);
 
-    // Tell the box which cameras the website has switched off.
-    const off = Object.values(cams).filter((c) => c.device_id === device.id && c.hidden).map((c) => c.key);
+    // Tell the box which cameras it may use (added on the website) and which not.
+    const mine = Object.values(cams).filter((c) => c.device_id === device.id && c.kind !== "network");
+    const allowed = mine.filter((c) => !c.hidden && !c.pending).map((c) => c.key);
+    const off = mine.filter((c) => c.hidden || c.pending).map((c) => c.key);
     const urls = await this.get("streams", {});
     const streams = Object.values(cams)
       .filter((c) => c.device_id === device.id && c.kind === "network" && !c.hidden && urls[c.camera_id])
       .map((c) => ({ key: c.key, url: urls[c.camera_id] }));
-    return json({ ok: true, disabled: off, streams, report_every_s: 2, snapshot_every_s: 20 });
+    return json({ ok: true, allowed, disabled: off, streams, report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -330,14 +338,16 @@ export class VenueHub extends DurableObject {
     const live = await this.get("live", {});
     const devices = await this.get("devices", {});
     return Object.values(cams)
-      .filter((c) => (includeHidden || !c.hidden) && devices[c.device_id])
+      .filter((c) => (includeHidden || (!c.hidden && !c.pending)) && devices[c.device_id])
       .sort((a, b) => a.zone_order - b.zone_order)
       .map((c) => ({
         camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? (/^usb-\d+$/.test(c.key) ? `USB camera ${Number(c.key.slice(4)) + 1}` : "USB camera")
           : c.kind === "web" ? `Camera mode · ${devices[c.device_id]?.name ?? "browser"}` : c.address || "Network camera",
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
-        hidden: !!c.hidden, fps: live[c.camera_id]?.fps ?? 0, error_reason: live[c.camera_id]?.error_reason ?? null,
+        hidden: !!c.hidden, pending: !!c.pending, device_name: devices[c.device_id]?.name ?? "",
+        // Plugged in right now (its computer mentioned it in the last 30 s)?
+        present: Date.now() - (this.seenAt.get(c.camera_id) ?? 0) < 30_000, fps: live[c.camera_id]?.fps ?? 0, error_reason: live[c.camera_id]?.error_reason ?? null,
       }));
   }
 
@@ -545,7 +555,7 @@ export class VenueHub extends DurableObject {
     if (body.zone_capacity !== undefined) c.zone_capacity = num(body.zone_capacity, 0, 100000);
     if (body.zone_order !== undefined) c.zone_order = num(body.zone_order, 0, 1000);
     if (body.location !== undefined) c.location = body.location === "queue" ? "queue" : "indoor";
-    if (body.hidden !== undefined) c.hidden = !!body.hidden;
+    if (body.hidden !== undefined) { c.hidden = !!body.hidden; c.pending = false; }   // "Yes, add it" / "No"
     await this.ctx.storage.put("cameras", cams);
     return json({ ok: true });
   }

@@ -20,6 +20,8 @@ import re
 import cv2
 import numpy as np
 
+from kyro_box import settings
+
 log = logging.getLogger("kyro.box.cameras")
 
 MAX_USB_SLOTS = int(os.environ.get("KYRO_BOX_USB_SLOTS", "8"))
@@ -202,7 +204,13 @@ class Camera:
 class CameraManager:
     def __init__(self) -> None:
         self.cameras: dict[str, Camera] = {}
-        self.disabled: set[str] = set()
+        # Cameras the website said "yes, add it" to. None = no answer yet. A camera
+        # not on the list is never opened — the website asks an admin first.
+        # Remembered, so after a restart without internet the added cameras still count.
+        saved = settings.load().get("allowed_cameras")
+        self.allowed: Optional[set[str]] = set(saved) if isinstance(saved, list) else None
+        self.standby: list[dict] = []        # plugged in, waiting for a yes (or switched off)
+        self._probed: dict[str, float] = {}
         self._lock = threading.Lock()
 
     def active(self) -> list[Camera]:
@@ -221,13 +229,35 @@ class CameraManager:
         named = _named_cameras()
         misses = 0
         slots = [(i, f"usb-{i}", f"USB camera {i + 1}", False) for i in range(MAX_USB_SLOTS)] if named is None else named
+        standby = []
         for i, key, label, skip in slots:
             if skip:
                 continue
             if key in in_use:
                 misses = 0
                 continue
-            if key in self.disabled:
+            if self.allowed is None or key not in self.allowed:
+                # Not added on the website (yet): tell it the camera is here, don't open it.
+                if named is not None:
+                    standby.append({"key": key, "label": label})
+                    continue
+                # No camera names on this computer: a quick look (once a minute) is the only
+                # way to know whether this slot has a camera.
+                if time.time() - self._probed.get(key, 0) < 60:
+                    if self._probed.get(key + "?"):
+                        standby.append({"key": key, "label": label})
+                    continue
+                cap = _open_usb(i)
+                self._probed[key] = time.time()
+                self._probed[key + "?"] = cap is not None
+                if cap is None:
+                    misses += 1
+                    if misses >= 2:
+                        break
+                    continue
+                cap.release()
+                misses = 0
+                standby.append({"key": key, "label": label})
                 continue
             cap = _open_usb(i)
             if cap is None:
@@ -239,6 +269,7 @@ class CameraManager:
             log.info("Found %s in slot %d", label, i)
             with self._lock:
                 self.cameras[key] = Camera(key, "usb", label, cap)
+        self.standby = standby
 
     def sync_network(self, streams: list[dict]) -> None:
         """Match the network cameras to the list the website sent."""
@@ -253,12 +284,18 @@ class CameraManager:
                     log.info("Adding network camera %s", key)
                     self.cameras[key] = Camera(key, "network", "Network camera", None, url)
 
-    def set_disabled(self, keys: list[str]) -> None:
-        self.disabled = set(keys)
+    def set_allowed(self, keys: list[str]) -> None:
+        """The cameras added on the website; any other USB camera is closed."""
+        if self.allowed != set(keys):
+            cfg = settings.load()
+            cfg["allowed_cameras"] = sorted(keys)
+            settings.save(cfg)
+        self.allowed = set(keys)
         with self._lock:
             for key in list(self.cameras):
-                if key in self.disabled:
-                    log.info("Camera %s switched off on the website", key)
+                cam = self.cameras[key]
+                if cam.kind == "usb" and key not in self.allowed:
+                    log.info("Camera %s isn't added on the website — closing it", key)
                     self.cameras.pop(key).stop()
 
     def stop_all(self) -> None:

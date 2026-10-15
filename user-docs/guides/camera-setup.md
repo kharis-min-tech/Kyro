@@ -61,14 +61,16 @@ need to type the code at all.
 The first install downloads Python and the AI, which takes 10–20 minutes.
 When it asks, **type the pairing code** from step 1.
 
-**3. Plug in your cameras.** That's it. Each USB camera appears on the Cameras
-page within a few seconds. Give it a name, a room and the room's seat count.
+**3. Plug in your cameras.** Within a few seconds Kyro pops up on the website:
+*"We see you've connected … Do you want it on Kyro?"* Click **Yes, add it** and it
+starts counting and showing live. (Kyro never opens a camera until you say yes.)
+Then, on the Cameras page, give it a name, a room and the room's seat count.
 
 ### After that, nothing to do
 
 - **Move cameras freely:** plug a camera into another computer that has Kyro and it
   keeps its name, room, seat count and history.
-- **Plug and play:** plug a USB camera in and it's counted. Unplug it and it
+- **Plug and play:** plug a USB camera in, click **Yes** when Kyro asks, and it's counted. Unplug it and it
   shows as offline. The computer's own built-in camera (like a MacBook's FaceTime camera), phones
   and virtual cameras are never used. Only cameras you plug in are. To stop
   counting a plugged-in camera, press **Switch off** on the Cameras page.

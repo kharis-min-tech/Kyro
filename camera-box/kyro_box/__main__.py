@@ -100,6 +100,9 @@ class Box:
                 "status": "error" if error or stale else "online", "error": error,
                 "fps": cam.fps, "width": w, "height": h,
             })
+        # Plugged in but not added on the website yet: the website asks an admin.
+        for c in self.cameras.standby:
+            out.append({"key": c["key"], "kind": "usb", "label": c["label"], "status": "standby"})
         return out
 
     def _send_snapshots(self, server: str, token: str) -> None:
@@ -133,7 +136,7 @@ class Box:
                 continue
             try:
                 res = cloud.report(cfg["server"], cfg["token"], self._camera_report())
-                self.cameras.set_disabled(res.get("disabled", []))
+                self.cameras.set_allowed(res.get("allowed", []))
                 self.cameras.sync_network(res.get("streams", []))
                 self.report_every = float(res.get("report_every_s", 5))
                 self.snapshot_every = float(res.get("snapshot_every_s", 20))
