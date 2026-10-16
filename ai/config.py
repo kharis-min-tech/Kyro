@@ -50,6 +50,12 @@ class DetectionConfig:
     # COUNTED is decided by the tracker (new_track_thresh + min_hits), not
     # by this cut-off.
     confidence_threshold: float = float(os.getenv("DETECTION_CONF", "0.10"))
+    # The live headcount counts a person when the model is at least this sure
+    # (tracking still sees everything ≥ confidence_threshold). Chosen on the
+    # tuning half of ai/eval's labelled test set: 0.30 gave the lowest
+    # headcount error (0.25 counted more objects and body parts as people,
+    # 0.35+ started missing real people). See ai/eval/README.md.
+    count_confidence: float = float(os.getenv("DETECTION_COUNT_CONF", "0.30"))
     # NMS IoU — HIGHER means less aggressive suppression, which matters when
     # people are seated close together (e.g. a full pew): two real, adjacent
     # people can produce overlapping boxes that a low NMS threshold would

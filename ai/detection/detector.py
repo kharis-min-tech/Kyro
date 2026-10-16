@@ -263,6 +263,8 @@ class PersonDetector:
 
 
 SURE = 0.5
+# A box this wide (share of the bigger box) or wider, inside it and level with its top, is the same person.
+HALF_MIN_WIDTH = 0.5
 
 
 def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
@@ -288,7 +290,7 @@ def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
     sure = scores >= SURE
     keep = np.ones(len(boxes), dtype=bool)
     # The same person twice: a box for just their top half inside a box for
-    # all of them — nearly as wide, starting at the same head height (however
+    # all of them — at least half as wide, starting at the same head height (however
     # sure the model is of both). Someone behind them is narrower or sticks out.
     for i in range(len(boxes)):
         for j in range(len(boxes)):
@@ -296,7 +298,7 @@ def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
                 continue
             ix = max(0.0, min(boxes[i, 2], boxes[j, 2]) - max(boxes[i, 0], boxes[j, 0]))
             iy = max(0.0, min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1]))
-            if ix * iy / area[i] >= 0.9 and abs(boxes[i, 1] - boxes[j, 1]) <= 0.1 * h[j] and w[i] >= 0.7 * w[j]:
+            if ix * iy / area[i] >= 0.9 and abs(boxes[i, 1] - boxes[j, 1]) <= 0.1 * h[j] and w[i] >= HALF_MIN_WIDTH * w[j]:
                 keep[i] = False
                 break
     for i in np.where(~sure & keep)[0]:

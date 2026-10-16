@@ -118,7 +118,10 @@ class FaceReIdConfig:
     # are actually available for a given comparison).
     weight_appearance: float = float(os.getenv("FACE_REID_WEIGHT_APPEARANCE", "0.30"))
     weight_shape: float = float(os.getenv("FACE_REID_WEIGHT_SHAPE", "0.20"))
-    weight_face: float = float(os.getenv("FACE_REID_WEIGHT_FACE", "0.20"))
+    # Off by default (0): a face fingerprint is biometric data, and Kyro's
+    # counts don't need it — clothing, build and position are enough to tell
+    # a returning person, anonymously. When 0, faces aren't even looked for.
+    weight_face: float = float(os.getenv("FACE_REID_WEIGHT_FACE", "0"))
     weight_deep: float = float(os.getenv("FACE_REID_WEIGHT_DEEP", "0.40"))
     weight_spatial: float = float(os.getenv("FACE_REID_WEIGHT_SPATIAL", "0.15"))
 
@@ -387,7 +390,7 @@ class FaceReId:
 
         cand_face = _avg(cand.face)
         ident_face = _avg(ident.face)
-        if cand_face is not None and ident_face is not None:
+        if cand_face is not None and ident_face is not None and self.cfg.weight_face > 0:
             s = _cosine_sim(cand_face, ident_face)
             breakdown["face"] = s
             weighted_sum += self.cfg.weight_face * s
@@ -488,7 +491,7 @@ class FaceReId:
         shape = self._extract_shape(person_crop)
         if shape is not None:
             pending.shape.append(shape)
-        face_crop = self._detect_face(person_crop)
+        face_crop = self._detect_face(person_crop) if self.cfg.weight_face > 0 else None
         if face_crop is not None:
             face_emb = self._extract_face_embedding(face_crop)
             if face_emb is not None:

@@ -31,11 +31,17 @@ export interface DetectOptions {
   nearOverlap?: number;
   /** The model's input size (640, or 1280 for the high-detail model). */
   size?: number;
+  /** false = skip tidy() (only for measuring what tidy() changes; see ai/eval). */
+  tidy?: boolean;
 }
 
-/** A person counts when the model is at least this sure. 0.2 gave the
- *  closest headcounts on crowded test shots (0.3 missed more people than it saved). */
-export const COUNT_CONFIDENCE = 0.2;
+/** A person counts when the model is at least this sure. Chosen on the tuning
+ *  half of ai/eval's hand-labelled test set (410 frames, 2,034 people): with
+ *  tidy(), 0.3 gave the lowest headcount error; 0.2 counted many objects and
+ *  body parts as people, 0.35+ started missing real people. Same as the Camera Box. */
+export const COUNT_CONFIDENCE = 0.3;
+/** A box this sure or more can "contain" a part-of-a-person box (tidy()). */
+const PART_CONTAINER_MIN = 0.2;
 
 /** Letterbox one region of the picture into the model's 640×640 input (bilinear). */
 function toTensor(px: Pixels, sx: number, sy: number, sw: number, sh: number, S: number) {
@@ -121,7 +127,8 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
 
   const whole = await pass(0, 0, px.width, px.height);
   const grid = tileGrid(px, opts.tiles ?? "auto", size);
-  if (grid <= 1) return tidy(whole, px.height);
+  const finish = (list: Person[]) => (opts.tidy === false ? list : tidy(list, px.height));
+  if (grid <= 1) return finish(whole);
 
   const W = px.width, H = px.height, ov = opts.tileOverlap ?? 0.25;
   const tw = Math.floor(W / (grid - (grid - 1) * ov)), th = Math.floor(H / (grid - (grid - 1) * ov));
@@ -150,9 +157,9 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
   const containment = opts.mergeContainment ?? 0.6;
   // Drop a tile-edge fragment lying mostly inside a bigger box. Only fragments:
   // someone sitting behind another person also lies inside their box.
-  return tidy(merged
+  return finish(merged
     .filter((p) => !p.edge || !merged.some((q) => q !== p && area(q.box) >= area(p.box) * 1.3 && overlap(p.box, q.box) / (area(p.box) || 1) > containment))
-    .map(({ box, score }) => ({ box, score })), px.height);
+    .map(({ box, score }) => ({ box, score })));
 }
 
 /** A box the AI is fairly sure is a whole person. */
@@ -172,11 +179,11 @@ const SURE = 0.5;
  */
 export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinScore = 0.4): Person[] {
   // The same person twice: a box for just their top half inside a box for all
-  // of them — nearly as wide, starting at the same head height (however sure
+  // of them — at least half as wide, starting at the same head height (however sure
   // the AI is of both). Someone behind them is narrower or sticks out.
-  const halfOf = (p: Person, q: Person) => p !== q && q.score >= COUNT_CONFIDENCE && area(q.box) >= area(p.box) * 1.3
+  const halfOf = (p: Person, q: Person) => p !== q && q.score >= PART_CONTAINER_MIN && area(q.box) >= area(p.box) * 1.3
     && overlap(p.box, q.box) / (area(p.box) || 1) >= 0.9 && Math.abs(p.box[1] - q.box[1]) <= 0.1 * (q.box[3] - q.box[1])
-    && p.box[2] - p.box[0] >= 0.7 * (q.box[2] - q.box[0]);
+    && p.box[2] - p.box[0] >= 0.5 * (q.box[2] - q.box[0]);
   const whole: Person[] = [];
   for (const p of [...people].sort((a, b) => area(b.box) - area(a.box))) if (!whole.some((q) => halfOf(p, q))) whole.push(p);
   people = people.filter((p) => whole.includes(p));
@@ -193,7 +200,8 @@ export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinS
 /** Smooths the headcount: the middle of the last few readings, so one odd picture doesn't make it jump. */
 export class SteadyCount {
   private readings: number[] = [];
-  constructor(private size = 5) {}
+  private size: number;
+  constructor(size = 5) { this.size = size; }
   add(n: number): number {
     this.readings.push(n);
     if (this.readings.length > this.size) this.readings.shift();

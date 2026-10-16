@@ -148,6 +148,23 @@ camera covering a whole hall:
 Most of the people it still misses are hidden behind someone else, or so far
 away they're only a few pixels tall. Better camera placement fixes most of these.
 
+**Not counting objects (October 2026 check).** Kyro was tested on 410 pictures
+where every person had been outlined by hand, including 80 rooms with no people
+but plenty of chairs, sofas, screens and bags. Changes made after that check:
+
+- One person is no longer counted twice (a box for their whole body *and* one
+  for their top half, hands or arm): those extra boxes fell by about half.
+- Objects counted as people fell by about 40%. In the 80 empty rooms, Kyro
+  wrongly counted something in 4–5. The clear mistakes left are **statues and
+  sculptures**, which look like people to the AI. If your camera sees a statue,
+  tell us and point the camera away from it for now.
+- A person who moves around is counted from the very first picture, and once.
+
+What the number means: **people the camera can see right now**, steadied over
+the last few pictures. Someone completely hidden (behind a pillar) drops out
+while hidden and comes back when visible. Cameras should cover separate areas:
+two cameras seeing the same people count them twice.
+
 ### Place cameras so everyone's head is visible
 
 - **Mount high, angled down** (about 30–45°). From head height, the front rows

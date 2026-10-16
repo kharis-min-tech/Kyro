@@ -112,3 +112,34 @@ def test_hands_inside_person_dropped():
 def test_person_behind_someone_kept():
     # someone with raised arms (wide box) and a small choir head inside it, near its top
     assert len(_t([[530, 400, 1500, 1270, 0.9], [366, 470, 454, 542, 0.28], [1067, 429, 1128, 538, 0.25]], 1280)) == 3
+
+
+def test_narrow_upper_body_box_of_same_person_dropped():
+    # regression (ai/eval enter_leave): a 0.96 box on a man's upper body,
+    # 59% of his width, level with his head — the same man, not a 4th person
+    kept = _t([[1296, 420, 1641, 1041, 0.96], [1430, 421, 1633, 613, 0.96]])
+    assert len(kept) == 1
+
+
+def test_two_people_side_by_side_both_kept():
+    assert len(_t([[269, 420, 629, 1039, 0.96], [840, 420, 1079, 1039, 0.93]])) == 2
+
+
+# ── no picture from a capture card / transmitter ───────────────────────────
+import cv2  # noqa: E402
+import sys as _sys  # noqa: E402
+_sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[1] / "camera-box"))
+from kyro_box.cameras import no_signal  # noqa: E402
+
+
+def test_no_signal_screens_detected():
+    blue = np.zeros((1080, 1920, 3), np.uint8); blue[:] = (200, 0, 0)
+    t = blue.copy(); cv2.putText(t, "NO SIGNAL", (600, 540), cv2.FONT_HERSHEY_SIMPLEX, 4, (255, 255, 255), 8)
+    assert no_signal(blue) and no_signal(t) and no_signal(np.zeros((720, 1280, 3), np.uint8))
+
+
+def test_real_dim_picture_is_not_no_signal():
+    rng = np.random.default_rng(0)
+    room = (rng.integers(0, 60, (1080, 1920, 3))).astype(np.uint8)
+    room[300:900, 500:800] = 40; room[200:600, 1200:1400] = 15
+    assert not no_signal(cv2.GaussianBlur(room, (31, 31), 0) * 3)

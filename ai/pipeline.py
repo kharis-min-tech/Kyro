@@ -31,9 +31,6 @@ from ai.tracking.bytetrack import ByteTracker, TrackedPerson
 logger = logging.getLogger(__name__)
 
 
-PEOPLE_IN_FRAME_CONFIDENCE = 0.25
-
-
 @dataclass
 class PipelineResult:
     """Full output of one processed frame."""
@@ -205,7 +202,7 @@ class VisionPipeline:
             total_ms=round(total_ms, 2),
             movement_context={tid: m.value for tid, m in movement_context.items()},
             newly_available_seat_ids=list(self._seat_engine.newly_available_seat_ids),
-            people_in_frame=sum(1 for d in detections if d.confidence >= PEOPLE_IN_FRAME_CONFIDENCE),
+            people_in_frame=sum(1 for d in detections if d.confidence >= self._cfg.detection.count_confidence),
         )
 
     def _sync_lost_window(self) -> None:

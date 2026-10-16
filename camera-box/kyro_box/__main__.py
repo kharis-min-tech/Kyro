@@ -93,6 +93,9 @@ class Box:
             error = cam.error or (s.error if s else None)
             if error is None and self.counter is None:
                 error = "Starting the counting AI…"
+            elif error is None and stale and s is not None and s.counted_at:
+                # Never pass an old number off as live.
+                error = f"No new count for {int(time.time() - s.counted_at)} s — the number shown is out of date"
             out.append({
                 "key": cam.key, "kind": cam.kind, "label": cam.label,
                 "current": s.current if s else 0, "peak": s.peak if s else 0,
