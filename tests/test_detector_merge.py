@@ -81,3 +81,34 @@ def test_small_far_person_found_only_by_a_tile_is_kept():
     whole = ([[800, 300, 1000, 860]], [0.9])
     tile0 = ([[100, 100, 130, 170]], [0.5])    # someone far away, tiny
     assert _FakeModelDetector([whole, tile0]).count(frame) == 2
+
+
+# ── _tidy: one person must not be counted twice ─────────────────────────────
+from ai.detection.detector import _tidy  # noqa: E402
+
+
+def _t(rows, frame_h=1080):
+    b = np.array([r[:4] for r in rows], dtype=np.float32)
+    s = np.array([r[4] for r in rows], dtype=np.float32)
+    kb, _ = _tidy(b, s, frame_h)
+    return kb.tolist()
+
+
+def test_top_half_box_of_same_person_dropped():
+    # whole sitting man + a box for just his top half (both confident)
+    kept = _t([[978, 459, 1217, 907, 0.91], [979, 460, 1179, 613, 0.90]])
+    assert len(kept) == 1 and kept[0][3] == 907
+
+
+def test_unsure_big_box_dropped():
+    # a box straddling two people, tall, low confidence
+    assert len(_t([[5, 10, 971, 1047, 0.88], [411, 27, 1176, 1030, 0.36]])) == 1
+
+
+def test_hands_inside_person_dropped():
+    assert len(_t([[1, 21, 838, 1057, 0.54], [168, 926, 736, 1076, 0.31]])) == 1
+
+
+def test_person_behind_someone_kept():
+    # someone with raised arms (wide box) and a small choir head inside it, near its top
+    assert len(_t([[530, 400, 1500, 1270, 0.9], [366, 470, 454, 542, 0.28], [1067, 429, 1128, 538, 0.25]], 1280)) == 3

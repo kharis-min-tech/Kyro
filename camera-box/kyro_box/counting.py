@@ -20,6 +20,7 @@ import cv2
 log = logging.getLogger("kyro.box.counting")
 
 PIPELINE_W, PIPELINE_H = 1280, 720
+STEADY_OVER = 3            # pictures the headcount is steadied over
 
 
 def pick_device() -> str:
@@ -60,6 +61,7 @@ class Counter:
                  config.detection.device)
         self._detector = PersonDetector(config.detection)
         self._pipelines: dict[str, object] = {}
+        self._recent: dict[str, list[int]] = {}
         self._day = dt.date.today()
         self._lock = threading.Lock()
         self.ready = True
@@ -81,6 +83,7 @@ class Counter:
         for key in list(self._pipelines):
             if key not in keys_still_present:
                 self._pipelines.pop(key, None)
+                self._recent.pop(key, None)
 
     def new_day_check(self) -> None:
         """Start fresh totals (peak, entries, exits) each day."""
@@ -89,6 +92,7 @@ class Counter:
             self._day = today
             for p in self._pipelines.values():
                 p.reset_session()
+            self._recent.clear()
             for s in self.stats.values():
                 s.peak = s.entries = s.exits = 0
 
@@ -104,7 +108,14 @@ class Counter:
             s.error = f"Counting error: {e}"[:120]
             return
         a = result.attendance
-        s.current, s.peak = a.current_attendance, max(s.peak, a.peak_attendance)
+        # Headcount: the people seen in each picture, steadied over the last
+        # few pictures (the middle reading), so one odd picture doesn't make it
+        # jump — the same way Camera Mode counts. Entries/exits come from tracking.
+        recent = self._recent.setdefault(key, [])
+        recent.append(result.people_in_frame)
+        del recent[:-STEADY_OVER]
+        s.current = sorted(recent)[len(recent) // 2]
+        s.peak = max(s.peak, s.current)
         s.entries, s.exits = a.total_entries, a.total_exits
         s.counted_at, s.error = time.time(), None
         s.seconds_per_count = round(time.time() - t0, 2)

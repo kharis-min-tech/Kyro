@@ -143,6 +143,7 @@ class PersonDetector:
             boxes, scores = _merge(np.concatenate(all_b), np.concatenate(all_s), np.concatenate(all_e),
                                    self._cfg.merge_iou, self._cfg.merge_containment)
 
+        boxes, scores = _tidy(boxes, scores, frame.shape[0])
         detections = [
             Detection(bbox=b.astype(np.float32), confidence=float(c), class_id=0)
             for b, c in zip(boxes, scores)
@@ -259,6 +260,57 @@ class PersonDetector:
             return YOLO(str(model_path))
         except Exception:  # noqa: BLE001 — fall back to Ultralytics' default location
             return YOLO(model_name)
+
+
+SURE = 0.5
+
+
+def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
+          big_height: float = 0.25, big_min_score: float = 0.4) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Remove the model's unsure guesses that aren't extra people (the cause of
+    one person near the camera being counted twice) — same rules as Camera
+    Mode (dashboard/src/lib/peopleDetector.ts tidy()):
+      - a big box (taller than big_height of the frame) it's unsure about:
+        people near the camera are clearly visible, so the model is sure of
+        them; an unsure big box is part of someone or straddles two people;
+      - an unsure wide, flat box inside a person it IS sure about: their
+        hands, lap, bag or a table edge — not a person's shape.
+      - a box for just someone's top half inside the box for all of them,
+        starting at the same head height.
+    Unsure person-shaped boxes are kept, even inside someone else's box: in a
+    crowd the people behind (a choir behind raised arms) look like that.
+    """
+    if not len(boxes):
+        return boxes, scores
+    w, h = boxes[:, 2] - boxes[:, 0], boxes[:, 3] - boxes[:, 1]
+    area = np.maximum(w * h, 1e-6)
+    sure = scores >= SURE
+    keep = np.ones(len(boxes), dtype=bool)
+    # The same person twice: a box for just their top half inside a box for
+    # all of them — nearly as wide, starting at the same head height (however
+    # sure the model is of both). Someone behind them is narrower or sticks out.
+    for i in range(len(boxes)):
+        for j in range(len(boxes)):
+            if i == j or not keep[j] or scores[j] < 0.2 or area[j] < area[i] * 1.3:
+                continue
+            ix = max(0.0, min(boxes[i, 2], boxes[j, 2]) - max(boxes[i, 0], boxes[j, 0]))
+            iy = max(0.0, min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1]))
+            if ix * iy / area[i] >= 0.9 and abs(boxes[i, 1] - boxes[j, 1]) <= 0.1 * h[j] and w[i] >= 0.7 * w[j]:
+                keep[i] = False
+                break
+    for i in np.where(~sure & keep)[0]:
+        if h[i] > big_height * frame_h and scores[i] < big_min_score:
+            keep[i] = False
+            continue
+        if w[i] > 1.6 * h[i]:
+            for j in np.where(sure)[0]:
+                ix = max(0.0, min(boxes[i, 2], boxes[j, 2]) - max(boxes[i, 0], boxes[j, 0]))
+                iy = max(0.0, min(boxes[i, 3], boxes[j, 3]) - max(boxes[i, 1], boxes[j, 1]))
+                if area[j] >= area[i] * 1.5 and ix * iy / area[i] > 0.85:
+                    keep[i] = False
+                    break
+    return boxes[keep], scores[keep]
 
 
 def _merge(boxes: np.ndarray, scores: np.ndarray, at_tile_edge: np.ndarray,

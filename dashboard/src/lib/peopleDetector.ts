@@ -121,7 +121,7 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
 
   const whole = await pass(0, 0, px.width, px.height);
   const grid = tileGrid(px, opts.tiles ?? "auto", size);
-  if (grid <= 1) return whole;
+  if (grid <= 1) return tidy(whole, px.height);
 
   const W = px.width, H = px.height, ov = opts.tileOverlap ?? 0.25;
   const tw = Math.floor(W / (grid - (grid - 1) * ov)), th = Math.floor(H / (grid - (grid - 1) * ov));
@@ -150,9 +150,44 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
   const containment = opts.mergeContainment ?? 0.6;
   // Drop a tile-edge fragment lying mostly inside a bigger box. Only fragments:
   // someone sitting behind another person also lies inside their box.
-  return merged
+  return tidy(merged
     .filter((p) => !p.edge || !merged.some((q) => q !== p && area(q.box) >= area(p.box) * 1.3 && overlap(p.box, q.box) / (area(p.box) || 1) > containment))
-    .map(({ box, score }) => ({ box, score }));
+    .map(({ box, score }) => ({ box, score })), px.height);
+}
+
+/** A box the AI is fairly sure is a whole person. */
+const SURE = 0.5;
+
+/**
+ * Removes the AI's unsure guesses that aren't extra people — the cause of one
+ * person near the camera being counted twice:
+ *  - a big box it's unsure about: people near the camera are clearly visible,
+ *    so the AI is sure of them; an unsure big box is a part of someone (an arm,
+ *    a shoulder) or a box straddling two people;
+ *  - an unsure wide, flat box inside a person it IS sure about: their hands,
+ *    lap, bag or a table edge — not a person's shape;
+ *  - a box for just someone's top half inside the box for all of them.
+ * Unsure person-shaped boxes are kept even inside someone else's box: in a
+ * crowd, the people behind (a choir behind someone with raised arms) look like that.
+ */
+export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinScore = 0.4): Person[] {
+  // The same person twice: a box for just their top half inside a box for all
+  // of them — nearly as wide, starting at the same head height (however sure
+  // the AI is of both). Someone behind them is narrower or sticks out.
+  const halfOf = (p: Person, q: Person) => p !== q && q.score >= COUNT_CONFIDENCE && area(q.box) >= area(p.box) * 1.3
+    && overlap(p.box, q.box) / (area(p.box) || 1) >= 0.9 && Math.abs(p.box[1] - q.box[1]) <= 0.1 * (q.box[3] - q.box[1])
+    && p.box[2] - p.box[0] >= 0.7 * (q.box[2] - q.box[0]);
+  const whole: Person[] = [];
+  for (const p of [...people].sort((a, b) => area(b.box) - area(a.box))) if (!whole.some((q) => halfOf(p, q))) whole.push(p);
+  people = people.filter((p) => whole.includes(p));
+  const sure = people.filter((p) => p.score >= SURE);
+  return people.filter((p) => {
+    if (p.score >= SURE) return true;
+    const [x1, y1, x2, y2] = p.box;
+    if (y2 - y1 > bigHeight * frameH && p.score < bigMinScore) return false;
+    const wide = x2 - x1 > 1.6 * (y2 - y1);
+    return !(wide && sure.some((q) => area(q.box) >= area(p.box) * 1.5 && overlap(p.box, q.box) / (area(p.box) || 1) > 0.85));
+  });
 }
 
 /** Smooths the headcount: the middle of the last few readings, so one odd picture doesn't make it jump. */

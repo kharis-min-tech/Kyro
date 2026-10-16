@@ -31,6 +31,9 @@ from ai.tracking.bytetrack import ByteTracker, TrackedPerson
 logger = logging.getLogger(__name__)
 
 
+PEOPLE_IN_FRAME_CONFIDENCE = 0.25
+
+
 @dataclass
 class PipelineResult:
     """Full output of one processed frame."""
@@ -49,6 +52,11 @@ class PipelineResult:
     # this to capture a one-time evidence snapshot and raise an alert,
     # rather than firing every frame a seat merely remains available.
     newly_available_seat_ids: list[str] = field(default_factory=list)
+    # People the detector is reasonably sure of in THIS picture (no tracking).
+    # The Camera Box's live headcount is built from this (smoothed over a few
+    # pictures), like Camera Mode: tracking needs several close-together
+    # pictures to recognise someone, which a slow computer can't provide.
+    people_in_frame: int = 0
 
 
 class VisionPipeline:
@@ -197,6 +205,7 @@ class VisionPipeline:
             total_ms=round(total_ms, 2),
             movement_context={tid: m.value for tid, m in movement_context.items()},
             newly_available_seat_ids=list(self._seat_engine.newly_available_seat_ids),
+            people_in_frame=sum(1 for d in detections if d.confidence >= PEOPLE_IN_FRAME_CONFIDENCE),
         )
 
     def _sync_lost_window(self) -> None:

@@ -70,6 +70,11 @@ class AttendanceCounter:
         # occlusions. See `still_tracked_ids` in update(). Deliberately raw
         # track_ids, NEVER identity-mapped — see update() for why.
         self._tracked_ids: set = set()
+        # Raw track_ids that have been on screen, and when (update number) —
+        # and LOST tracks taken to be someone who reappeared under a new id.
+        self._visible_at: dict = {}
+        self._superseded: set = set()
+        self._tick: int = 0
         self._total_entries: int = 0
         self._total_exits:   int = 0
         self._peak:           int = 0
@@ -131,7 +136,23 @@ class AttendanceCounter:
         # dip every time anyone was briefly occluded. Someone who has really
         # left drops off once the tracker forgets them (max_age).
         remembered = set(still_tracked_ids) if still_tracked_ids is not None else current_track_ids
-        present_ids = current_track_ids | remembered
+        # But a person who moves (or turns) can be lost by the tracker and
+        # picked up again under a NEW track id while the old one is still
+        # remembered — counting both counted one person twice. So each track
+        # seen for the first time "uses up" one remembered-but-lost track
+        # (the most recently seen): it's most likely the same person back.
+        self._tick += 1
+        born = [t for t in current_track_ids if t not in self._visible_at]
+        for t in current_track_ids:
+            self._visible_at[t] = self._tick
+        self._superseded = {t for t in self._superseded if t in remembered and t not in current_track_ids}
+        lost = sorted((t for t in remembered - current_track_ids if t not in self._superseded),
+                      key=lambda t: self._visible_at.get(t, 0), reverse=True)
+        for _ in born:
+            if not lost:
+                break
+            self._superseded.add(lost.pop(0))
+        present_ids = current_track_ids | (remembered - self._superseded)
         self._active_ids = present_ids
         self._peak = max(self._peak, len(present_ids))
 
@@ -174,6 +195,7 @@ class AttendanceCounter:
         # Stop carrying resolution state for track_ids the tracker has
         # fully forgotten — keeps these sets bounded over a long session.
         self._resolved_track_ids &= tracked_now
+        self._visible_at = {t: v for t, v in self._visible_at.items() if t in tracked_now}
 
         if self._total_entries != entries_before or self._total_exits != exits_before:
             logger.debug(
@@ -222,6 +244,8 @@ class AttendanceCounter:
         self._seen_ids.clear()
         self._resolved_track_ids.clear()
         self._tracked_ids.clear()
+        self._visible_at.clear()
+        self._superseded.clear()
         self._total_entries = 0
         self._total_exits = 0
         self._peak = 0
