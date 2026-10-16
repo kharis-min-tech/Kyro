@@ -62,6 +62,7 @@ class Counter:
         self._detector = PersonDetector(config.detection)
         self._pipelines: dict[str, object] = {}
         self._recent: dict[str, list[int]] = {}
+        self.ignore_zones: dict[str, list] = {}   # camera key → "don't count this area" rectangles
         self._day = dt.date.today()
         self._lock = threading.Lock()
         self.ready = True
@@ -101,6 +102,7 @@ class Counter:
         s = self.stats.setdefault(key, CameraStats())
         try:
             pipeline = self._pipeline(key)
+            pipeline.ignore_zones = self.ignore_zones.get(key, [])
             small = cv2.resize(frame, (PIPELINE_W, PIPELINE_H)) if frame.shape[:2] != (PIPELINE_H, PIPELINE_W) else frame
             result = pipeline.process_frame(small, detect_frame=frame)
         except Exception as e:  # noqa: BLE001 — one bad picture must not stop counting

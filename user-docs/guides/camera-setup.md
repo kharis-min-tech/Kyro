@@ -155,9 +155,11 @@ but plenty of chairs, sofas, screens and bags. Changes made after that check:
 - One person is no longer counted twice (a box for their whole body *and* one
   for their top half, hands or arm): those extra boxes fell by about half.
 - Objects counted as people fell by about 40%. In the 80 empty rooms, Kyro
-  wrongly counted something in 4–5. The clear mistakes left are **statues and
-  sculptures**, which look like people to the AI. If your camera sees a statue,
-  tell us and point the camera away from it for now.
+  wrongly counted something in 4–5. The clear mistakes left were **statues and
+  sculptures**, which look like people to the AI. The installed version now
+  double-checks each person with a second AI that tells people from statues,
+  and for a statue your camera always sees you can
+  [mark an area not to count](/pages/cameras#don-t-count-an-area-statues-mannequins).
 - A person who moves around is counted from the very first picture, and once.
 
 What the number means: **people the camera can see right now**, steadied over
@@ -171,9 +173,13 @@ two cameras seeing the same people count them twice.
   hide everyone behind them. From above the stage, looking down the rows,
   every head is visible.
 - **Cover big rooms with more than one camera.** One camera per section
-  (front, back, balcony) means nobody is tiny in the picture. Give each
-  camera its own zone on the [Cameras](/pages/cameras) page so people aren't
-  counted twice.
+  (front, back, balcony) means nobody is tiny in the picture. Testing showed
+  this matters more than anything else: people at least about a twelfth of the
+  picture's height are found about 9 times in 10, people only a few
+  pixels tall about 6 times in 10. Cameras must **not overlap**: Kyro adds
+  cameras together and doesn't recognise the same person in two cameras, so
+  give each camera its own section and its own zone on the
+  [Cameras](/pages/cameras) page.
 - **Use 1080p or higher.** Kyro now uses the camera's full detail. A 4K camera
   sees the back rows much better than a 720p one.
 - **Light the room evenly.** Avoid pointing a camera at bright windows or

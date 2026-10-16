@@ -126,8 +126,11 @@ export interface CameraReport {
   fps: number; width: number; height: number;
 }
 
-/** Sends this browser's counts. Returns the cameras switched off on the website. */
-export async function sendReport(cameras: CameraReport[]): Promise<string[]> {
+export type Zone = [number, number, number, number];
+
+/** Sends this browser's counts. Returns the cameras switched off on the website,
+ *  and each camera's "don't count this area" rectangles (0–1 fractions). */
+export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]> }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -142,7 +145,10 @@ export async function sendReport(cameras: CameraReport[]): Promise<string[]> {
   }
   if (!res.ok) throw new Error(`The website didn't accept the counts (${res.status})`);
   const body = await res.json().catch(() => ({}));
-  return Array.isArray(body.disabled) ? body.disabled : [];
+  return {
+    disabled: Array.isArray(body.disabled) ? body.disabled : [],
+    zones: body.ignore_zones && typeof body.ignore_zones === "object" ? body.ignore_zones : {},
+  };
 }
 
 export async function sendPicture(key: string, canvas: HTMLCanvasElement): Promise<void> {

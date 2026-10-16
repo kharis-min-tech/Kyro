@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
+import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -78,6 +79,7 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
   onDelete: (id: string) => Promise<void>;
 }) {
   const [editing, setEditing]       = useState(false);
+  const [zonesOpen, setZonesOpen]   = useState(false);
   const [draft, setDraft]           = useState({
     name:          cam.name,
     zone_name:     cam.zone_name ?? cam.name,
@@ -245,6 +247,20 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
                 </span>
                 {edgeCam.error_reason && <span className="text-amber-400 break-words">· {edgeCam.error_reason}</span>}
               </div>
+            )}
+            {edgeCam && canManage && (
+              <div className="flex items-center gap-2 mb-2 text-xs">
+                <button onClick={() => setZonesOpen(true)} className="text-indigo-400 hover:text-indigo-300 underline">
+                  Don&apos;t count an area
+                </button>
+                {(edgeCam.ignore_zones?.length ?? 0) > 0 && (
+                  <span className="text-gray-500">· {edgeCam.ignore_zones!.length} area{edgeCam.ignore_zones!.length > 1 ? "s" : ""} not counted</span>
+                )}
+              </div>
+            )}
+            {zonesOpen && edgeCam && (
+              <IgnoreZonesEditor cameraId={cam.camera_id} initial={edgeCam.ignore_zones ?? []}
+                onClose={() => setZonesOpen(false)} onSaved={onUpdated} />
             )}
             {edgeCam && !cam.is_active && !edgeCam.hidden && (
               <p className="text-xs text-gray-500 mb-2 leading-relaxed">

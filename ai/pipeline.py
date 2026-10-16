@@ -21,7 +21,7 @@ import numpy as np
 
 from ai.analytics.counter import AttendanceCounter, AttendanceSnapshot
 from ai.config import KyroConfig
-from ai.detection.detector import PersonDetector
+from ai.detection.detector import in_ignore_zone, PersonDetector
 from ai.reid.face_reid import FaceReId
 from ai.seat_detection.occupancy import SeatOccupancyEngine
 from ai.seat_detection.seat import Seat
@@ -74,6 +74,7 @@ class VisionPipeline:
     ) -> None:
         self.camera_id = camera_id
         self._cfg = cfg
+        self.ignore_zones: list = []          # [[x1, y1, x2, y2], …] as 0–1 fractions
         self._frame_number = 0
 
         self._detector    = PersonDetector(cfg.detection)
@@ -136,6 +137,10 @@ class VisionPipeline:
         # than an occasional false positive slipping through here, since
         # later stages — min_hits confirmation, tracking — filter more).
         detections = self._filter_by_scale_plausibility(detections, frame.shape[0])
+        # "Don't count this area" (set per camera on the website, e.g. a statue).
+        if self.ignore_zones:
+            fh, fw = frame.shape[:2]
+            detections = [d for d in detections if not in_ignore_zone(d.bbox, self.ignore_zones, fw, fh)]
 
         # Stage 2: Track persons. Keep the "remember a hidden person" window
         # in seconds, whatever frame rate the model achieves on this machine.

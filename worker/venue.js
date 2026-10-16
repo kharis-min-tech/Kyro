@@ -31,6 +31,14 @@ const OFFLINE_AFTER_MS = 45_000;  // no report for this long → camera shown of
 const SAMPLE_EVERY_MS = 60_000;   // one history row per camera per minute
 const MAX_SNAPSHOT_BYTES = 400_000;
 
+/** Up to 10 rectangles [x1, y1, x2, y2] as 0–1 fractions of the picture. */
+function cleanZones(z) {
+  if (!Array.isArray(z)) return [];
+  return z.slice(0, 10).map((r) => (Array.isArray(r) ? r.slice(0, 4).map((v) => Math.min(1, Math.max(0, Number(v) || 0))) : null))
+    .filter((r) => r && r.length === 4 && r[2] - r[0] > 0.005 && r[3] - r[1] > 0.005)
+    .map((r) => r.map((v) => Math.round(v * 10000) / 10000));
+}
+
 export class VenueHub extends DurableObject {
   constructor(ctx, env) {
     super(ctx, env);
@@ -226,7 +234,10 @@ export class VenueHub extends DurableObject {
     const streams = Object.values(cams)
       .filter((c) => c.device_id === device.id && c.kind === "network" && !c.hidden && urls[c.camera_id])
       .map((c) => ({ key: c.key, url: urls[c.camera_id] }));
-    return json({ ok: true, allowed, disabled: off, streams, report_every_s: 2, snapshot_every_s: 20 });
+    // "Don't count this area" (e.g. a statue), per camera, as 0–1 fractions of the picture.
+    const ignore_zones = Object.fromEntries(Object.values(cams)
+      .filter((c) => c.device_id === device.id && c.ignore_zones?.length).map((c) => [c.key, c.ignore_zones]));
+    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -345,7 +356,7 @@ export class VenueHub extends DurableObject {
           : c.kind === "web" ? `Camera mode · ${devices[c.device_id]?.name ?? "browser"}` : c.address || "Network camera",
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
-        hidden: !!c.hidden, pending: !!c.pending, device_name: devices[c.device_id]?.name ?? "",
+        hidden: !!c.hidden, pending: !!c.pending, ignore_zones: c.ignore_zones ?? [], device_name: devices[c.device_id]?.name ?? "",
         // Plugged in right now (its computer mentioned it in the last 30 s)?
         present: Date.now() - (this.seenAt.get(c.camera_id) ?? 0) < 30_000, fps: live[c.camera_id]?.fps ?? 0, error_reason: live[c.camera_id]?.error_reason ?? null,
       }));
@@ -556,6 +567,7 @@ export class VenueHub extends DurableObject {
     if (body.zone_order !== undefined) c.zone_order = num(body.zone_order, 0, 1000);
     if (body.location !== undefined) c.location = body.location === "queue" ? "queue" : "indoor";
     if (body.hidden !== undefined) { c.hidden = !!body.hidden; c.pending = false; }   // "Yes, add it" / "No"
+    if (body.ignore_zones !== undefined) c.ignore_zones = cleanZones(body.ignore_zones);
     await this.ctx.storage.put("cameras", cams);
     return json({ ok: true });
   }

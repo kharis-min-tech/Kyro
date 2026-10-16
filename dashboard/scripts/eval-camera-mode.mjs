@@ -16,7 +16,7 @@ import { detectPeople } from "../src/lib/peopleDetector.ts";
 
 const [data, outFile, kind = "accurate", ...rest] = process.argv.slice(2);
 const raw = rest.includes("--raw");
-const MODELS = { accurate: { name: "yolo11m1280-w16-v1", parts: 2, size: 1280 }, light: { name: "yolo11s-w16-v1", parts: 1, size: 640 } };
+const MODELS = { large: { name: "yolo11l1280-w16-v1", parts: 3, size: 1280 }, accurate: { name: "yolo11m1280-w16-v1", parts: 2, size: 1280 }, light: { name: "yolo11s-w16-v1", parts: 1, size: 640 } };
 const m = MODELS[kind];
 const bytes = Buffer.concat(Array.from({ length: m.parts }, (_, i) => fs.readFileSync(new URL(`../public/models/${m.name}.part${i}.bin`, import.meta.url))));
 const EP = process.env.ORT_EP ? [process.env.ORT_EP, "cpu"] : ["cpu"];

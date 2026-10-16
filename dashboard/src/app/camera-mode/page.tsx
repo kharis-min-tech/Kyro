@@ -5,9 +5,9 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 import {
   loadEngine, listCameras, openCamera, cameraKey, grab, countPeople,
-  sendReport, sendPicture, type Engine, type CameraReport,
+  sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
-import { SteadyCount, COUNT_CONFIDENCE, type Person } from "@/lib/peopleDetector";
+import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
 import { Video, Loader2, Play, Square, AlertTriangle, CheckCircle, Users, MonitorSmartphone, Terminal, KeyRound } from "lucide-react";
 import { edgeVenueApi } from "@/lib/edgeVenue";
 import { HELP_URL } from "@/lib/help";
@@ -53,6 +53,7 @@ export default function CameraModePage() {
   const cams = useRef<Map<string, Cam>>(new Map());
   const running = useRef(false);
   const offRef = useRef<string[]>([]);
+  const zonesRef = useRef<Record<string, Zone[]>>({});   // "don't count this area", per camera
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const videoEls = useRef<Map<string, HTMLVideoElement>>(new Map());
   const overlayEls = useRef<Map<string, HTMLCanvasElement>>(new Map());
@@ -130,13 +131,13 @@ export default function CameraModePage() {
         const t0 = performance.now();
         try {
           const people = await countPeople(engine.current, px);
-          c.people = people.filter((p) => p.score >= COUNT_CONFIDENCE);
+          c.people = outsideZones(people.filter((p) => p.score >= COUNT_CONFIDENCE), zonesRef.current[c.key], px.width, px.height);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();
           c.secondsPerCount = (performance.now() - t0) / 1000;
           c.error = null;
-          drawBoxes(overlayEls.current.get(c.key), px.width, px.height, c.people);
+          drawBoxes(overlayEls.current.get(c.key), px.width, px.height, c.people, zonesRef.current[c.key]);
         } catch (e) {
           c.error = `Counting problem: ${e instanceof Error ? e.message : e}`.slice(0, 120);
         }
@@ -162,7 +163,8 @@ export default function CameraModePage() {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const disabled = await sendReport(reports);
+        const { disabled, zones } = await sendReport(reports);
+        zonesRef.current = zones;
         setLastSent(Date.now()); setSendError(null);
         // Switched off on the Cameras page → stop counting it here too.
         const newlyOff = disabled.filter((k) => !offRef.current.includes(k));
@@ -407,13 +409,18 @@ export default function CameraModePage() {
 }
 
 /** Outline each person counted, on a see-through layer over the video. */
-function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, people: Person[]) {
+function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, people: Person[], zones?: Zone[]) {
   if (!canvas) return;
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, w, h);
   ctx.lineWidth = Math.max(2, w / 640);
+  // "Don't count this area" (e.g. a statue): shaded, nothing inside is counted.
+  for (const [zx1, zy1, zx2, zy2] of zones ?? []) {
+    ctx.fillStyle = "rgba(148,163,184,0.28)"; ctx.fillRect(zx1 * w, zy1 * h, (zx2 - zx1) * w, (zy2 - zy1) * h);
+    ctx.setLineDash([8, 6]); ctx.strokeStyle = "#94a3b8"; ctx.strokeRect(zx1 * w, zy1 * h, (zx2 - zx1) * w, (zy2 - zy1) * h); ctx.setLineDash([]);
+  }
   for (const p of people) {
     const [x1, y1, x2, y2] = p.box;
     ctx.strokeStyle = p.score >= 0.5 ? "#22c55e" : "#f59e0b";

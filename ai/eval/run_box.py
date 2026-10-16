@@ -23,6 +23,8 @@ def main() -> None:
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--model", default="auto"); ap.add_argument("--device", default="")
     a = ap.parse_args()
+    if a.raw:   # raw = the detector alone: no clean-up, no lookalike check
+        os.environ["DETECTION_LOOKALIKE_CHECK"] = "false"
     if a.model != "auto":
         os.environ["YOLO_MODEL"] = a.model
     if a.device:

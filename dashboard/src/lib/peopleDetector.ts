@@ -197,6 +197,22 @@ export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinS
   });
 }
 
+/**
+ * Leaves out people lying mostly (≥ 70%) inside "don't count this area"
+ * rectangles (0–1 fractions of the picture) — e.g. a statue an admin marked.
+ * Someone walking in front of it only partly overlaps, so they still count.
+ * Same rule as in_ignore_zone() in ai/detection/detector.py.
+ */
+export function outsideZones(people: Person[], zones: [number, number, number, number][] | undefined, w: number, h: number): Person[] {
+  if (!zones?.length) return people;
+  return people.filter(({ box: [x1, y1, x2, y2] }) => {
+    const a = Math.max((x2 - x1) * (y2 - y1), 1e-6);
+    const inside = Math.max(...zones.map(([zx1, zy1, zx2, zy2]) =>
+      Math.max(0, Math.min(x2, zx2 * w) - Math.max(x1, zx1 * w)) * Math.max(0, Math.min(y2, zy2 * h) - Math.max(y1, zy1 * h))));
+    return inside / a < 0.7;
+  });
+}
+
 /** Smooths the headcount: the middle of the last few readings, so one odd picture doesn't make it jump. */
 export class SteadyCount {
   private readings: number[] = [];

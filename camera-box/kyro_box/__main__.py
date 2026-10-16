@@ -140,6 +140,8 @@ class Box:
             try:
                 res = cloud.report(cfg["server"], cfg["token"], self._camera_report())
                 self.cameras.set_allowed(res.get("allowed", []))
+                if self.counter is not None and isinstance(res.get("ignore_zones"), dict):
+                    self.counter.ignore_zones = res["ignore_zones"]
                 self.cameras.sync_network(res.get("streams", []))
                 self.report_every = float(res.get("report_every_s", 5))
                 self.snapshot_every = float(res.get("snapshot_every_s", 20))

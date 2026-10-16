@@ -76,6 +76,9 @@ class PersonDetector:
             cfg.model_name = name
             cfg.model_path = cfg.model_path.parent / name
         self._model = self._load_model(cfg.model_path, cfg.model_name)
+        # Statues, mannequins, dolls… double-checked by a second model (verifier.py).
+        from ai.detection.verifier import from_env
+        self._lookalike = from_env(self._device)
         logger.info(
             "PersonDetector ready | model=%s device=%s conf=%.2f",
             cfg.model_name,
@@ -144,6 +147,17 @@ class PersonDetector:
                                    self._cfg.merge_iou, self._cfg.merge_containment)
 
         boxes, scores = _tidy(boxes, scores, frame.shape[0])
+        lookalike = getattr(self, "_lookalike", None)
+        if lookalike is not None and lookalike.ready and len(boxes):
+            # Only boxes that would be counted are checked (keeps it quick); a box
+            # the check says is almost certainly not a person is dropped.
+            check = (scores >= self._cfg.count_confidence) & \
+                    ((boxes[:, 3] - boxes[:, 1]) >= lookalike.min_height * frame.shape[0])
+            if check.any():
+                p = lookalike.person_probability(frame, boxes[check])
+                keep = np.ones(len(boxes), dtype=bool)
+                keep[np.where(check)[0][p < lookalike.min_person]] = False
+                boxes, scores = boxes[keep], scores[keep]
         detections = [
             Detection(bbox=b.astype(np.float32), confidence=float(c), class_id=0)
             for b, c in zip(boxes, scores)
@@ -260,6 +274,22 @@ class PersonDetector:
             return YOLO(str(model_path))
         except Exception:  # noqa: BLE001 — fall back to Ultralytics' default location
             return YOLO(model_name)
+
+
+def in_ignore_zone(box, zones, frame_w: int, frame_h: int, share: float = 0.7) -> bool:
+    """True if at least `share` of the box lies inside "don't count this area"
+    rectangles (0–1 fractions of the picture) — e.g. a statue the admin marked.
+    Someone walking in front of it only partly overlaps, so they still count."""
+    if not zones:
+        return False
+    x1, y1, x2, y2 = (float(v) for v in box[:4])
+    area = max((x2 - x1) * (y2 - y1), 1e-6)
+    inside = 0.0
+    for zx1, zy1, zx2, zy2 in zones:
+        ix = max(0.0, min(x2, zx2 * frame_w) - max(x1, zx1 * frame_w))
+        iy = max(0.0, min(y2, zy2 * frame_h) - max(y1, zy1 * frame_h))
+        inside = max(inside, ix * iy)
+    return inside / area >= share
 
 
 SURE = 0.5

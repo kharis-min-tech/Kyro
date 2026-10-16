@@ -20,6 +20,16 @@ For each camera, an administrator can:
 - tap the **pencil** to set its **name**, the **room** (zone) it covers and the room's **seat count**. Set the seat count so **Seats left** and the **filling up** phone alerts work.
 - tap **Switch off** to stop counting a camera you don't want. (A computer's own built-in camera is never used, so it never appears here.) Switched-off cameras are listed under **Switched off**, with **Switch back on**.
 
+### Don't count an area (statues, mannequins)
+
+The AI sometimes takes a **statue, sculpture or mannequin** for a person. Kyro already double-checks every person it counts with a second AI that tells people from statues (on the installed version), but for a statue your camera always sees, mark it once:
+
+1. On the camera, tap **Don't count an area**. Its live picture opens.
+2. **Drag a box** tightly around the statue. Draw more boxes if needed (up to 10).
+3. Tap **Save**.
+
+Nothing that lies mostly inside a box is counted, by the installed version or by Camera Mode. Someone walking in front of the statue only partly overlaps the box, so they're still counted. But someone standing **inside** the box wouldn't be, so keep boxes tight, and don't draw them over seats. To undo, open it again and tap **Remove area**.
+
 **Camera computers** lists every computer that counts for you, with a green dot when it's **Online**, its version and when it was last seen. **Pair a camera computer** gives the code the installer asks for.
 
 **Add a network camera** is for Wi-Fi or network cameras, which don't plug into a computer. Paste the camera's stream address (it starts with `rtsp://`; the camera's app or manual shows it). A camera computer with the installed version then connects to it.

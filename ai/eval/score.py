@@ -83,7 +83,7 @@ def summarise(rows: list[dict]) -> dict:
 
 def evaluate(data: Path, found: dict, count_conf: float, split: str, post=None) -> dict:
     labels = json.loads((data / "labels.json").read_text())
-    per = {s: [] for s in SCENARIOS}
+    per: dict = {s: [] for s in SCENARIOS}
     for l in labels:
         if split != "all" and l["split"] != split:
             continue
@@ -94,7 +94,7 @@ def evaluate(data: Path, found: dict, count_conf: float, split: str, post=None) 
         b = b[b[:, 4] >= count_conf]
         b = b[np.argsort(-b[:, 4])]
         r = score_frame(b[:, :4], l["gt"]); r["sec"] = f["sec"]
-        per[l["scenario"]].append(r)
+        per.setdefault(l["scenario"], []).append(r)
     res = {s: summarise(v) for s, v in per.items() if v}
     res["ALL"] = summarise([r for v in per.values() for r in v])
     return res

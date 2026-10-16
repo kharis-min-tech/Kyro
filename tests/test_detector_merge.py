@@ -143,3 +143,22 @@ def test_real_dim_picture_is_not_no_signal():
     room = (rng.integers(0, 60, (1080, 1920, 3))).astype(np.uint8)
     room[300:900, 500:800] = 40; room[200:600, 1200:1400] = 15
     assert not no_signal(cv2.GaussianBlur(room, (31, 31), 0) * 3)
+
+
+# ── "don't count this area" (e.g. a statue the admin marked) ───────────────
+from ai.detection.detector import in_ignore_zone  # noqa: E402
+
+STATUE_ZONE = [[0.40, 0.20, 0.55, 0.90]]          # fractions of a 1920×1080 picture
+
+
+def test_statue_inside_zone_not_counted():
+    assert in_ignore_zone([790, 250, 1040, 950], STATUE_ZONE, 1920, 1080)
+
+
+def test_person_walking_past_zone_still_counted():
+    # overlaps the statue's area by about half
+    assert not in_ignore_zone([950, 300, 1200, 1000], STATUE_ZONE, 1920, 1080)
+
+
+def test_no_zones_counts_everyone():
+    assert not in_ignore_zone([790, 250, 1040, 950], [], 1920, 1080)

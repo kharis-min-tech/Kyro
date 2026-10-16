@@ -127,8 +127,9 @@ distant boxes (MAE 0.56 → 0.55 on the tuning half, worse for Camera Mode).
 
 ### Known limitations
 
-- **Statues and figurines** can be counted (see above). A fixed "never count
-  here" area per camera would solve it for a church's own statues — not built yet.
+- **Statues and figurines** can be counted. Reduced by the lookalike check
+  (Camera Box); for the church's own statues, mark them with "Don't count an
+  area" — see the second pass below.
 - **Crowded halls**: ~80% of labelled people found, headcount off by ~4 in a
   frame of ~35 people; distant, overlapping people are the main misses.
 - **Dim pictures**: ~60–70% of people found.
@@ -147,7 +148,93 @@ distant boxes (MAE 0.56 → 0.55 on the tuning half, worse for Camera Mode).
     python -m ai.eval.score $DATA box.json --count-conf 0.3 --split test
     python -m ai.eval.score $DATA cm.json  --count-conf 0.3 --split test
     PYTHONPATH=.:camera-box python -m ai.eval.run_sequences $SEQ --legacy
+    # lookalikes: also the COCO captions + Open Images validation labels
+    python -m ai.eval.build_lookalikes $DATA $OI $LOOK
+    python -m ai.eval.run_box $LOOK look.json --device mps
+    python -m ai.eval.score $LOOK look.json --count-conf 0.3 --split test
     pytest tests
+
+## Second pass (October 2026): crowds, distance, statues
+
+Same 410-frame test set (tuning half for choices, held-out half for results),
+plus a new **lookalikes** set (`build_lookalikes.py`, 133 frames): 26 COCO
+photos of statues / mannequins / figurines with no people, 87 Open Images
+"Sculpture"/"Doll" photos with no person label (each checked by eye; 1
+excluded), and 20 COCO statue photos that also contain labelled people. Neither
+dataset was used to train YOLO11 (trained on COCO *train*2017).
+
+### Why people are still missed (tuning half, Camera Box)
+
+| Person's height in the frame | Found |
+|---|---|
+| under 20 px | 50% |
+| 20–40 px | 63% |
+| 40–80 px | 78% |
+| 80–160 px | 88% |
+| over 160 px | 92% |
+
+People overlapped by another person: 81% found; not overlapped: 85%. **Distance
+(too few pixels) is the main cause, more than occlusion.**
+
+### Tried for crowds and distance (tuning half, all with the current clean-up and count ≥ 0.30)
+
+| Change | Count error (MAE) | Missed | Objects counted | Whole-hall MAE | s/frame | Adopted? |
+|---|---|---|---|---|---|---|
+| Current: yolo11l, 1280 px, 2×2 tiles | **0.56** | 162 | 99 | 3.40 | 2.7 | — |
+| Keep more overlapping boxes (NMS 0.75, merge 0.7) | 0.57 | 169 | 93 | 3.27 | 5.4 | no |
+| 3×3 tiles | 0.81 | 152 | 171 | 5.33 | 4.2 | no |
+| 3×3 tiles + lookalike check | 0.78 | 158 | 163 | 5.13 | 4.2 | no |
+| yolo11x (bigger model) | **0.54** | **149** | 113 | **3.07** | 3.4 | already used with an NVIDIA GPU |
+| 1600 px, no tiles | 0.82 | 228 | 71 | 6.07 | 0.6 | no |
+| 1600 px + 2×2 tiles | 0.60 | 174 | 123 | 3.60 | 2.9 | no |
+| + pose model (yolo11l-pose) adding people the detector missed | 0.60–0.67 | 158–159 | 103–118 | 3.47–3.60 | +5.6 | no |
+| Camera Mode with yolo11l instead of yolo11m | 0.67 (was 0.70) | 174 (185) | 119 (132) | 4.6 (3.6) | 3.9 (1.7) | no: worse in crowds, 2× slower |
+
+No head detector was tried: there is no official (Ultralytics / model-author)
+head-detection model, and third-party weight files weren't used. The pose model
+(official) is the closest anonymous "head and shoulders" evidence; it found
+only ~3 extra people and added more false ones.
+
+**Conclusion:** none of these settings counts distant people better without
+counting more things that aren't people. The practical levers are the camera:
+mount it higher and closer to the seats (people ≥ 80 px tall are found ~90% of
+the time), use one camera per section rather than one for the whole hall, and
+an NVIDIA graphics card (yolo11x is used automatically).
+
+### Statues, sculptures, mannequins: what changed
+
+1. **Lookalike check** (`ai/detection/verifier.py`, Camera Box): each counted box
+   at least 60 px tall (at 1080p) is compared by OpenAI's CLIP
+   (`openai/clip-vit-base-patch32`) with "a photo of a person" vs "…a statue",
+   "…a mannequin", "…a doll" etc.; boxes with person probability < 0.15 are
+   dropped. Anonymous (descriptions only, nothing stored). If CLIP can't load,
+   counting continues without it. Settings: `DETECTION_LOOKALIKE_CHECK`,
+   `DETECTION_LOOKALIKE_MIN_PERSON`, `DETECTION_LOOKALIKE_MODEL`.
+2. **"Don't count an area"** per camera (Cameras page): an admin drags a box
+   around a statue the camera always sees; detections ≥ 70% inside are ignored
+   by the Camera Box and Camera Mode (`in_ignore_zone`, `outsideZones`).
+
+| Lookalikes (rooms with a false person) | Tuning half | Held-out half |
+|---|---|---|
+| Camera Box before | 9 / 54 | 13 / 59 |
+| Camera Box + lookalike check (CLIP B/32) | **1 / 54** | **9 / 59** |
+| (CLIP L/14, larger, 4–5× slower — not adopted) | 1 / 54 | 7 / 59 |
+| Camera Mode (no lookalike check) | — | 10 / 59 |
+
+The held-out improvement is real but much smaller than on the tuning half —
+treat statue-detection as **reduced, not solved**. What still fools it:
+mannequins in shop windows, one large statue, a carving. On the statue photos
+that also contain people, the check removed 2 "people" — both are bronze
+statues that COCO's annotators labelled as people (a man reading a newspaper,
+a figure on a bench), so the scored recall there (0.67 → 0.44 of 9) understates it.
+
+Main test set with the check (held-out half, Camera Box): MAE 0.82 → **0.80**,
+missed 180 → 181, objects 114 → 112, rooms with a false person 3/40 → 3/40.
+Moving-people videos: unchanged (walk, pillar, arrivals/departures, still — as above).
+
+Cost: CLIP B/32 ≈ 0.1 s per near person on a processor, ≈ 0.02 s on a GPU
+(Apple M1); one-time download ≈ 600 MB. For a statue the camera always sees,
+"Don't count an area" is the dependable fix (it can't miss, and costs nothing).
 
 ## Earlier benchmark (detection only)
 

@@ -7,6 +7,8 @@ import { useEffect, useRef, useState } from "react";
 import { edgeFetch, edgeToken } from "@/lib/edgeAuth";
 import type { Camera, VenueTotal } from "@/types";
 
+export type Zone = [number, number, number, number];
+
 export interface EdgeCamera extends Camera {
   kind: "usb" | "network" | "web";
   device_id: string;
@@ -16,6 +18,8 @@ export interface EdgeCamera extends Camera {
   /** Its camera computer says it's plugged in right now. */
   present?: boolean;
   device_name?: string;
+  /** "Don't count this area" rectangles, 0–1 fractions of the picture. */
+  ignore_zones?: Zone[];
   fps: number;
   error_reason: string | null;
 }
@@ -64,7 +68,7 @@ export const edgeVenueApi = {
   removeDevice: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/devices/${enc(id)}`, { method: "DELETE" }),
   updateCamera: (id: string, body: {
     name?: string; zone_name?: string; zone_capacity?: number; zone_order?: number;
-    location?: "indoor" | "queue"; hidden?: boolean;
+    location?: "indoor" | "queue"; hidden?: boolean; ignore_zones?: Zone[];
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removeCamera: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "DELETE" }),
   addStream: (body: { url: string; name?: string; zone_name?: string; zone_capacity?: number; device_id?: string }) =>
