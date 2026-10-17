@@ -15,7 +15,7 @@ import {
   Camera, Wifi, Monitor, HelpCircle, Loader2, Zap,
   ChevronDown, ChevronUp, Plus, Pencil, Check, X, Terminal,
   Users, MapPin, AlertCircle, AlertTriangle, Trash2, RefreshCw,
-  Cpu, Power, KeyRound, ExternalLink,
+  Cpu, Power, KeyRound, ExternalLink, Radio,
 } from "lucide-react";
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
@@ -55,6 +55,24 @@ const CAMERA_TYPES = [
     urlTemplate: "0",
     urlHint: "Use 0 for the first webcam, 1 for a second",
     urlPlaceholder: "0",
+  },
+  {
+    id: "ndi",
+    label: "NDI (wireless)",
+    description: "Wireless HDMI → NDI source on the LAN",
+    icon: Radio,
+    urlTemplate: "ndi://",
+    urlHint: "The NDI source name as it appears on the LAN (e.g. CHURCH-TX1 (Camera))",
+    urlPlaceholder: "ndi://CHURCH-TX1 (Camera)",
+  },
+  {
+    id: "srt",
+    label: "SRT / RTMP",
+    description: "Wireless transmitter streaming SRT or RTMP",
+    icon: Radio,
+    urlTemplate: "srt://",
+    urlHint: "Address + port from your transmitter's SRT/RTMP output (e.g. srt://192.168.1.50:9999)",
+    urlPlaceholder: "srt://192.168.1.50:9999",
   },
   {
     id: "other",
@@ -461,7 +479,13 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
   const [open, setOpen]         = useState(cameraCount === 0);
-  const [mode, setMode]         = useState<"detect" | "ip" | "advanced" | null>(null);
+  // "transmitter" is a routing step — once the user tells us how the
+  // receiver connects (USB capture or network stream) we forward them to
+  // "detect" or "ip" with transmitter-specific wording set below.
+  const [mode, setMode]         = useState<"detect" | "ip" | "advanced" | "transmitter" | null>(null);
+  // When the user came in via the transmitter card we display slightly
+  // different wording in the detect/ip sub-screens — set once on entry.
+  const [transmitterPath, setTransmitterPath] = useState<"usb" | "network" | null>(null);
   const [type, setType]         = useState<typeof CAMERA_TYPES[number] | null>(null);
   const [name, setName]         = useState("");
   const [url, setUrl]           = useState("");
@@ -607,7 +631,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       });
       setName(""); setUrl(""); setZone(""); setCap("");
       setType(null); setIsQueueCam(false); setQueuePrompt("idle");
-      setMode(null); setPickedId(null);
+      setMode(null); setPickedId(null); setTransmitterPath(null);
       setBaselineIds(null); setNewDevices([]); setAllDevices([]);
       setShowAll(false); setScanned(false);
       setOpen(false);
@@ -671,7 +695,23 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 </div>
               </button>
 
-              <button type="button" onClick={() => { setMode("advanced"); setType(CAMERA_TYPES[2]); setUrl(""); }}
+              <button type="button" onClick={() => { setMode("transmitter"); setUrl(""); }}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "var(--bg-inset)", border: "1px solid rgba(236,72,153,0.3)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(236,72,153,0.12)" }}>
+                  <Radio size={18} style={{ color: "#ec4899" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">Through a wireless transmitter</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Wireless HDMI (Teradek, Hollyland), NDI, SRT. Kyro walks you through hooking the
+                    receiver up so the camera's seen like any other.
+                  </p>
+                </div>
+              </button>
+
+              <button type="button" onClick={() => { setMode("advanced"); setType(CAMERA_TYPES[CAMERA_TYPES.length - 1]); setUrl(""); }}
                 className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
                 style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -688,6 +728,65 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
             </div>
           )}
 
+          {/* Wireless transmitter sub-chooser — pick the receiver type and
+              Kyro routes you to the right path. HDMI RX via a USB capture
+              card looks like a USB camera to the OS so it goes through the
+              detect flow unchanged; everything else is a network stream. */}
+          {mode === "transmitter" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <button type="button" onClick={() => { setMode(null); setTransmitterPath(null); }}
+                  className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                  ← Back
+                </button>
+              </div>
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                How does the transmitter's RECEIVER reach this device?
+              </p>
+
+              <button type="button" onClick={() => { setTransmitterPath("usb"); setMode("detect"); }}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(99,102,241,0.15)" }}>
+                  <Zap size={18} className="text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">Receiver plugs into USB (recommended)</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Wireless HDMI receiver + a USB capture card (Elgato Cam Link, Magewell, HDMI-to-USB
+                    dongle). The camera will show up like any plugged-in webcam.
+                  </p>
+                </div>
+              </button>
+
+              <button type="button" onClick={() => { setTransmitterPath("network"); setMode("ip"); setType(CAMERA_TYPES.find((t) => t.id === "ndi") ?? CAMERA_TYPES[0]); setUrl(""); }}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(236,72,153,0.12)" }}>
+                  <Wifi size={18} style={{ color: "#ec4899" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">Transmitter sends a network stream</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    NDI, SRT, RTMP, or RTSP over WiFi/ethernet. You'll paste the stream address from
+                    the transmitter's control app.
+                  </p>
+                </div>
+              </button>
+
+              <div className="rounded-xl px-3 py-2.5 text-xs flex items-start gap-2"
+                style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)", color: "var(--text-tertiary)" }}>
+                <HelpCircle size={13} className="text-indigo-400 shrink-0 mt-0.5" />
+                <span>
+                  Not sure? Most church setups use <strong>HDMI → USB capture</strong>. Pick that if
+                  your receiver has an HDMI output and you've got a USB capture dongle.
+                </span>
+              </div>
+            </div>
+          )}
+
           {/* Plug-and-play detector — plug-detection style.
               The baseline is captured silently when the user enters this
               mode. Only devices that appear AFTER a Scan (= plugged in
@@ -700,22 +799,41 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 <button type="button" onClick={() => {
                     setMode(null); setPickedId(null); setUrl(""); setScanned(false);
                     setNewDevices([]); setAllDevices([]); setShowAll(false);
+                    setTransmitterPath(null);
                   }}
                   className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
                   ← Back
                 </button>
               </div>
 
-              {/* Pre-scan instructions — only shown before the first Scan. */}
+              {/* Pre-scan instructions — only shown before the first Scan.
+                  The copy is tailored when the user came in via the
+                  wireless-transmitter path so they know to connect the
+                  RECEIVER + capture card, not the camera itself. */}
               {!scanned && !detecting && (
                 <div className="rounded-xl p-4 flex flex-col items-center gap-3 text-center"
                   style={{ background: "var(--bg-inset)", border: "1px dashed var(--border-strong)" }}>
-                  <Zap size={20} className="text-indigo-400" />
+                  {transmitterPath === "usb" ? <Radio size={20} style={{ color: "#ec4899" }} /> : <Zap size={20} className="text-indigo-400" />}
                   <div>
-                    <p className="text-sm font-semibold text-white">Plug a camera in now</p>
+                    <p className="text-sm font-semibold text-white">
+                      {transmitterPath === "usb"
+                        ? "Hook the transmitter up to this device"
+                        : "Plug a camera in now"}
+                    </p>
                     <p className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
-                      Connect your USB webcam, phone, or any camera to this device, then tap&nbsp;
-                      <strong>Scan</strong>. Kyro will show you only the one you just connected.
+                      {transmitterPath === "usb" ? (
+                        <>
+                          Turn on the wireless transmitter + receiver. Connect the receiver's HDMI
+                          output into a <strong>USB capture card</strong> (Elgato Cam Link, Magewell,
+                          or any HDMI-to-USB dongle), then plug the dongle into this device. Tap&nbsp;
+                          <strong>Scan</strong> — Kyro will see the receiver as if it were a USB camera.
+                        </>
+                      ) : (
+                        <>
+                          Connect your USB webcam, phone, or any camera to this device, then tap&nbsp;
+                          <strong>Scan</strong>. Kyro will show you only the one you just connected.
+                        </>
+                      )}
                     </p>
                   </div>
                   <button type="button" onClick={detect}
@@ -810,26 +928,38 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
           {/* IP / RTSP / advanced URL mode — the old form path, kept for
               cameras that don't physically plug into this device. */}
           {(mode === "ip" || mode === "advanced") && type && (
-            <div className="flex items-center justify-between gap-2 -mb-1">
-              <button type="button" onClick={() => { setMode(null); setType(null); setUrl(""); }}
-                className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
-                ← Back
-              </button>
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={() => { setMode(null); setType(null); setUrl(""); setTransmitterPath(null); }}
+                  className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                  ← Back
+                </button>
+              </div>
+              {transmitterPath === "network" && (
+                <div className="rounded-xl px-3 py-2.5 text-xs flex items-start gap-2"
+                  style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--text-tertiary)" }}>
+                  <Radio size={13} style={{ color: "#ec4899" }} className="shrink-0 mt-0.5" />
+                  <span>
+                    Pick your transmitter's protocol below, then paste the stream address shown in its
+                    control app. NDI sources appear by their name (e.g. <span className="font-mono">CHURCH-TX1 (Camera)</span>).
+                  </span>
+                </div>
+              )}
               {mode === "ip" && (
-                <div className="grid grid-cols-3 gap-1 flex-1 max-w-xs">
-                  {CAMERA_TYPES.map((t) => {
+                <div className="flex flex-wrap gap-1.5">
+                  {CAMERA_TYPES.filter((t) => t.id !== "other").map((t) => {
                     const Icon = t.icon;
                     const active = type.id === t.id;
                     return (
                       <button key={t.id} type="button" onClick={() => { setType(t); setUrl(t.urlTemplate); }}
-                        className="rounded-lg px-2 py-1.5 text-xs transition-colors flex items-center justify-center gap-1"
+                        className="rounded-lg px-2.5 py-1.5 text-xs transition-colors flex items-center gap-1"
                         style={{
                           background: active ? "rgba(99,102,241,0.15)" : "var(--bg-inset)",
                           border: `1px solid ${active ? "#4f46e5" : "var(--border-subtle)"}`,
                           color: active ? "#a5b4fc" : "var(--text-muted)",
                         }}>
                         <Icon size={11} />
-                        <span className="truncate">{t.label.split(" ")[0]}</span>
+                        <span className="truncate">{t.label}</span>
                       </button>
                     );
                   })}
@@ -1264,6 +1394,23 @@ function HelpPanel() {
               Pick <strong>Network IP camera</strong> above, then paste the RTSP URL from your
               camera's app → Settings → Network. Format:
               <span className="font-mono text-indigo-300"> rtsp://admin:password@192.168.1.100:554/stream</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-white font-medium mb-1">Wireless HDMI transmitter (Teradek, Hollyland, Accsoon…)</p>
+            <p>
+              Pick <strong>Through a wireless transmitter → Receiver plugs into USB</strong>. Plug the
+              receiver's HDMI out into a USB capture dongle (Elgato Cam Link, Magewell), plug that
+              into this device, and Kyro will see it as a plug-and-play camera.
+            </p>
+          </div>
+          <div>
+            <p className="text-white font-medium mb-1">NDI / SRT / RTMP transmitter</p>
+            <p>
+              Pick <strong>Through a wireless transmitter → Network stream</strong>. In the IP form,
+              pick the matching protocol chip (NDI, SRT) and paste the address from the transmitter's
+              control app. NDI sources show up by their LAN name, e.g.
+              <span className="font-mono text-indigo-300"> ndi://CHURCH-TX1 (Camera)</span>.
             </p>
           </div>
           <div>
