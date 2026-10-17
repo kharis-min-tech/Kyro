@@ -1037,7 +1037,7 @@ function EdgeAddCameraForm({ onAdded, cameraCount, devices }: {
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors">
         <div className="flex items-center gap-2">
           <Plus size={15} className="text-indigo-400" />
-          <span className="text-sm font-medium text-white">Add a network camera</span>
+          <span className="text-sm font-medium text-white">Add a network IP camera to a specific camera computer</span>
         </div>
         {open ? <ChevronUp size={14} className="text-gray-500" /> : <ChevronDown size={14} className="text-gray-500" />}
       </button>
@@ -1230,21 +1230,29 @@ export default function CamerasPage() {
 
         {edge && canManage && <SwitchedOffCameras cameras={switchedOff} onChanged={afterEdgeChange} />}
 
-        {edge && canManage && !loading && (
+        {/* Plug-and-play detector first — covers the common case of a USB
+            webcam, phone camera, or built-in laptop camera on EVERY
+            deployment (edge or not). Non-technical operators were being
+            dropped into an RTSP-only form in edge mode and giving up. */}
+        {!error && !loading && canManage && (
+          <AddCameraForm onAdded={edge ? afterEdgeChange : refresh} cameraCount={cameras.length} />
+        )}
+        {/* Edge-specific IP-camera form kept for multi-device setups where
+            the operator needs to choose which camera computer runs the
+            stream. Shown below the plug-and-play detector in a muted
+            collapsed state so it's not the first thing they see. */}
+        {edge && canManage && !loading && (devices?.length ?? 0) > 0 && (
           <EdgeAddCameraForm onAdded={afterEdgeChange} cameraCount={cameras.length} devices={devices ?? []} />
         )}
-        {!edge && !error && !loading && canManage && <AddCameraForm onAdded={refresh} cameraCount={cameras.length} />}
         {(!error || edge) && !loading && !canManage && (
           <p className="text-xs text-gray-500 rounded-xl px-4 py-3" style={{ border: "1px solid var(--border-subtle)" }}>
             Only administrators can add, change or remove cameras.
           </p>
         )}
 
-        {!edge && (
-          <div className="mt-4">
-            <HelpPanel />
-          </div>
-        )}
+        <div className="mt-4">
+          <HelpPanel />
+        </div>
 
       </main>
     </div>
