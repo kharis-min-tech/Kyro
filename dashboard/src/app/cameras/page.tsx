@@ -377,7 +377,8 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
   onReject?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [state, setState] = useState<"idle" | "preview" | "denied" | "error">("idle");
+  const [state, setState] = useState<"idle" | "starting" | "preview" | "needs-tap" | "denied" | "error">("idle");
+  const [errDetail, setErrDetail] = useState<string | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const stop = useCallback(() => {
@@ -389,39 +390,72 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
       try { videoRef.current.srcObject = null; } catch {}
     }
     setState("idle");
+    setErrDetail(null);
   }, []);
 
   async function startPreview() {
+    setState("starting");
+    setErrDetail(null);
     try {
-      const s = await navigator.mediaDevices.getUserMedia({
-        video: { deviceId: { exact: device.id } },
-        audio: false,
-      });
+      // Try the exact device first, but fall back to a loose match if the
+      // browser rejects the deviceId (e.g. after revoking + re-granting
+      // permission the stored id can become stale on iOS Safari).
+      let s: MediaStream;
+      try {
+        s = await navigator.mediaDevices.getUserMedia({
+          video: { deviceId: { exact: device.id } },
+          audio: false,
+        });
+      } catch (e: unknown) {
+        if ((e as Error)?.name === "OverconstrainedError" || (e as Error)?.name === "NotFoundError") {
+          s = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: device.id },
+            audio: false,
+          });
+        } else {
+          throw e;
+        }
+      }
       streamRef.current = s;
-      // Flip state first so the <video> is in the DOM, then attach the
-      // stream in the useEffect below. The previous version tried to set
-      // videoRef.current.srcObject BEFORE the element was mounted, so the
-      // ref was null and the video rendered blank.
+      // Flip state so the <video> mounts; stream attach happens in effect.
       setState("preview");
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.name : "error";
-      setState(msg === "NotAllowedError" ? "denied" : "error");
+      const err = e as Error;
+      setErrDetail(`${err?.name ?? "error"}: ${err?.message ?? ""}`);
+      setState(err?.name === "NotAllowedError" ? "denied" : "error");
     }
   }
 
-  // Attach the stream once the <video> is in the DOM. This fires every
-  // time state flips to "preview" and streamRef has a live stream, so a
-  // Stop/Preview cycle re-attaches cleanly.
+  // Attach the stream once the <video> is in the DOM, wait for metadata,
+  // then play. If autoplay is denied (iOS/Safari in particular can refuse
+  // even on a muted stream), flip to "needs-tap" so the user can tap the
+  // tile to start playback — a touch gesture satisfies the policy.
   useEffect(() => {
     if (state !== "preview" || !videoRef.current || !streamRef.current) return;
     const v = videoRef.current;
     v.srcObject = streamRef.current;
-    v.muted = true;      // required for autoplay without a user gesture on iOS
+    v.muted = true;
     v.playsInline = true;
-    v.play().catch(() => {
-      // Autoplay blocked — surface a hint in dev tools; user can tap again.
-    });
+    const tryPlay = () => {
+      const p = v.play();
+      if (p && typeof p.then === "function") {
+        p.catch((err: unknown) => {
+          setErrDetail(`play(): ${(err as Error)?.name ?? "error"}`);
+          setState("needs-tap");
+        });
+      }
+    };
+    if (v.readyState >= 1) tryPlay();
+    else v.addEventListener("loadedmetadata", tryPlay, { once: true });
   }, [state]);
+
+  const handleTapToPlay = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.play().then(() => setState("preview")).catch(() => {
+      setErrDetail("Still blocked — check Settings → Safari → Camera.");
+    });
+  }, []);
 
   // Stop the preview when the card is unmounted or its "picked" status flips
   // off — leaving a <video> live after the user has moved on would keep the
@@ -432,13 +466,34 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
   return (
     <div className="rounded-xl overflow-hidden"
       style={{ background: "var(--bg-card)", border: picked ? "1px solid #4f46e5" : "1px solid var(--border-subtle)" }}>
-      {/* Preview tile — the <video> stays in the DOM whenever we're in
-          preview state so the ref is available when getUserMedia resolves.
-          Other states still render the icon/error UI underneath. */}
-      <div className="aspect-video flex items-center justify-center relative" style={{ background: "var(--bg-inset)" }}>
-        {state === "preview" && (
+      {/* Preview tile — the <video> stays mounted during preview/needs-tap
+          states so the ref is available when getUserMedia resolves and when
+          the tap-to-play fallback fires. Fixed minHeight stops the tile
+          collapsing on narrow phone layouts where aspect-video can resolve
+          to 0px before metadata arrives. */}
+      <div className="flex items-center justify-center relative"
+        style={{ background: "var(--bg-inset)", aspectRatio: "16 / 9", minHeight: 180 }}>
+        {(state === "preview" || state === "needs-tap") && (
           <video ref={videoRef} autoPlay playsInline muted
-            className="absolute inset-0 w-full h-full object-cover" />
+            onClick={state === "needs-tap" ? handleTapToPlay : undefined}
+            className="absolute inset-0 w-full h-full object-cover"
+            style={{ background: "#000" }} />
+        )}
+        {state === "needs-tap" && (
+          <button type="button" onClick={handleTapToPlay}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-white"
+            style={{ background: "rgba(0,0,0,0.55)" }}>
+            <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: "rgba(255,255,255,0.15)" }}>
+              <div style={{ width: 0, height: 0, borderLeft: "14px solid #fff", borderTop: "9px solid transparent", borderBottom: "9px solid transparent", marginLeft: 3 }} />
+            </div>
+            <p className="text-xs">Tap to start preview</p>
+          </button>
+        )}
+        {state === "starting" && (
+          <div className="text-center p-4">
+            <Loader2 size={22} className="mx-auto mb-1 animate-spin text-indigo-400" />
+            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>Opening camera…</p>
+          </div>
         )}
         {state === "denied" && (
           <div className="text-center p-4">
@@ -454,6 +509,9 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
             <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
               Couldn't open this camera. Another app may be using it.
             </p>
+            {errDetail && (
+              <p className="text-[10px] mt-1 font-mono" style={{ color: "var(--text-faint)" }}>{errDetail}</p>
+            )}
           </div>
         )}
         {state === "idle" && (
@@ -464,20 +522,23 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-white truncate">{device.label}</p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-            {state === "preview" ? "Preview live — this is what the system sees" : "Tap preview to confirm it's the right one"}
+            {state === "preview" ? "Preview live — this is what the system sees"
+              : state === "needs-tap" ? "Autoplay was blocked — tap the tile to play"
+              : state === "starting" ? "Opening camera…"
+              : "Tap preview to confirm it's the right one"}
           </p>
         </div>
-        {state === "preview" ? (
+        {state === "preview" || state === "needs-tap" ? (
           <button type="button" onClick={stop}
             className="text-xs px-3 py-1.5 rounded-lg"
             style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
             Stop
           </button>
         ) : (
-          <button type="button" onClick={startPreview}
-            className="text-xs px-3 py-1.5 rounded-lg text-white"
+          <button type="button" onClick={startPreview} disabled={state === "starting"}
+            className="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-50"
             style={{ background: "var(--bg-hover)", border: "1px solid var(--border-strong)" }}>
-            Preview
+            {state === "starting" ? "Opening…" : "Preview"}
           </button>
         )}
         <button type="button" onClick={onPick}
