@@ -494,3 +494,6 @@ img, video, canvas, svg, iframe {
 /* Seat Map "Mark occupied" red: deeper on light backgrounds. */
 :root { --danger-text: #ff4d6d; }
 :root[data-theme="light"] { --danger-text: #be123c; }
+/* Kyro wordmark gold (the K): bright on dark, deeper on white so it stays readable. */
+:root { --brand-gold: #f8b537; }
+:root[data-theme="light"] { --brand-gold: #b7791f; }

@@ -1,5 +1,6 @@
 "use client";
 
+import { BrandMark } from "@/components/ui/BrandMark";
 import { getAllowedPages, ROLE_DEFAULT_PAGES } from "@/lib/access";
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -204,11 +205,7 @@ export function Sidebar() {
         style={{ background: BG, borderBottom: `1px solid ${DIVIDER}`, paddingTop: "env(safe-area-inset-top)", height: "calc(3.5rem + env(safe-area-inset-top))" }}
       >
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0"
-            style={{ background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)" }}>
-            <Radio size={12} className="text-white" strokeWidth={2} />
-          </div>
-          <span className="text-sm font-bold text-white tracking-tight">Kyro</span>
+          <BrandMark size={28} />
         </div>
         <button
           type="button"
@@ -245,15 +242,8 @@ export function Sidebar() {
         style={{ background: BG, borderRight: `1px solid ${DIVIDER}`, paddingTop: "env(safe-area-inset-top)", paddingBottom: "env(safe-area-inset-bottom)" }}
       >
       {/* Brand — hidden on mobile because the top bar already shows it */}
-      <div className="hidden md:flex px-5 pt-6 pb-5 items-center gap-3">
-        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: "linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)" }}>
-          <Radio size={14} className="text-white" strokeWidth={2} />
-        </div>
-        <div>
-          <span className="text-sm font-bold text-white tracking-tight leading-none">Kyro</span>
-          <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Vision Intelligence</p>
-        </div>
+      <div className="hidden md:flex px-5 pt-6 pb-5 items-center">
+        <BrandMark size={34} subtitle />
       </div>
       {/* Small top padding on mobile so the first nav item isn't flush against
          the drawer's top edge. */}

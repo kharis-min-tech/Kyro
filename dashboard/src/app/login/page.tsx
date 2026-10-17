@@ -1,10 +1,11 @@
 "use client";
 
+import { BrandMark } from "@/components/ui/BrandMark";
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
-import { Radio, Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff, CircleHelp } from "lucide-react";
+import { Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff, CircleHelp } from "lucide-react";
 import { HELP_URL } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
 import { edgeLogin } from "@/lib/edgeAuth";
@@ -284,14 +285,7 @@ export default function LoginPage() {
 
         {/* Logo */}
         <div className="mb-10 flex flex-col items-center gap-3">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center shadow-lg"
-            style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5)" }}>
-            <Radio size={26} className="text-white" strokeWidth={2} />
-          </div>
-          <div className="text-center">
-            <h1 className="text-3xl font-bold text-white tracking-tight">Kyro</h1>
-            <p className="text-sm mt-1" style={{ color: "var(--text-muted)" }}>Vision Intelligence</p>
-          </div>
+          <BrandMark size={56} subtitle large />
         </div>
 
         {/* Mode cards */}
