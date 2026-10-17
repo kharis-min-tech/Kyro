@@ -478,7 +478,11 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
 
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
-  const [open, setOpen]         = useState(cameraCount === 0);
+  // Default-open the panel every time so the operator sees the mode
+  // picker (plug-and-play, IP camera, wireless transmitter, advanced)
+  // immediately. Previously it was collapsed whenever any camera already
+  // existed, which made the transmitter card feel "hidden".
+  const [open, setOpen]         = useState(true);
   // "transmitter" is a routing step — once the user tells us how the
   // receiver connects (USB capture or network stream) we forward them to
   // "detect" or "ip" with transmitter-specific wording set below.
@@ -647,11 +651,16 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       <button onClick={() => setOpen((p) => !p)}
         className="w-full flex items-center justify-between px-4 py-3 transition-colors"
         style={{ background: "var(--bg-card)" }}>
-        <div className="flex items-center gap-2">
-          <Plus size={15} className="text-indigo-400" />
-          <span className="text-sm font-medium text-white">Add a camera</span>
+        <div className="flex flex-col items-start gap-0.5 min-w-0">
+          <div className="flex items-center gap-2">
+            <Plus size={15} className="text-indigo-400" />
+            <span className="text-sm font-medium text-white">Add a camera</span>
+          </div>
+          <span className="text-xs truncate" style={{ color: "var(--text-muted)" }}>
+            Plug-and-play, network IP, wireless transmitter, advanced
+          </span>
         </div>
-        {open ? <ChevronUp size={14} className="text-gray-500" /> : <ChevronDown size={14} className="text-gray-500" />}
+        {open ? <ChevronUp size={14} className="text-gray-500 shrink-0" /> : <ChevronDown size={14} className="text-gray-500 shrink-0" />}
       </button>
 
       {open && (
