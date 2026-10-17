@@ -75,13 +75,98 @@ function occupancyLabel(pct: number | null): "critical" | "warning" | "ok" | "un
 
 // ─── Snapshot image ───────────────────────────────────────────────────────────
 
-function SnapshotImage({ cameraId }: { cameraId: string }) {
+/**
+ * A browser camera (added via the plug-and-play detector) lives on the
+ * user's phone/laptop, NOT the edge box, so there's no server-side snapshot
+ * endpoint to pull from. Instead we open the camera's deviceId through
+ * MediaDevices right in the browser and render the live stream — the
+ * operator sees exactly what Kyro would see.
+ */
+function BrowserCameraStream({ streamUrl }: { streamUrl: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
+
+  useEffect(() => {
+    if (!deviceId || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErr("Browser can't open the camera here (needs HTTPS and MediaDevices).");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let s: MediaStream;
+        try {
+          s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+        } catch (e: unknown) {
+          const name = (e as Error)?.name;
+          if (name === "OverconstrainedError" || name === "NotFoundError") {
+            s = await navigator.mediaDevices.getUserMedia({ video: { deviceId }, audio: false });
+          } else { throw e; }
+        }
+        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = s;
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
+          videoRef.current.play().catch(() => {
+            setErr("Autoplay blocked. Tap the tile to start the preview.");
+          });
+        }
+      } catch (e: unknown) {
+        const name = (e as Error)?.name;
+        if (name === "NotAllowedError") setErr("Browser blocked camera access — allow it in the address bar and reload.");
+        else setErr(`${name ?? "error"}: ${(e as Error)?.message ?? ""}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+    };
+  }, [deviceId]);
+
+  const handleTap = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.play().then(() => setErr(null)).catch(() => {});
+  };
+
+  if (err && !streamRef.current) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-4 text-center" style={{ background: "var(--bg-inset)" }}>
+        <Video size={28} className="text-gray-700" />
+        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>{err}</span>
+      </div>
+    );
+  }
+  return (
+    <div className="w-full h-full relative" onClick={handleTap}>
+      <video ref={videoRef} autoPlay playsInline muted
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ background: "#000" }} />
+    </div>
+  );
+}
+
+function SnapshotImage({ cameraId, streamUrl }: { cameraId: string; streamUrl?: string }) {
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
   const { edge } = useContext(EdgeLiveContext);
+  const isBrowserCam = cameraId.startsWith("web-") || (streamUrl?.startsWith("webcam://") ?? false);
   // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
-  const snap = useEdgeSnapshot(cameraId, edge, 20_000);
+  // We skip this for browser cameras — the edge box doesn't know about them.
+  const snap = useEdgeSnapshot(cameraId, edge && !isBrowserCam, 20_000);
+
+  // Browser camera — open MediaDevices locally and render the live feed
+  // regardless of edge/demo/backend state, since the stream lives on the
+  // user's device, not the server.
+  if (isBrowserCam && streamUrl) {
+    return <BrowserCameraStream streamUrl={streamUrl} />;
+  }
 
   if (edge) {
     if (!snap.url) {
@@ -518,7 +603,7 @@ function CameraTile({
         style={{ background: CARD_BG, border: `1px solid ${borderColor}` }}>
         {/* Snapshot */}
         <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
-          <SnapshotImage cameraId={camera.camera_id} />
+          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
           <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
             {isLive
@@ -588,7 +673,7 @@ function CameraTile({
     >
       {/* Snapshot area */}
       <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
-        <SnapshotImage cameraId={camera.camera_id} />
+        <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
 
         {/* Alert overlay — shown when overcrowded */}
         {(level === "critical" || level === "warning") && (
@@ -786,7 +871,7 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
 
         {/* Snapshot */}
         <div className="relative flex-1 min-h-0" style={{ aspectRatio: "16/9" }}>
-          <SnapshotImage cameraId={camera.camera_id} />
+          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
 
           {/* Overlays */}
           <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-xl px-4 py-2.5"

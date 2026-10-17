@@ -157,6 +157,71 @@ function TotalChart({ history, current, timestamps }: { history: number[]; curre
   );
 }
 
+// ─── Browser camera stream (plug-and-play cameras on this device) ────────────
+//
+// A camera added via the plug-and-play detector lives on the user's phone/
+// laptop, not the edge box, so there's no server snapshot to pull. We open
+// it locally through MediaDevices and render the live feed in-tile so the
+// operator can see at a glance that Kyro has the camera and it's working.
+function AttendanceBrowserCamStream({ streamUrl }: { streamUrl: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
+
+  useEffect(() => {
+    if (!deviceId || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErr("Needs HTTPS + a browser that supports MediaDevices.");
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let s: MediaStream;
+        try {
+          s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+        } catch (e: unknown) {
+          const name = (e as Error)?.name;
+          if (name === "OverconstrainedError" || name === "NotFoundError") {
+            s = await navigator.mediaDevices.getUserMedia({ video: { deviceId }, audio: false });
+          } else { throw e; }
+        }
+        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
+        streamRef.current = s;
+        if (videoRef.current) {
+          videoRef.current.srcObject = s;
+          videoRef.current.muted = true;
+          videoRef.current.playsInline = true;
+          videoRef.current.play().catch(() => { setErr("Autoplay blocked. Tap the tile to start preview."); });
+        }
+      } catch (e: unknown) {
+        const name = (e as Error)?.name;
+        setErr(name === "NotAllowedError" ? "Camera access blocked." : `${name ?? "error"}`);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+    };
+  }, [deviceId]);
+
+  const handleTap = () => { const v = videoRef.current; if (!v) return; v.play().then(() => setErr(null)).catch(() => {}); };
+
+  return (
+    <div className="absolute inset-0" onClick={handleTap}>
+      <video ref={videoRef} autoPlay playsInline muted
+        className="absolute inset-0 w-full h-full object-cover"
+        style={{ background: "#000" }} />
+      {err && !streamRef.current && (
+        <div className="absolute inset-0 flex items-center justify-center text-center px-3"
+          style={{ background: "rgba(0,0,0,0.65)" }}>
+          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{err}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Zone camera card (live stream per camera) ────────────────────────────────
 function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
@@ -185,14 +250,18 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
     return () => { cancelled = true; clearInterval(id); };
   }, [camera.camera_id]);
 
+  const isBrowserCam = camera.camera_id.startsWith("web-") || camera.stream_url?.startsWith("webcam://");
+
   if (edge) {
     // Edge Live: latest picture (refreshed every 20 s) + status from /api/live/venue.
     const z = zones[camera.camera_id];
-    const live = !!z?.is_running;
-    const err = live && z?.status === "error";
+    const live = !!z?.is_running || !!isBrowserCam; // browser cams are always "live" on this device
+    const err = live && z?.status === "error" && !isBrowserCam;
     return (
       <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
-        {snap.url ? (
+        {isBrowserCam ? (
+          <AttendanceBrowserCamStream streamUrl={camera.stream_url} />
+        ) : snap.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={snap.url} alt={camera.zone_name ?? camera.name}
             className="absolute inset-0 w-full h-full object-cover" draggable={false} />
