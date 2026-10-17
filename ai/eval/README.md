@@ -236,6 +236,70 @@ Cost: CLIP B/32 ≈ 0.1 s per near person on a processor, ≈ 0.02 s on a GPU
 (Apple M1); one-time download ≈ 600 MB. For a statue the camera always sees,
 "Don't count an area" is the dependable fix (it can't miss, and costs nothing).
 
+## Hybrid experiment (October 2026): person detector + crowd-counting / head model
+
+**Question:** would a model built for crowds — finding each *head* as a point —
+recover people Kyro's person detector misses, if the two are matched so nobody
+is counted twice?
+
+**Second model:** P2PNet (Song et al., ICCV 2021, Tencent; ShanghaiTech-A
+weights), a point-based crowd counter: one point per head, so its output can be
+matched one-to-one with person boxes (density-map counters only give a total,
+which can't be matched). Its licence allows use **only for academic research**,
+so it was used here purely as a benchmark; it can't ship in Kyro.
+
+**Matching** (`hybrid/fuse.py`): a head point "belongs" to a person box if it
+sits in the box's head area; each box takes at most one head. A head with no box
+is added as a person only if P2PNet is confident (threshold swept) and — in the
+strict version — it isn't inside any box Kyro already counted (a torso or second
+point on the same person). Unmatched low-confidence heads would be "uncertain",
+shown but not counted. Counts are never simply added.
+
+**Test footage:** the Mall dataset (CUHK, Chen et al. 2012): a fixed overhead
+camera over a busy shopping centre, every head hand-marked — close to a church
+camera's view. Every 10th of 2,000 frames (200), alternating tuning/held-out,
+~31 people per frame; neither model was trained on it. Scored inside the
+dataset's official region of interest. Kyro run with 2×2 tiles (what it does on
+a 1080p camera; the Mall frames are only 640×480).
+
+Held-out half (100 frames, 3,114 people):
+
+| | Count error / frame | People found | Counted boxes that are people |
+|---|---|---|---|
+| Kyro now (count ≥ 0.30) | 5.27 | 72.2% | 86.9% |
+| Kyro, count ≥ 0.25 | 3.67 | 74.8% | 84.0% |
+| Kyro, count ≥ 0.20 | **2.36** | **77.3%** | 80.3% |
+| Kyro (≥ 0.30) + P2PNet heads ≥ 0.6, strict matching | 2.82 | 73.9% | 80.0% |
+| Kyro (≥ 0.30) + P2PNet heads ≥ 0.9, strict matching | 3.68 | 72.9% | 82.3% |
+| P2PNet alone (≥ 0.5) | 6.8 | 53.5% | 68.2% |
+
+(The tuning half gave the same picture: hybrid 2.81 vs Kyro ≥ 0.20 2.86.)
+
+**Result: the hybrid does not beat Kyro alone.** For every real person the head
+model added, it added about four false ones — heads on the shop-window
+mannequins, two points on one person, points on torsos. It closes the count gap
+mostly by mistakes cancelling Kyro's misses, not by finding the missed people.
+Simply letting Kyro count slightly less certain people finds *more* real people
+than the hybrid at the same precision.
+
+**What this does show:** the best counting bar depends on the camera view —
+close-up photos favoured 0.30, this overhead crowd favours 0.20. A per-church
+calibration (comparing Kyro with a few hand counts from the real camera and
+picking the bar) is the evidence-based next step, not a second model.
+
+**Not done:** a dedicated head *detector*. There's no official (model-author or
+Ultralytics) head detector, the main crowd/head datasets (CrowdHuman,
+ShanghaiTech, SCUT-HEAD) are research-only, and third-party weight files weren't
+used. A licence-clean option is training one on Open Images "Human head" boxes
+(CC BY 4.0); given the P2PNet result it's only worth it if real Kharis footage
+shows missed people whose heads are clearly visible. The P2PNet run on the
+statue and photo test sets didn't complete (lost with the scratch data); in the
+Mall footage it marked mannequins as heads.
+
+Re-run: `hybrid/build_mall.py`, `hybrid/p2p_run.py` (needs the P2PNet repo),
+`python -m ai.eval.run_box <dir>/mallset box_mall_t2_raw.json --raw` with
+`DETECTION_TILES=2`, then `ROI=1 python hybrid/eval_mall.py <dir> test`.
+
 ## Earlier benchmark (detection only)
 
 
