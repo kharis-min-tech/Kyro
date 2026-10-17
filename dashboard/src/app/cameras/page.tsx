@@ -98,6 +98,10 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
   const edgeCam  = edge ? (cam as EdgeCamera) : null;
   const isUsb    = edgeCam?.kind === "usb";
   const isWebcam = edgeCam ? isUsb : (cam.stream_url === "0" || /^\d$/.test(cam.stream_url));
+  /** A browser camera — picked via the plug-and-play detector. Lives on the
+   *  user's phone/laptop. Named with a webcam://<deviceId> stream URL and
+   *  the "web-" camera_id prefix set by CameraContext.addCamera. */
+  const isBrowserCam = cam.camera_id.startsWith("web-") || (cam.stream_url?.startsWith("webcam://") ?? false);
 
   async function save() {
     setSaving(true); setErr(null);
@@ -136,6 +140,22 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
           <Users size={12} className="text-amber-400" />
           <span className="text-amber-300">Queue / outdoor camera</span>
           <span className="text-gray-500 ml-auto">counts people waiting — not seats</span>
+        </div>
+      )}
+
+      {/* Browser camera badge — plug-and-play camera on the user's device.
+          This is a REAL camera entry in Kyro (shows in Seat Map, Rota,
+          Sessions, Live Cameras) but counting needs the Kyro camera
+          computer to see the feed. We say that honestly instead of
+          pretending counts will magically appear. */}
+      {isBrowserCam && !editing && (
+        <div className="flex items-center gap-2 px-4 py-2 text-xs font-medium"
+          style={{ background: "rgba(99,102,241,0.08)", borderBottom: "1px solid rgba(99,102,241,0.25)" }}>
+          <Camera size={12} className="text-indigo-400" />
+          <span className="text-indigo-300">Browser camera · on this device</span>
+          <span className="ml-auto" style={{ color: "var(--text-muted)" }}>
+            Pair a Kyro camera computer for automatic counting
+          </span>
         </div>
       )}
 

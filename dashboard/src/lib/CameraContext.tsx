@@ -19,6 +19,25 @@ function mdeKey(name: "overrides" | "added" | "deleted"): string {
   return `kyro_${mode}_cameras_${name}`;
 }
 
+/**
+ * A "browser camera" is one the user picked via the plug-and-play detector:
+ * their phone, laptop or USB webcam, identified by a MediaDevices deviceId.
+ * These cannot be processed by the edge camera computer (the box doesn't
+ * have access to the user's browser), so we persist them LOCALLY and merge
+ * them into every refresh — otherwise the server would overwrite them with
+ * its own camera list the moment the user navigates away.
+ */
+function isBrowserCameraUrl(url: string): boolean {
+  return typeof url === "string" && url.startsWith("webcam://");
+}
+function loadLocalAddedCameras(): Camera[] {
+  try { return JSON.parse(localStorage.getItem(mdeKey("added")) ?? "[]") as Camera[]; }
+  catch { return []; }
+}
+function saveLocalAddedCameras(cams: Camera[]) {
+  try { localStorage.setItem(mdeKey("added"), JSON.stringify(cams)); } catch {}
+}
+
 function loadDemoCameras(): Camera[] {
   // Seed the fake DEMO_CAMERAS only when the user explicitly picked Demo.
   // In Live mode without a backend, start from an empty base — the operator
@@ -72,9 +91,20 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     // which is also true here because there's no API URL.
     if (isEdgeLive()) {
       try {
-        setCameras(await edgeVenueApi.cameras());
+        const server = await edgeVenueApi.cameras();
+        // Merge in browser cameras the user added via the plug-and-play
+        // detector. The edge box can't see those (they live in the user's
+        // phone/laptop) so the server list wouldn't include them, but we
+        // still want them to appear in the sidebar, Sessions, Seat Map and
+        // Rota the same way any other camera does.
+        const local = loadLocalAddedCameras().filter((c) => isBrowserCameraUrl(c.stream_url));
+        const serverIds = new Set(server.map((c) => c.camera_id));
+        setCameras([...server, ...local.filter((c) => !serverIds.has(c.camera_id))]);
         setError(null);
       } catch (e: any) {
+        // Even when the edge API is unreachable, surface the local browser
+        // cameras so the user doesn't lose them.
+        setCameras(loadLocalAddedCameras().filter((c) => isBrowserCameraUrl(c.stream_url)));
         setError(e?.message ?? "Could not load cameras");
       } finally {
         setLoading(false);
@@ -114,6 +144,18 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   const updateCamera = useCallback(async (cameraId: string, fields: Partial<Camera>) => {
     setCameras((prev) => prev.map((c) => c.camera_id === cameraId ? { ...c, ...fields } : c));
+    // Browser cameras live in local storage — persist edits there so a
+    // rename or capacity change survives a reload. Prefix "web-" matches
+    // what addCamera() assigns.
+    if (cameraId.startsWith("web-")) {
+      const saved = loadLocalAddedCameras();
+      const idx = saved.findIndex((c) => c.camera_id === cameraId);
+      if (idx >= 0) {
+        saved[idx] = { ...saved[idx], ...fields };
+        saveLocalAddedCameras(saved);
+      }
+      return;
+    }
     if (isEdgeLive()) {
       const f = fields as Partial<Camera> & { hidden?: boolean };
       await edgeVenueApi.updateCamera(cameraId, {
@@ -141,6 +183,49 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   ) => {
     const isQueue = fields.location === "queue";
     const capacity = fields.zone_capacity ?? 0;
+    const browserCam = isBrowserCameraUrl(fields.stream_url);
+
+    // Browser cameras — picked from the plug-and-play detector — live only
+    // on the user's device. Save them to local storage so they survive page
+    // navigation and so the sidebar, Sessions, Seat Map and Rota all see
+    // them. We skip edgeVenueApi.addStream for these because the server
+    // doesn't know what a webcam://<deviceId> URL means and would reject or
+    // drop the record on the next refresh.
+    if (browserCam) {
+      const newCam: Camera = {
+        camera_id:     `web-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+        name:          fields.name,
+        stream_url:    fields.stream_url,
+        location:      fields.location ?? null,
+        zone_name:     fields.zone_name ?? fields.name,
+        zone_capacity: capacity,
+        zone_order:    fields.zone_order ?? 99,
+        is_active:     true,
+        created_at:    new Date().toISOString(),
+      };
+      const saved = loadLocalAddedCameras();
+      saved.push(newCam);
+      saveLocalAddedCameras(saved);
+      setCameras((prev) => [...prev, newCam]);
+
+      // Auto-generate a seat layout so the Seat Map shows this camera right
+      // away — same behaviour the demo path uses.
+      if (!isQueue && capacity > 0) {
+        try {
+          const LAYOUTS_KEY = `kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_layouts`;
+          const { generateSeatsFromCapacity } = await import("@/lib/seatGenerator");
+          const seats = generateSeatsFromCapacity(capacity);
+          const layouts = JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? "{}");
+          layouts[newCam.camera_id] = {
+            id: Date.now(), camera_id: newCam.camera_id,
+            name: `${fields.name} — auto`, is_active: true,
+            seat_count: seats.length, created_at: new Date().toISOString(), seats,
+          };
+          localStorage.setItem(LAYOUTS_KEY, JSON.stringify(layouts));
+        } catch {}
+      }
+      return;
+    }
 
     if (isEdgeLive()) {
       // A network camera: the camera computer picks the address up on its next report.
@@ -202,6 +287,12 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   const deleteCamera = useCallback(async (cameraId: string) => {
     setCameras((prev) => prev.filter((c) => c.camera_id !== cameraId));
+    // Browser cameras — remove from local storage only.
+    if (cameraId.startsWith("web-")) {
+      const saved = loadLocalAddedCameras().filter((c) => c.camera_id !== cameraId);
+      saveLocalAddedCameras(saved);
+      return;
+    }
     if (isEdgeLive()) { await edgeVenueApi.removeCamera(cameraId); return; }
     if (inDemoMode()) {
       try {
