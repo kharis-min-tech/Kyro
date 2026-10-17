@@ -352,10 +352,11 @@ interface DetectedDevice {
   label: string;   // Human label, e.g. "FaceTime HD Camera"
 }
 
-function DetectedDeviceCard({ device, onPick, picked }: {
+function DetectedDeviceCard({ device, onPick, picked, onReject }: {
   device: DetectedDevice;
   onPick: () => void;
   picked: boolean;
+  onReject?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"idle" | "preview" | "denied" | "error">("idle");
@@ -443,6 +444,15 @@ function DetectedDeviceCard({ device, onPick, picked }: {
           style={{ background: picked ? "#16a34a" : "#4f46e5" }}>
           {picked ? <><Check size={12} className="inline -mt-0.5 mr-0.5" /> Picked</> : "Use this"}
         </button>
+        {onReject && (
+          <button type="button" onClick={() => { stop(); onReject(); }}
+            className="w-7 h-7 rounded-lg flex items-center justify-center"
+            style={{ background: "var(--bg-hover)", color: "var(--text-muted)" }}
+            aria-label="Not this one — remove from list"
+            title="Not this one">
+            <X size={12} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -464,20 +474,46 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
   const [queuePrompt, setQueuePrompt]   = useState<"idle" | "asking" | "confirmed" | "dismissed">("idle");
   const [isQueueCam, setIsQueueCam]     = useState(false);
 
-  // Device enumeration state — browsers only reveal labels AFTER the user
-  // grants camera permission at least once. So we offer a "Detect cameras"
-  // button that calls getUserMedia first (lighting up the permission
-  // prompt), then enumerates. On HTTPS this works on Chrome, Safari, Edge
-  // and Firefox desktop + mobile. On insecure http:// (not Cloudflare) the
-  // API is unavailable and we show a clear reason.
-  const [detecting, setDetecting] = useState(false);
-  const [devices, setDevices]     = useState<DetectedDevice[]>([]);
-  const [pickedId, setPickedId]   = useState<string | null>(null);
-  const [detectErr, setDetectErr] = useState<string | null>(null);
+  // Device enumeration — plug-detection style.
+  //
+  // The user plugs a camera in BEFORE tapping Scan. We capture a baseline of
+  // existing video-input device IDs the moment they enter the detect mode
+  // (without prompting for permission — this returns IDs with blank labels,
+  // which is fine for comparison). On Scan, we enumerate again with
+  // permission so we get real labels, and only show device IDs that are
+  // NEW since the baseline — i.e. the camera they just plugged in.
+  //
+  // This stops the old behaviour where the built-in webcam / phone front
+  // and back cameras appeared unprompted even when the user hadn't
+  // connected anything.
+  const [detecting, setDetecting]     = useState(false);
+  const [baselineIds, setBaselineIds] = useState<Set<string> | null>(null);
+  const [newDevices, setNewDevices]   = useState<DetectedDevice[]>([]);
+  const [allDevices, setAllDevices]   = useState<DetectedDevice[]>([]);
+  const [showAll, setShowAll]         = useState(false);
+  const [pickedId, setPickedId]       = useState<string | null>(null);
+  const [detectErr, setDetectErr]     = useState<string | null>(null);
+  const [scanned, setScanned]         = useState(false);
 
   const supportsMediaDevices = typeof navigator !== "undefined"
     && !!navigator.mediaDevices?.enumerateDevices
     && !!navigator.mediaDevices?.getUserMedia;
+
+  // Baseline — enumerate silently (no permission prompt) to record what was
+  // ALREADY connected when the user opened the detect flow. Runs once on
+  // entering detect mode.
+  useEffect(() => {
+    if (mode !== "detect" || baselineIds !== null || !supportsMediaDevices) return;
+    (async () => {
+      try {
+        const list = await navigator.mediaDevices.enumerateDevices();
+        const ids = new Set(list.filter((d) => d.kind === "videoinput").map((d) => d.deviceId));
+        setBaselineIds(ids);
+      } catch {
+        setBaselineIds(new Set());
+      }
+    })();
+  }, [mode, baselineIds, supportsMediaDevices]);
 
   const detect = useCallback(async () => {
     if (!supportsMediaDevices) {
@@ -486,49 +522,57 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
     }
     setDetecting(true);
     setDetectErr(null);
+    setScanned(true);
     try {
       // One-shot permission request so the subsequent enumerate() returns
-      // real labels instead of empty strings. We release the stream
-      // immediately — no need to hold onto it.
+      // real labels instead of empty strings. Stream released immediately.
       const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       temp.getTracks().forEach((t) => t.stop());
       const list = await navigator.mediaDevices.enumerateDevices();
       const vids = list
         .filter((d) => d.kind === "videoinput")
         .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` }));
-      setDevices(vids);
-      if (vids.length === 0) {
-        setDetectErr("No cameras detected. Plug one in or use the IP camera option below.");
+      setAllDevices(vids);
+      const base = baselineIds ?? new Set<string>();
+      const fresh = vids.filter((v) => !base.has(v.id));
+      setNewDevices(fresh);
+      if (fresh.length === 0) {
+        setDetectErr("No new camera found — nothing was plugged in. Connect a camera, then tap Scan again.");
       }
     } catch (e: unknown) {
       const name = (e as Error)?.name;
       if (name === "NotAllowedError") {
         setDetectErr("Camera access blocked. Allow it in your browser's address bar and try again.");
       } else if (name === "NotFoundError") {
-        setDetectErr("No cameras detected. Plug one in or use the IP camera option below.");
+        setDetectErr("No cameras found on this device at all.");
       } else {
         setDetectErr("Couldn't scan for cameras. Try reloading the page.");
       }
     } finally {
       setDetecting(false);
     }
-  }, [supportsMediaDevices]);
-
-  // Auto-detect when the user enters Detect mode for the first time —
-  // one tap, no digging through browser menus.
-  useEffect(() => {
-    if (mode === "detect" && devices.length === 0 && !detecting && !detectErr) {
-      detect();
-    }
-  }, [mode, devices.length, detecting, detectErr, detect]);
+  }, [supportsMediaDevices, baselineIds]);
 
   function pickDevice(d: DetectedDevice) {
     setPickedId(d.id);
-    // Store the stream URL as a browser-source identifier so the
-    // vision worker (when a backend is wired) can distinguish it from
+    // Browser-source identifier the vision worker can distinguish from
     // RTSP input. Format: webcam://<deviceId> — reserved by this app.
     setUrl(`webcam://${d.id}`);
-    if (!name) setName(d.label);
+    // Do NOT auto-fill the name — the user names the camera themselves
+    // (per the operator's own ask: "don't give me a random camera name").
+  }
+
+  function rejectDevice(id: string) {
+    // User doesn't want this camera — remove it from the list and clear
+    // the pick if it was the picked one. The baseline is updated too so
+    // the same device won't resurface on the next Scan.
+    setNewDevices((prev) => prev.filter((d) => d.id !== id));
+    setBaselineIds((prev) => {
+      const next = new Set(prev ?? []);
+      next.add(id);
+      return next;
+    });
+    if (pickedId === id) { setPickedId(null); setUrl(""); }
   }
 
   function handleNameChange(val: string) {
@@ -563,7 +607,9 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       });
       setName(""); setUrl(""); setZone(""); setCap("");
       setType(null); setIsQueueCam(false); setQueuePrompt("idle");
-      setMode(null); setDevices([]); setPickedId(null);
+      setMode(null); setPickedId(null);
+      setBaselineIds(null); setNewDevices([]); setAllDevices([]);
+      setShowAll(false); setScanned(false);
       setOpen(false);
       onAdded();
     } catch (e: any) { setErr(e.message); }
@@ -642,52 +688,121 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
             </div>
           )}
 
-          {/* Plug-and-play detector */}
+          {/* Plug-and-play detector — plug-detection style.
+              The baseline is captured silently when the user enters this
+              mode. Only devices that appear AFTER a Scan (= plugged in
+              since opening the page) are surfaced as fresh cards. Built-in
+              webcams / phone cameras stay out of the list unless the user
+              opts into "Show all cameras". */}
           {mode === "detect" && (
             <div className="flex flex-col gap-3">
               <div className="flex items-center justify-between gap-2">
-                <button type="button" onClick={() => { setMode(null); setPickedId(null); setUrl(""); }}
+                <button type="button" onClick={() => {
+                    setMode(null); setPickedId(null); setUrl(""); setScanned(false);
+                    setNewDevices([]); setAllDevices([]); setShowAll(false);
+                  }}
                   className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
                   ← Back
                 </button>
-                <button type="button" onClick={detect} disabled={detecting}
-                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50"
-                  style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
-                  {detecting ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
-                  {detecting ? "Scanning…" : "Scan again"}
-                </button>
               </div>
+
+              {/* Pre-scan instructions — only shown before the first Scan. */}
+              {!scanned && !detecting && (
+                <div className="rounded-xl p-4 flex flex-col items-center gap-3 text-center"
+                  style={{ background: "var(--bg-inset)", border: "1px dashed var(--border-strong)" }}>
+                  <Zap size={20} className="text-indigo-400" />
+                  <div>
+                    <p className="text-sm font-semibold text-white">Plug a camera in now</p>
+                    <p className="text-xs mt-1" style={{ color: "var(--text-tertiary)" }}>
+                      Connect your USB webcam, phone, or any camera to this device, then tap&nbsp;
+                      <strong>Scan</strong>. Kyro will show you only the one you just connected.
+                    </p>
+                  </div>
+                  <button type="button" onClick={detect}
+                    className="px-5 py-2 rounded-lg text-sm font-medium text-white"
+                    style={{ background: "#4f46e5" }}>
+                    Scan
+                  </button>
+                </div>
+              )}
 
               {detecting && (
                 <div className="rounded-xl p-6 flex flex-col items-center gap-2"
                   style={{ background: "var(--bg-inset)", border: "1px dashed var(--border-strong)" }}>
                   <Loader2 size={22} className="animate-spin text-indigo-400" />
-                  <p className="text-sm text-white">Looking for cameras…</p>
+                  <p className="text-sm text-white">Scanning for the camera you just plugged in…</p>
                   <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
-                    Your browser may ask for camera permission. Allow it so Kyro can list what's connected.
+                    Your browser may ask for camera permission. Allow it so Kyro can read the connected camera.
                   </p>
                 </div>
               )}
 
-              {detectErr && !detecting && (
-                <div className="rounded-xl p-3 flex items-start gap-2"
-                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
-                  <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-200">{detectErr}</p>
-                </div>
-              )}
+              {/* After a scan, show results. */}
+              {scanned && !detecting && (
+                <>
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
+                      {newDevices.length > 0 ? `New camera${newDevices.length !== 1 ? "s" : ""} detected` : "Scan result"}
+                    </p>
+                    <button type="button" onClick={detect} disabled={detecting}
+                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                      style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
+                      <RefreshCw size={11} /> Scan again
+                    </button>
+                  </div>
 
-              {devices.length > 0 && (
-                <div className="flex flex-col gap-3">
-                  {devices.map((d) => (
-                    <DetectedDeviceCard
-                      key={d.id}
-                      device={d}
-                      picked={pickedId === d.id}
-                      onPick={() => pickDevice(d)}
-                    />
-                  ))}
-                </div>
+                  {detectErr && (
+                    <div className="rounded-xl p-3 flex items-start gap-2"
+                      style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                      <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                      <p className="text-xs text-amber-200">{detectErr}</p>
+                    </div>
+                  )}
+
+                  {newDevices.length > 0 && (
+                    <div className="flex flex-col gap-3">
+                      {newDevices.map((d) => (
+                        <DetectedDeviceCard
+                          key={d.id}
+                          device={d}
+                          picked={pickedId === d.id}
+                          onPick={() => pickDevice(d)}
+                          onReject={() => rejectDevice(d.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Escape hatch — the user may genuinely want to use a
+                      camera that was already connected before they opened
+                      this page. Hidden by default so built-ins don't clutter
+                      the common path. */}
+                  {allDevices.length > newDevices.length && (
+                    <div>
+                      <button type="button" onClick={() => setShowAll((v) => !v)}
+                        className="text-xs" style={{ color: "var(--text-muted)" }}>
+                        {showAll
+                          ? "Hide already-connected cameras"
+                          : `Show already-connected cameras (${allDevices.length - newDevices.length})`}
+                      </button>
+                      {showAll && (
+                        <div className="flex flex-col gap-3 mt-2">
+                          {allDevices
+                            .filter((d) => !newDevices.find((n) => n.id === d.id))
+                            .map((d) => (
+                              <DetectedDeviceCard
+                                key={d.id}
+                                device={d}
+                                picked={pickedId === d.id}
+                                onPick={() => pickDevice(d)}
+                                onReject={() => rejectDevice(d.id)}
+                              />
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
