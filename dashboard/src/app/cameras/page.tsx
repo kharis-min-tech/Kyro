@@ -385,6 +385,9 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
+    if (videoRef.current) {
+      try { videoRef.current.srcObject = null; } catch {}
+    }
     setState("idle");
   }, []);
 
@@ -395,16 +398,30 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
         audio: false,
       });
       streamRef.current = s;
-      if (videoRef.current) {
-        videoRef.current.srcObject = s;
-        await videoRef.current.play().catch(() => {});
-      }
+      // Flip state first so the <video> is in the DOM, then attach the
+      // stream in the useEffect below. The previous version tried to set
+      // videoRef.current.srcObject BEFORE the element was mounted, so the
+      // ref was null and the video rendered blank.
       setState("preview");
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.name : "error";
       setState(msg === "NotAllowedError" ? "denied" : "error");
     }
   }
+
+  // Attach the stream once the <video> is in the DOM. This fires every
+  // time state flips to "preview" and streamRef has a live stream, so a
+  // Stop/Preview cycle re-attaches cleanly.
+  useEffect(() => {
+    if (state !== "preview" || !videoRef.current || !streamRef.current) return;
+    const v = videoRef.current;
+    v.srcObject = streamRef.current;
+    v.muted = true;      // required for autoplay without a user gesture on iOS
+    v.playsInline = true;
+    v.play().catch(() => {
+      // Autoplay blocked — surface a hint in dev tools; user can tap again.
+    });
+  }, [state]);
 
   // Stop the preview when the card is unmounted or its "picked" status flips
   // off — leaving a <video> live after the user has moved on would keep the
@@ -415,25 +432,31 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
   return (
     <div className="rounded-xl overflow-hidden"
       style={{ background: "var(--bg-card)", border: picked ? "1px solid #4f46e5" : "1px solid var(--border-subtle)" }}>
-      <div className="aspect-video flex items-center justify-center" style={{ background: "var(--bg-inset)" }}>
-        {state === "preview" ? (
+      {/* Preview tile — the <video> stays in the DOM whenever we're in
+          preview state so the ref is available when getUserMedia resolves.
+          Other states still render the icon/error UI underneath. */}
+      <div className="aspect-video flex items-center justify-center relative" style={{ background: "var(--bg-inset)" }}>
+        {state === "preview" && (
           <video ref={videoRef} autoPlay playsInline muted
-            className="w-full h-full object-cover" />
-        ) : state === "denied" ? (
+            className="absolute inset-0 w-full h-full object-cover" />
+        )}
+        {state === "denied" && (
           <div className="text-center p-4">
             <AlertTriangle size={22} className="mx-auto mb-1" style={{ color: "#f59e0b" }} />
             <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
               Browser blocked camera access. Allow it in your browser's address bar lock icon and try again.
             </p>
           </div>
-        ) : state === "error" ? (
+        )}
+        {state === "error" && (
           <div className="text-center p-4">
             <AlertCircle size={22} className="mx-auto mb-1 text-red-400" />
             <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
               Couldn't open this camera. Another app may be using it.
             </p>
           </div>
-        ) : (
+        )}
+        {state === "idle" && (
           <Camera size={28} style={{ color: "var(--text-faint)" }} />
         )}
       </div>
