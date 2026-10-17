@@ -1149,7 +1149,11 @@ function HelpPanel() {
 export default function CamerasPage() {
   const { cameras, loading, error, refresh, updateCamera, deleteCamera } = useCameras();
   const { role } = useAuth();
-  const canManage = role === "admin";
+  // Operators run the services in-building and need to add cameras too — the
+  // previous admin-only gate meant anyone signed in as an operator saw the
+  // Cameras page as read-only with no way to add anything. Admin + operator
+  // both get the manage controls; viewers stay read-only.
+  const canManage = role === "admin" || role === "operator";
 
   // Live mode on the Cloudflare build — decided after mount (reads localStorage).
   const [edge, setEdge] = useState(false);
@@ -1230,23 +1234,22 @@ export default function CamerasPage() {
 
         {edge && canManage && <SwitchedOffCameras cameras={switchedOff} onChanged={afterEdgeChange} />}
 
-        {/* Plug-and-play detector first — covers the common case of a USB
-            webcam, phone camera, or built-in laptop camera on EVERY
-            deployment (edge or not). Non-technical operators were being
-            dropped into an RTSP-only form in edge mode and giving up. */}
-        {!error && !loading && canManage && (
+        {/* Plug-and-play detector — covers USB webcam, phone, built-in
+            laptop camera. Shown on EVERY deployment (edge or not) and does
+            NOT depend on the useCameras() error state so a transient
+            edge-API hiccup can't hide the add form. */}
+        {canManage && (
           <AddCameraForm onAdded={edge ? afterEdgeChange : refresh} cameraCount={cameras.length} />
         )}
         {/* Edge-specific IP-camera form kept for multi-device setups where
             the operator needs to choose which camera computer runs the
-            stream. Shown below the plug-and-play detector in a muted
-            collapsed state so it's not the first thing they see. */}
+            stream. Only shown when at least one camera computer is paired. */}
         {edge && canManage && !loading && (devices?.length ?? 0) > 0 && (
           <EdgeAddCameraForm onAdded={afterEdgeChange} cameraCount={cameras.length} devices={devices ?? []} />
         )}
-        {(!error || edge) && !loading && !canManage && (
+        {!canManage && (
           <p className="text-xs text-gray-500 rounded-xl px-4 py-3" style={{ border: "1px solid var(--border-subtle)" }}>
-            Only administrators can add, change or remove cameras.
+            Only administrators and operators can add, change or remove cameras.
           </p>
         )}
 
