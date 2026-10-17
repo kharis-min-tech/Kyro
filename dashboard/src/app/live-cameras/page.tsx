@@ -20,6 +20,21 @@ import { camerasApi } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { useEdgeSnapshot, useEdgeVenue, type EdgeCamera } from "@/lib/edgeVenue";
+import { useBrowserPersonCount } from "@/lib/browserPersonCount";
+
+/** Shared storage so attendance headline + integrations payload can read the
+ *  latest browser-camera counts. Written whenever detection emits a count. */
+function writeBrowserCount(cameraId: string, zoneName: string, count: number) {
+  if (typeof window === "undefined") return;
+  try {
+    const mode = localStorage.getItem("kyro_mode") ?? "demo";
+    const key = `kyro_${mode}_browser_counts`;
+    const all = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, { count: number; zone: string; updated_at: number }>;
+    all[cameraId] = { count, zone: zoneName, updated_at: Date.now() };
+    localStorage.setItem(key, JSON.stringify(all));
+    window.dispatchEvent(new Event("kyro_browser_counts_changed"));
+  } catch { /* storage can be unavailable in private mode — skip silently */ }
+}
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -82,9 +97,10 @@ function occupancyLabel(pct: number | null): "critical" | "warning" | "ok" | "un
  * MediaDevices right in the browser and render the live stream — the
  * operator sees exactly what Kyro would see.
  */
-function BrowserCameraStream({ streamUrl }: { streamUrl: string }) {
+function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: string; cameraId?: string; zoneName?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
@@ -108,6 +124,7 @@ function BrowserCameraStream({ streamUrl }: { streamUrl: string }) {
         }
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = s;
+        setStream(s);
         if (videoRef.current) {
           videoRef.current.srcObject = s;
           videoRef.current.muted = true;
@@ -125,14 +142,36 @@ function BrowserCameraStream({ streamUrl }: { streamUrl: string }) {
     return () => {
       cancelled = true;
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+      setStream(null);
     };
   }, [deviceId]);
+
+  // In-browser person counting on the same stream the <video> is showing.
+  // Status is kept honest: we only treat `count` as meaningful while
+  // status === "running"; any other state shows a reason, never a number.
+  const det = useBrowserPersonCount(stream, !!stream && !!cameraId);
+  useEffect(() => {
+    if (!cameraId || det.status !== "running" || det.count === null) return;
+    writeBrowserCount(cameraId, zoneName ?? "Browser camera", det.count);
+  }, [cameraId, zoneName, det.count, det.status]);
 
   const handleTap = () => {
     const v = videoRef.current;
     if (!v) return;
     v.play().then(() => setErr(null)).catch(() => {});
   };
+
+  const detBadge = (() => {
+    if (!cameraId) return null;
+    switch (det.status) {
+      case "running":  return { bg: "rgba(22,163,74,0.85)", text: `${det.count ?? 0} · counting` };
+      case "loading":  return { bg: "rgba(99,102,241,0.85)", text: "Loading detector…" };
+      case "paused":   return { bg: "rgba(107,114,128,0.85)", text: "Paused" };
+      case "failed":   return { bg: "rgba(239,68,68,0.85)", text: "Detector unavailable" };
+      case "idle":
+      default:         return { bg: "rgba(107,114,128,0.75)", text: "Preview only" };
+    }
+  })();
 
   if (err && !streamRef.current) {
     return (
@@ -147,11 +186,19 @@ function BrowserCameraStream({ streamUrl }: { streamUrl: string }) {
       <video ref={videoRef} autoPlay playsInline muted
         className="absolute inset-0 w-full h-full object-cover"
         style={{ background: "#000" }} />
+      {detBadge && (
+        <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full flex items-center gap-1.5"
+          style={{ background: detBadge.bg, color: "#fff", fontSize: 10, fontWeight: 600 }}
+          title={det.error ?? undefined}>
+          {det.status === "running" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+          {detBadge.text}
+        </div>
+      )}
     </div>
   );
 }
 
-function SnapshotImage({ cameraId, streamUrl }: { cameraId: string; streamUrl?: string }) {
+function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; streamUrl?: string; zoneName?: string }) {
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
@@ -165,7 +212,7 @@ function SnapshotImage({ cameraId, streamUrl }: { cameraId: string; streamUrl?: 
   // regardless of edge/demo/backend state, since the stream lives on the
   // user's device, not the server.
   if (isBrowserCam && streamUrl) {
-    return <BrowserCameraStream streamUrl={streamUrl} />;
+    return <BrowserCameraStream streamUrl={streamUrl} cameraId={cameraId} zoneName={zoneName} />;
   }
 
   if (edge) {
@@ -603,7 +650,7 @@ function CameraTile({
         style={{ background: CARD_BG, border: `1px solid ${borderColor}` }}>
         {/* Snapshot */}
         <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
-          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
+          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} zoneName={camera.zone_name ?? camera.name} />
           <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
             {isLive
@@ -673,7 +720,7 @@ function CameraTile({
     >
       {/* Snapshot area */}
       <div className="relative" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
-        <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
+        <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} zoneName={camera.zone_name ?? camera.name} />
 
         {/* Alert overlay — shown when overcrowded */}
         {(level === "critical" || level === "warning") && (
@@ -871,7 +918,7 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
 
         {/* Snapshot */}
         <div className="relative flex-1 min-h-0" style={{ aspectRatio: "16/9" }}>
-          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} />
+          <SnapshotImage cameraId={camera.camera_id} streamUrl={camera.stream_url} zoneName={camera.zone_name ?? camera.name} />
 
           {/* Overlays */}
           <div className="absolute bottom-4 left-4 flex items-center gap-2 rounded-xl px-4 py-2.5"

@@ -8,6 +8,8 @@
     "start": "next start"
   },
   "dependencies": {
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "lucide-react": "^1.28.0",
     "next": "14.2.4",
     "react": "^18.3.1",

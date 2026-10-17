@@ -67,7 +67,21 @@ function buildLocalPayload(forTest: boolean): Payload {
       .filter((m) => m.session_id === today && m.approved !== false);
   } catch {}
   const manualTotal = manual.reduce((a, m) => a + m.count, 0);
-  const cameraTotal = forTest ? 42 : 0;
+
+  // Browser-camera counts from in-browser person detection. Only readings
+  // fresher than 30 s ride the payload so a stale value from a camera
+  // that disconnected can't quietly inflate the number.
+  let browser: { zone: string; count: number }[] = [];
+  try {
+    const all = JSON.parse(localStorage.getItem(`kyro_${mode}_browser_counts`) ?? "{}") as Record<string, { count: number; zone: string; updated_at: number }>;
+    const fresh = Date.now() - 30_000;
+    browser = Object.values(all)
+      .filter((v) => v && typeof v.count === "number" && v.updated_at > fresh)
+      .map((v) => ({ zone: v.zone, count: v.count }));
+  } catch {}
+  const browserTotal = browser.reduce((a, b) => a + b.count, 0);
+
+  const cameraTotal = forTest ? 42 : browserTotal;
   return {
     service_date: today,
     counted_at: new Date().toISOString(),
@@ -75,6 +89,7 @@ function buildLocalPayload(forTest: boolean): Payload {
     totals: { camera_count: cameraTotal, manual_count: manualTotal, grand_total: cameraTotal + manualTotal },
     by_zone: [
       ...manual.map((m) => ({ zone: m.zone, count: m.count, source: "manual", approved_by: m.approved_by ?? null })),
+      ...browser.map((b) => ({ zone: b.zone, count: b.count, source: "camera" })),
       ...(forTest ? [{ zone: "Main Floor", count: cameraTotal, source: "camera" }] : []),
     ],
     source: "kyro",

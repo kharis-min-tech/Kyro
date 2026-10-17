@@ -10,6 +10,7 @@ import { camerasApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
+import { useBrowserPersonCount } from "@/lib/browserPersonCount";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
@@ -163,9 +164,10 @@ function TotalChart({ history, current, timestamps }: { history: number[]; curre
 // laptop, not the edge box, so there's no server snapshot to pull. We open
 // it locally through MediaDevices and render the live feed in-tile so the
 // operator can see at a glance that Kyro has the camera and it's working.
-function AttendanceBrowserCamStream({ streamUrl }: { streamUrl: string }) {
+function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamUrl: string; cameraId: string; zoneName: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
 
@@ -188,6 +190,7 @@ function AttendanceBrowserCamStream({ streamUrl }: { streamUrl: string }) {
         }
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
         streamRef.current = s;
+        setStream(s);
         if (videoRef.current) {
           videoRef.current.srcObject = s;
           videoRef.current.muted = true;
@@ -202,8 +205,26 @@ function AttendanceBrowserCamStream({ streamUrl }: { streamUrl: string }) {
     return () => {
       cancelled = true;
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
+      setStream(null);
     };
   }, [deviceId]);
+
+  // Local person-counting on the same stream. The result is written to a
+  // shared localStorage key the attendance headline + webhook payload can
+  // read; the badge below only shows a count when detection is actually
+  // running — never pretends.
+  const det = useBrowserPersonCount(stream, !!stream);
+  useEffect(() => {
+    if (det.status !== "running" || det.count === null || typeof window === "undefined") return;
+    try {
+      const mode = localStorage.getItem("kyro_mode") ?? "demo";
+      const key = `kyro_${mode}_browser_counts`;
+      const all = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, { count: number; zone: string; updated_at: number }>;
+      all[cameraId] = { count: det.count, zone: zoneName, updated_at: Date.now() };
+      localStorage.setItem(key, JSON.stringify(all));
+      window.dispatchEvent(new Event("kyro_browser_counts_changed"));
+    } catch {}
+  }, [cameraId, zoneName, det.count, det.status]);
 
   const handleTap = () => { const v = videoRef.current; if (!v) return; v.play().then(() => setErr(null)).catch(() => {}); };
 
@@ -216,6 +237,26 @@ function AttendanceBrowserCamStream({ streamUrl }: { streamUrl: string }) {
         <div className="absolute inset-0 flex items-center justify-center text-center px-3"
           style={{ background: "rgba(0,0,0,0.65)" }}>
           <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{err}</span>
+        </div>
+      )}
+      {/* Detector status badge — honest about what's happening. */}
+      {!err && (
+        <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full"
+          style={{
+            background:
+              det.status === "running" ? "rgba(22,163,74,0.85)" :
+              det.status === "loading" ? "rgba(99,102,241,0.85)" :
+              det.status === "paused"  ? "rgba(107,114,128,0.85)" :
+              det.status === "failed"  ? "rgba(239,68,68,0.85)" :
+                                         "rgba(107,114,128,0.75)",
+            color: "#fff", fontSize: 10, fontWeight: 600,
+          }}
+          title={det.error ?? undefined}>
+          {det.status === "running" ? `${det.count ?? 0} · counting`
+            : det.status === "loading" ? "Loading detector…"
+            : det.status === "paused"  ? "Paused"
+            : det.status === "failed"  ? "Detector unavailable"
+            : "Preview only"}
         </div>
       )}
     </div>
@@ -260,7 +301,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
     return (
       <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "#0f1222" }}>
         {isBrowserCam ? (
-          <AttendanceBrowserCamStream streamUrl={camera.stream_url} />
+          <AttendanceBrowserCamStream streamUrl={camera.stream_url} cameraId={camera.camera_id} zoneName={camera.zone_name ?? camera.name} />
         ) : snap.url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={snap.url} alt={camera.zone_name ?? camera.name}
@@ -738,6 +779,11 @@ export default function AttendancePage() {
   // Running total of today's Manual Counts across all zones — summed from
   // localStorage and refreshed whenever the Manual Count page writes.
   const [manualTotalToday, setManualTotalToday] = useState(0);
+  // Live sum of all browser-camera counts (in-browser person detection,
+  // refreshed via the "kyro_browser_counts_changed" event). Only counts
+  // with recent updated_at are included so a stale reading from a camera
+  // that lost connection doesn't keep inflating the total.
+  const [browserTotalNow, setBrowserTotalNow] = useState(0);
   // Live mode on the Cloudflare build — decided after mount (reads localStorage).
   const [edge, setEdge] = useState(false);
   const [edgeFeedErr, setEdgeFeedErr] = useState<string | null>(null);
@@ -1101,10 +1147,43 @@ export default function AttendancePage() {
       window.removeEventListener("focus",                       onChange);
     };
   }, []);
+  // Browser-camera counts — sum of every actively-running local detector
+  // across today's cameras. Stale readings (> 30 s old) are excluded so a
+  // camera that disconnected can't keep inflating the headline.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function readBrowser() {
+      try {
+        const mode = localStorage.getItem("kyro_mode") ?? "demo";
+        const raw = localStorage.getItem(`kyro_${mode}_browser_counts`);
+        if (!raw) { setBrowserTotalNow(0); return; }
+        const all = JSON.parse(raw) as Record<string, { count: number; updated_at: number }>;
+        const fresh = Date.now() - 30_000;
+        const total = Object.values(all)
+          .filter((v) => v && typeof v.count === "number" && v.updated_at > fresh)
+          .reduce((s, v) => s + (v.count || 0), 0);
+        setBrowserTotalNow(total);
+      } catch { setBrowserTotalNow(0); }
+    }
+    readBrowser();
+    const onChange = () => readBrowser();
+    const tick = setInterval(readBrowser, 5_000);
+    window.addEventListener("kyro_browser_counts_changed", onChange);
+    window.addEventListener("storage",                      onChange);
+    return () => {
+      clearInterval(tick);
+      window.removeEventListener("kyro_browser_counts_changed", onChange);
+      window.removeEventListener("storage",                      onChange);
+    };
+  }, []);
+
   const manualApplies = isToday && (metric === "people" || metric === "entries");
+  const browserApplies = isToday && (metric === "people" || metric === "entries");
   const displayTotal = (isToday
     ? metricNow
-    : (historicalData?.total ?? 0)) + (manualApplies ? manualTotalToday : 0);
+    : (historicalData?.total ?? 0))
+    + (manualApplies ? manualTotalToday : 0)
+    + (browserApplies ? browserTotalNow : 0);
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
   // Edge Live: "Live" only while at least one camera is actually reporting.
