@@ -284,7 +284,7 @@ function VenueOverview({
               onClick={() => setQueueSize(Math.max(0, queueSize - 10))}
               className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
               style={{ background: "var(--bg-hover)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#374151")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--border-strong)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
             >
               <Minus size={12} className="text-gray-300" />
@@ -294,7 +294,7 @@ function VenueOverview({
               onClick={() => setQueueSize(queueSize + 10)}
               className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
               style={{ background: "var(--bg-hover)" }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "#374151")}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--border-strong)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
             >
               <Plus size={12} className="text-gray-300" />
@@ -536,10 +536,11 @@ function CameraTile({
           </div>
           <button onClick={onExpand}
             className="absolute bottom-2.5 right-2.5 p-1.5 rounded-lg"
-            style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+            style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.35)", backdropFilter: "blur(4px)" }}
             onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(79,70,229,0.7)")}
-            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.55)")}>
-            <Maximize2 size={13} className="text-gray-300" />
+            onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.6)")}
+            aria-label="Expand" title="Expand">
+            <Maximize2 size={15} className="text-white keep-white" />
           </button>
         </div>
         {/* Info strip */}
@@ -650,12 +651,12 @@ function CameraTile({
         <button
           onClick={onExpand}
           className="absolute bottom-2.5 right-2.5 p-1.5 rounded-lg transition-colors"
-          style={{ background: "rgba(0,0,0,0.55)", backdropFilter: "blur(4px)" }}
+          style={{ background: "rgba(0,0,0,0.6)", border: "1px solid rgba(255,255,255,0.35)", backdropFilter: "blur(4px)" }}
           onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(79,70,229,0.7)")}
-          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.55)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.6)")}
           aria-label="Expand"
         >
-          <Maximize2 size={13} className="text-gray-300" />
+          <Maximize2 size={15} className="text-white keep-white" />
         </button>
       </div>
 

@@ -497,3 +497,9 @@ img, video, canvas, svg, iframe {
 /* Kyro wordmark gold (the K): bright on dark, deeper on white so it stays readable. */
 :root { --brand-gold: #f8b537; }
 :root[data-theme="light"] { --brand-gold: #b7791f; }
+/* Light mode turns light-grey text dark (for white cards). Inside the dark
+   badges and buttons that sit on camera pictures it has to stay light, or it
+   disappears (e.g. "Offline", "/ 300 seats", the expand icon). */
+:root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"], [style*="rgb(15, 18, 34)"], [style*="#0f1222"]):not(.fixed) :is(.text-gray-200, .text-gray-300, .text-gray-400) { color: #d1d5db !important; }
+:root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"], [style*="rgb(15, 18, 34)"], [style*="#0f1222"]):not(.fixed) :is(.text-gray-500, .text-gray-600) { color: #9ca3af !important; }
+:root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"]):not(.fixed) .text-indigo-300 { color: #a5b4fc !important; }
