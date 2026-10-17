@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { FormEvent, useState, useEffect } from "react";
+import { FormEvent, useState, useEffect, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
 import { DEMO_MODE } from "@/lib/demo";
@@ -12,9 +12,10 @@ import { ErrorMessage } from "@/components/ui/ErrorMessage";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { edgeVenueApi, type EdgeCamera, type EdgeDevice } from "@/lib/edgeVenue";
 import {
-  Camera, Wifi, Monitor, HelpCircle,
+  Camera, Wifi, Monitor, HelpCircle, Loader2, Zap,
   ChevronDown, ChevronUp, Plus, Pencil, Check, X, Terminal,
-  Users, MapPin, AlertCircle, Trash2, Cpu, Power, KeyRound, ExternalLink,
+  Users, MapPin, AlertCircle, AlertTriangle, Trash2, RefreshCw,
+  Cpu, Power, KeyRound, ExternalLink,
 } from "lucide-react";
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
@@ -317,9 +318,120 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
 
 // ─── Add camera form ──────────────────────────────────────────────────────────
 
+// ─── Detected-device card (plug-and-play webcams) ────────────────────────────
+//
+// Browsers can enumerate real video input devices (built-in webcam, USB cam,
+// phone back/front cameras) through MediaDevices. We lead the Add flow with
+// those so the common case — "I plugged in a camera, use it" — is one tap:
+// detect → preview → fill name → save. The RTSP / IP-camera form stays
+// available for cameras that aren't physically attached to this device, but
+// it's no longer the first thing a non-technical operator sees.
+
+interface DetectedDevice {
+  id: string;      // MediaDevices deviceId
+  label: string;   // Human label, e.g. "FaceTime HD Camera"
+}
+
+function DetectedDeviceCard({ device, onPick, picked }: {
+  device: DetectedDevice;
+  onPick: () => void;
+  picked: boolean;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [state, setState] = useState<"idle" | "preview" | "denied" | "error">("idle");
+  const streamRef = useRef<MediaStream | null>(null);
+
+  const stop = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+    setState("idle");
+  }, []);
+
+  async function startPreview() {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: device.id } },
+        audio: false,
+      });
+      streamRef.current = s;
+      if (videoRef.current) {
+        videoRef.current.srcObject = s;
+        await videoRef.current.play().catch(() => {});
+      }
+      setState("preview");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.name : "error";
+      setState(msg === "NotAllowedError" ? "denied" : "error");
+    }
+  }
+
+  // Stop the preview when the card is unmounted or its "picked" status flips
+  // off — leaving a <video> live after the user has moved on would keep the
+  // camera indicator LED on, which looks like a bug (or a privacy problem).
+  useEffect(() => () => stop(), [stop]);
+  useEffect(() => { if (!picked) stop(); }, [picked, stop]);
+
+  return (
+    <div className="rounded-xl overflow-hidden"
+      style={{ background: "var(--bg-card)", border: picked ? "1px solid #4f46e5" : "1px solid var(--border-subtle)" }}>
+      <div className="aspect-video flex items-center justify-center" style={{ background: "var(--bg-inset)" }}>
+        {state === "preview" ? (
+          <video ref={videoRef} autoPlay playsInline muted
+            className="w-full h-full object-cover" />
+        ) : state === "denied" ? (
+          <div className="text-center p-4">
+            <AlertTriangle size={22} className="mx-auto mb-1" style={{ color: "#f59e0b" }} />
+            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+              Browser blocked camera access. Allow it in your browser's address bar lock icon and try again.
+            </p>
+          </div>
+        ) : state === "error" ? (
+          <div className="text-center p-4">
+            <AlertCircle size={22} className="mx-auto mb-1 text-red-400" />
+            <p className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+              Couldn't open this camera. Another app may be using it.
+            </p>
+          </div>
+        ) : (
+          <Camera size={28} style={{ color: "var(--text-faint)" }} />
+        )}
+      </div>
+      <div className="p-3 flex items-center gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-white truncate">{device.label}</p>
+          <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+            {state === "preview" ? "Preview live — this is what the system sees" : "Tap preview to confirm it's the right one"}
+          </p>
+        </div>
+        {state === "preview" ? (
+          <button type="button" onClick={stop}
+            className="text-xs px-3 py-1.5 rounded-lg"
+            style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
+            Stop
+          </button>
+        ) : (
+          <button type="button" onClick={startPreview}
+            className="text-xs px-3 py-1.5 rounded-lg text-white"
+            style={{ background: "var(--bg-hover)", border: "1px solid var(--border-strong)" }}>
+            Preview
+          </button>
+        )}
+        <button type="button" onClick={onPick}
+          className="text-xs px-3 py-1.5 rounded-lg text-white font-medium"
+          style={{ background: picked ? "#16a34a" : "#4f46e5" }}>
+          {picked ? <><Check size={12} className="inline -mt-0.5 mr-0.5" /> Picked</> : "Use this"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
   const [open, setOpen]         = useState(cameraCount === 0);
+  const [mode, setMode]         = useState<"detect" | "ip" | "advanced" | null>(null);
   const [type, setType]         = useState<typeof CAMERA_TYPES[number] | null>(null);
   const [name, setName]         = useState("");
   const [url, setUrl]           = useState("");
@@ -331,6 +443,73 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
   // Smart detection state
   const [queuePrompt, setQueuePrompt]   = useState<"idle" | "asking" | "confirmed" | "dismissed">("idle");
   const [isQueueCam, setIsQueueCam]     = useState(false);
+
+  // Device enumeration state — browsers only reveal labels AFTER the user
+  // grants camera permission at least once. So we offer a "Detect cameras"
+  // button that calls getUserMedia first (lighting up the permission
+  // prompt), then enumerates. On HTTPS this works on Chrome, Safari, Edge
+  // and Firefox desktop + mobile. On insecure http:// (not Cloudflare) the
+  // API is unavailable and we show a clear reason.
+  const [detecting, setDetecting] = useState(false);
+  const [devices, setDevices]     = useState<DetectedDevice[]>([]);
+  const [pickedId, setPickedId]   = useState<string | null>(null);
+  const [detectErr, setDetectErr] = useState<string | null>(null);
+
+  const supportsMediaDevices = typeof navigator !== "undefined"
+    && !!navigator.mediaDevices?.enumerateDevices
+    && !!navigator.mediaDevices?.getUserMedia;
+
+  const detect = useCallback(async () => {
+    if (!supportsMediaDevices) {
+      setDetectErr("Your browser can't scan for cameras — please use a modern browser over HTTPS.");
+      return;
+    }
+    setDetecting(true);
+    setDetectErr(null);
+    try {
+      // One-shot permission request so the subsequent enumerate() returns
+      // real labels instead of empty strings. We release the stream
+      // immediately — no need to hold onto it.
+      const temp = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      temp.getTracks().forEach((t) => t.stop());
+      const list = await navigator.mediaDevices.enumerateDevices();
+      const vids = list
+        .filter((d) => d.kind === "videoinput")
+        .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` }));
+      setDevices(vids);
+      if (vids.length === 0) {
+        setDetectErr("No cameras detected. Plug one in or use the IP camera option below.");
+      }
+    } catch (e: unknown) {
+      const name = (e as Error)?.name;
+      if (name === "NotAllowedError") {
+        setDetectErr("Camera access blocked. Allow it in your browser's address bar and try again.");
+      } else if (name === "NotFoundError") {
+        setDetectErr("No cameras detected. Plug one in or use the IP camera option below.");
+      } else {
+        setDetectErr("Couldn't scan for cameras. Try reloading the page.");
+      }
+    } finally {
+      setDetecting(false);
+    }
+  }, [supportsMediaDevices]);
+
+  // Auto-detect when the user enters Detect mode for the first time —
+  // one tap, no digging through browser menus.
+  useEffect(() => {
+    if (mode === "detect" && devices.length === 0 && !detecting && !detectErr) {
+      detect();
+    }
+  }, [mode, devices.length, detecting, detectErr, detect]);
+
+  function pickDevice(d: DetectedDevice) {
+    setPickedId(d.id);
+    // Store the stream URL as a browser-source identifier so the
+    // vision worker (when a backend is wired) can distinguish it from
+    // RTSP input. Format: webcam://<deviceId> — reserved by this app.
+    setUrl(`webcam://${d.id}`);
+    if (!name) setName(d.label);
+  }
 
   function handleNameChange(val: string) {
     setName(val);
@@ -364,16 +543,20 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       });
       setName(""); setUrl(""); setZone(""); setCap("");
       setType(null); setIsQueueCam(false); setQueuePrompt("idle");
+      setMode(null); setDevices([]); setPickedId(null);
       setOpen(false);
       onAdded();
     } catch (e: any) { setErr(e.message); }
     finally { setAdding(false); }
   }
 
+  const canSubmit = !!name.trim() && !!url.trim();
+
   return (
-    <div className="border border-gray-800 rounded-xl overflow-hidden">
+    <div className="rounded-xl overflow-hidden" style={{ border: "1px solid var(--border-subtle)" }}>
       <button onClick={() => setOpen((p) => !p)}
-        className="w-full flex items-center justify-between px-4 py-3 bg-gray-900 hover:bg-gray-800 transition-colors">
+        className="w-full flex items-center justify-between px-4 py-3 transition-colors"
+        style={{ background: "var(--bg-card)" }}>
         <div className="flex items-center gap-2">
           <Plus size={15} className="text-indigo-400" />
           <span className="text-sm font-medium text-white">Add a camera</span>
@@ -382,44 +565,165 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       </button>
 
       {open && (
-        <div className="bg-gray-900 border-t border-gray-800 p-4 flex flex-col gap-4">
+        <div className="p-4 flex flex-col gap-4"
+          style={{ background: "var(--bg-card)", borderTop: "1px solid var(--border-subtle)" }}>
 
-          {/* Camera type */}
-          <div>
-            <p className="text-xs text-gray-400 mb-2">What type of camera?</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-              {CAMERA_TYPES.map((t) => {
-                const Icon = t.icon;
-                const active = type?.id === t.id;
-                return (
-                  <button key={t.id} onClick={() => { setType(t); setUrl(t.urlTemplate); }}
-                    className={`text-left rounded-lg border p-3 transition-colors ${
-                      active ? "border-indigo-600 bg-indigo-900/20" : "border-gray-700 hover:border-gray-600"
-                    }`}>
-                    <Icon size={15} className={active ? "text-indigo-400" : "text-gray-500"} />
-                    <p className={`text-xs font-medium mt-1.5 ${active ? "text-white" : "text-gray-400"}`}>{t.label}</p>
-                  </button>
-                );
-              })}
+          {/* Mode picker — leads with the plug-and-play path. */}
+          {!mode && (
+            <div className="flex flex-col gap-3">
+              <p className="text-xs" style={{ color: "var(--text-muted)" }}>How is this camera connected?</p>
+
+              <button type="button" onClick={() => setMode("detect")}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.35)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(99,102,241,0.15)" }}>
+                  <Zap size={18} className="text-indigo-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">
+                    Plugged into this device <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>· recommended</span>
+                  </p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Phone or laptop camera, USB webcam. Kyro will scan and show you a live preview — just pick the one you want.
+                  </p>
+                </div>
+              </button>
+
+              <button type="button" onClick={() => { setMode("ip"); setType(CAMERA_TYPES[0]); setUrl(""); }}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(59,130,246,0.12)" }}>
+                  <Wifi size={18} className="text-blue-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">Network IP camera</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Security camera on your WiFi (Hikvision, Reolink, TP-Link…). You'll paste its RTSP address.
+                  </p>
+                </div>
+              </button>
+
+              <button type="button" onClick={() => { setMode("advanced"); setType(CAMERA_TYPES[2]); setUrl(""); }}
+                className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
+                style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ background: "rgba(107,114,128,0.15)" }}>
+                  <Terminal size={18} style={{ color: "var(--text-muted)" }} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-white">Advanced / other</p>
+                  <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
+                    Any MJPEG, HLS or custom URL. For when you know exactly what you're doing.
+                  </p>
+                </div>
+              </button>
             </div>
-          </div>
+          )}
 
-          {type && (
+          {/* Plug-and-play detector */}
+          {mode === "detect" && (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between gap-2">
+                <button type="button" onClick={() => { setMode(null); setPickedId(null); setUrl(""); }}
+                  className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                  ← Back
+                </button>
+                <button type="button" onClick={detect} disabled={detecting}
+                  className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
+                  {detecting ? <Loader2 size={11} className="animate-spin" /> : <RefreshCw size={11} />}
+                  {detecting ? "Scanning…" : "Scan again"}
+                </button>
+              </div>
+
+              {detecting && (
+                <div className="rounded-xl p-6 flex flex-col items-center gap-2"
+                  style={{ background: "var(--bg-inset)", border: "1px dashed var(--border-strong)" }}>
+                  <Loader2 size={22} className="animate-spin text-indigo-400" />
+                  <p className="text-sm text-white">Looking for cameras…</p>
+                  <p className="text-xs text-center" style={{ color: "var(--text-muted)" }}>
+                    Your browser may ask for camera permission. Allow it so Kyro can list what's connected.
+                  </p>
+                </div>
+              )}
+
+              {detectErr && !detecting && (
+                <div className="rounded-xl p-3 flex items-start gap-2"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+                  <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-200">{detectErr}</p>
+                </div>
+              )}
+
+              {devices.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  {devices.map((d) => (
+                    <DetectedDeviceCard
+                      key={d.id}
+                      device={d}
+                      picked={pickedId === d.id}
+                      onPick={() => pickDevice(d)}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* IP / RTSP / advanced URL mode — the old form path, kept for
+              cameras that don't physically plug into this device. */}
+          {(mode === "ip" || mode === "advanced") && type && (
+            <div className="flex items-center justify-between gap-2 -mb-1">
+              <button type="button" onClick={() => { setMode(null); setType(null); setUrl(""); }}
+                className="text-xs flex items-center gap-1" style={{ color: "var(--text-muted)" }}>
+                ← Back
+              </button>
+              {mode === "ip" && (
+                <div className="grid grid-cols-3 gap-1 flex-1 max-w-xs">
+                  {CAMERA_TYPES.map((t) => {
+                    const Icon = t.icon;
+                    const active = type.id === t.id;
+                    return (
+                      <button key={t.id} type="button" onClick={() => { setType(t); setUrl(t.urlTemplate); }}
+                        className="rounded-lg px-2 py-1.5 text-xs transition-colors flex items-center justify-center gap-1"
+                        style={{
+                          background: active ? "rgba(99,102,241,0.15)" : "var(--bg-inset)",
+                          border: `1px solid ${active ? "#4f46e5" : "var(--border-subtle)"}`,
+                          color: active ? "#a5b4fc" : "var(--text-muted)",
+                        }}>
+                        <Icon size={11} />
+                        <span className="truncate">{t.label.split(" ")[0]}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Shared name + zone + capacity form — shown once a mode is chosen
+              and (for IP/advanced) a type is selected OR (for detect) a device
+              is picked. Writes to the same storage either way. */}
+          {(mode === "ip" || mode === "advanced" || (mode === "detect" && pickedId)) && (
             <form onSubmit={handleAdd} className="flex flex-col gap-3">
 
               {/* Name + zone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-400">Camera name</label>
+                  <label className="text-xs" style={{ color: "var(--text-muted)" }}>Camera name</label>
                   <input value={name} onChange={(e) => handleNameChange(e.target.value)} required
                     placeholder="e.g. Main Auditorium"
-                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                    style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
                 </div>
                 <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-400">Zone / area name</label>
+                  <label className="text-xs" style={{ color: "var(--text-muted)" }}>Zone / area name</label>
                   <input value={zone} onChange={(e) => setZone(e.target.value)}
                     placeholder="e.g. Main Floor, Balcony"
-                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                    style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
                 </div>
               </div>
 
@@ -431,70 +735,86 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                     <AlertCircle size={16} className="text-amber-400 shrink-0 mt-0.5" />
                     <div>
                       <p className="text-sm font-semibold text-white mb-0.5">Is this an outdoor or queue camera?</p>
-                      <p className="text-xs text-gray-400 leading-relaxed">
+                      <p className="text-xs leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
                         It looks like this camera might be watching an outside area or entrance queue —
                         not a seated room. Outdoor cameras don't have seats — they count
-                        how many people are waiting outside to come in, which feeds the
-                        "Outside queue" estimator on the Live Cameras page.
+                        how many people are waiting outside to come in.
                       </p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <button type="button" onClick={() => confirmQueue(true)}
-                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
+                      className="flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white"
                       style={{ background: "rgba(245,158,11,0.7)" }}>
-                      <Users size={14} /> Yes, it's an outdoor/queue camera
+                      <Users size={14} /> Yes, outdoor / queue
                     </button>
                     <button type="button" onClick={() => confirmQueue(false)}
-                      className="px-4 py-2 rounded-lg text-sm text-gray-400 hover:text-white bg-gray-800">
+                      className="px-4 py-2 rounded-lg text-sm"
+                      style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)" }}>
                       No, it has seats
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Queue camera confirmed */}
               {(queuePrompt === "confirmed" || isQueueCam) && (
                 <div className="rounded-xl px-4 py-3 flex items-center gap-2.5"
                   style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
                   <Users size={14} className="text-amber-400 shrink-0" />
                   <div className="flex-1">
                     <p className="text-xs font-medium text-amber-300">Outdoor / queue camera</p>
-                    <p className="text-xs text-gray-500">
-                      This camera will count people waiting outside. Its count feeds directly into the
-                      Outside Queue on the Live Cameras page. No seat capacity needed.
+                    <p className="text-xs" style={{ color: "var(--text-muted)" }}>
+                      Counts people outside; no seat capacity needed.
                     </p>
                   </div>
                   <button type="button" onClick={() => { setIsQueueCam(false); setQueuePrompt("dismissed"); }}
-                    className="text-gray-600 hover:text-gray-400 shrink-0">
+                    className="shrink-0" style={{ color: "var(--text-faint)" }}>
                     <X size={13} />
                   </button>
                 </div>
               )}
 
-              {/* URL + capacity */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1">
-                  <label className="text-xs text-gray-400">Stream address</label>
-                  <input value={url} onChange={(e) => setUrl(e.target.value)} required
-                    placeholder={type.urlPlaceholder}
-                    className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono" />
-                  <p className="text-xs text-gray-600">{type.urlHint}</p>
-                </div>
-                {!isQueueCam && (
+              {/* Stream address — only shown when the user is going through
+                  the IP/advanced URL path. The detect path has already
+                  filled in a webcam://<deviceId> URL from the picked card. */}
+              {(mode === "ip" || mode === "advanced") && type && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-gray-400">Seat capacity (optional)</label>
-                    <input value={cap} onChange={(e) => setCap(e.target.value)}
-                      type="number" min="0" placeholder="e.g. 250"
-                      className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <label className="text-xs" style={{ color: "var(--text-muted)" }}>Stream address</label>
+                    <input value={url} onChange={(e) => setUrl(e.target.value)} required
+                      placeholder={type.urlPlaceholder}
+                      className="text-sm rounded-lg px-3 py-2 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                      style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
+                    <p className="text-xs" style={{ color: "var(--text-faint)" }}>{type.urlHint}</p>
                   </div>
-                )}
-              </div>
+                  {!isQueueCam && (
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs" style={{ color: "var(--text-muted)" }}>Seat capacity (optional)</label>
+                      <input value={cap} onChange={(e) => setCap(e.target.value)}
+                        type="number" inputMode="numeric" min="0" placeholder="e.g. 250"
+                        className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                        style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Capacity on its own in detect mode (URL is already set) */}
+              {mode === "detect" && !isQueueCam && (
+                <div className="flex flex-col gap-1 max-w-xs">
+                  <label className="text-xs" style={{ color: "var(--text-muted)" }}>Seat capacity (optional)</label>
+                  <input value={cap} onChange={(e) => setCap(e.target.value)}
+                    type="number" inputMode="numeric" min="0" placeholder="e.g. 250"
+                    className="text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full"
+                    style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-primary)" }} />
+                </div>
+              )}
 
               {err && <p className="text-red-400 text-xs">{err}</p>}
 
-              <button type="submit" disabled={adding}
-                className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm rounded-lg px-4 py-2 font-medium self-start">
+              <button type="submit" disabled={adding || !canSubmit}
+                className="w-full sm:w-auto sm:self-start text-sm rounded-lg px-5 py-2.5 font-medium text-white disabled:opacity-40"
+                style={{ background: "#4f46e5" }}>
                 {adding ? "Adding…" : "Add camera"}
               </button>
             </form>
@@ -774,24 +1094,49 @@ function EdgeAddCameraForm({ onAdded, cameraCount, devices }: {
 function HelpPanel() {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 overflow-hidden">
+    <div className="rounded-xl overflow-hidden"
+      style={{ background: "var(--bg-card)", border: "1px solid var(--border-subtle)" }}>
       <button onClick={() => setOpen((p) => !p)}
-        className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-400 hover:text-white">
+        className="w-full flex items-center justify-between px-4 py-3 text-sm" style={{ color: "var(--text-muted)" }}>
         <div className="flex items-center gap-2">
           <HelpCircle size={14} />
-          <span>How do I find my camera's stream address?</span>
+          <span>Camera won't connect? Here's what to check</span>
         </div>
         {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
       </button>
       {open && (
-        <div className="px-4 pb-4 border-t border-gray-800 pt-3 text-xs text-gray-400 flex flex-col gap-3">
+        <div className="px-4 pb-4 pt-3 text-xs flex flex-col gap-3"
+          style={{ borderTop: "1px solid var(--border-subtle)", color: "var(--text-tertiary)" }}>
           <div>
-            <p className="text-white font-medium mb-1">IP cameras (Hikvision, Reolink, TP-Link, Dahua…)</p>
-            <p>Open the camera's app or web interface → Settings → Network → copy the RTSP URL. Looks like: <span className="font-mono text-indigo-300">rtsp://admin:password@192.168.1.100:554/stream</span></p>
+            <p className="text-white font-medium mb-1">USB webcam or built-in camera</p>
+            <p>
+              Just plug it in and tap <strong>Plugged into this device</strong> above. Kyro
+              will show you every camera the browser can see with a live preview. If a camera
+              is missing, close any other app that might be using it (Zoom, FaceTime, Teams)
+              and tap <strong>Scan again</strong>.
+            </p>
           </div>
           <div>
-            <p className="text-white font-medium mb-1">USB webcam</p>
-            <p>Enter <span className="font-mono text-indigo-300">0</span> for the first webcam, <span className="font-mono text-indigo-300">1</span> for a second one.</p>
+            <p className="text-white font-medium mb-1">Phone / iPad</p>
+            <p>
+              Open this page on the phone itself. The browser will offer both the front and
+              rear cameras after you tap <strong>Plugged into this device</strong>.
+            </p>
+          </div>
+          <div>
+            <p className="text-white font-medium mb-1">IP cameras (Hikvision, Reolink, TP-Link, Dahua…)</p>
+            <p>
+              Pick <strong>Network IP camera</strong> above, then paste the RTSP URL from your
+              camera's app → Settings → Network. Format:
+              <span className="font-mono text-indigo-300"> rtsp://admin:password@192.168.1.100:554/stream</span>
+            </p>
+          </div>
+          <div>
+            <p className="text-white font-medium mb-1">Browser blocked the camera?</p>
+            <p>
+              Click the padlock icon next to the URL in your browser's address bar → set the
+              Camera permission to Allow → reload this page.
+            </p>
           </div>
         </div>
       )}
@@ -834,7 +1179,7 @@ export default function CamerasPage() {
   const deleteAndReload = async (id: string) => { await deleteCamera(id); reloadEdge(); };
 
   return (
-    <div className="flex min-h-screen bg-gray-950 text-gray-100">
+    <div className="flex min-h-screen text-gray-100" style={{ background: "var(--bg-base)" }}>
       <Sidebar />
       <main className="flex-1 min-w-0 pt-14 md:pt-0 p-3 sm:p-6 max-w-2xl">
 
