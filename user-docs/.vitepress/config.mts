@@ -7,8 +7,8 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
-    ["link", { rel: "icon", href: "/favicon.ico", sizes: "16x16 32x32 48x48 64x64" }],
+    ["link", { rel: "icon", href: "/dove-icon.svg", type: "image/svg+xml" }],
+    ["link", { rel: "icon", href: "/dove-icon.ico", sizes: "16x16 32x32 48x48 64x64" }],
     ["link", { rel: "apple-touch-icon", href: "/logo.png" }],
     ["meta", { name: "theme-color", content: "#4f46e5" }],
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
