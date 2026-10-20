@@ -1,10 +1,14 @@
-/* Kyro brand — indigo, matching the dashboard */
+/* Kyro brand — gold, matching the front page */
 :root {
   --vp-font-family-base: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --vp-c-brand-1: #4f46e5;
-  --vp-c-brand-2: #4338ca;
-  --vp-c-brand-3: #4f46e5;
-  --vp-c-brand-soft: rgba(79, 70, 229, 0.12);
+  /* Gold, as on the kyro.kharischurch.com front page; links a deeper gold so they read on white */
+  --vp-c-brand-1: #9a6410;
+  --vp-c-brand-2: #e0a42e;
+  --vp-c-brand-3: #f0ad32;
+  --vp-c-brand-soft: rgba(201, 138, 28, 0.14);
+  --vp-button-brand-text: #1a1206;
+  --vp-button-brand-hover-text: #1a1206;
+  --vp-button-brand-active-text: #1a1206;
   --vp-home-hero-name-color: transparent;
   /* The Kyro name uses the gold-to-rose of the kyro.kharischurch.com front page ("Every soul."); deeper in light mode so it reads on white */
   --vp-home-hero-name-background: linear-gradient(95deg, #c98a1c 0%, #c99a4c 40%, #9e6f63 100%);
@@ -12,10 +16,10 @@
   --vp-home-hero-image-filter: blur(48px);
 }
 .dark {
-  --vp-c-brand-1: #a5b4fc;
-  --vp-c-brand-2: #818cf8;
-  --vp-c-brand-3: #6366f1;
-  --vp-c-brand-soft: rgba(129, 140, 248, 0.16);
+  --vp-c-brand-1: #f8b537;
+  --vp-c-brand-2: #e9c27a;
+  --vp-c-brand-3: #f0ad32;
+  --vp-c-brand-soft: rgba(248, 181, 55, 0.16);
   --vp-c-bg: #0d0f1a;
   --vp-c-bg-alt: #0a0c16;
   --vp-c-bg-soft: #13152a;
