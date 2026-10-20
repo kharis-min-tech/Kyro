@@ -15,7 +15,7 @@ export default defineConfig({
     ["link", { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" }],
   ],
   themeConfig: {
-    logo: { src: "/logo.png", alt: "Kyro" },
+    logo: { light: "/dove-navy.png", dark: "/dove-white.png", alt: "Kyro" },
     siteTitle: "Kyro",
     nav: [
       { text: "Get started", link: "/getting-started/what-is-kyro" },

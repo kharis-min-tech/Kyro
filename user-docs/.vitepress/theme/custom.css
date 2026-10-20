@@ -26,9 +26,8 @@
   --vp-home-hero-name-background: linear-gradient(95deg, #f8b537 0%, #e9c27a 40%, #c99a8a 100%);
 }
 
-/* Logo: the Kharis dove sits on navy, so round it like an app icon */
-.VPNavBarTitle .logo { border-radius: 8px; }
-.VPHero .image-src { border-radius: 28%; max-width: 220px; box-shadow: 0 20px 60px rgba(79, 70, 229, 0.25); }
+/* Logo: the see-through Kharis dove (navy in light mode, white in dark), as on kharis.org */
+.VPHero .image-src { max-width: 240px; }
 
 /* Screenshot frame — browser window chrome with traffic lights */
 .kyro-shot { margin: 1.75rem 0; }

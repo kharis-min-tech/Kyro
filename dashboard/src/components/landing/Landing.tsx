@@ -59,7 +59,7 @@ export function Landing() {
       {/* ── Top bar ── */}
       <header className={`${s.nav} ${solidNav ? s.navSolid : ""}`}>
         <Link href="/" className={s.brand} aria-label="Kyro home">
-          <img src="/icon-192.png" alt="" />
+          <img src="/dove.png" alt="" />
           <span className={s.wordmark}><span>K</span>YRO</span>
         </Link>
         <nav className={s.navLinks} aria-label="Sections">

@@ -32,7 +32,7 @@
 }
 .navSolid { background: rgba(10, 10, 11, 0.72); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); border-bottom-color: var(--line); }
 .brand { display: flex; align-items: center; gap: 10px; color: var(--ivory); text-decoration: none; }
-.brand img { width: 30px; height: 30px; border-radius: 8px; }
+.brand img { width: 32px; height: 32px; }
 .wordmark { font-weight: 900; letter-spacing: -0.02em; font-size: 20px; }
 .wordmark span { color: var(--gold-2); }
 .navLinks { display: flex; align-items: center; gap: 28px; }

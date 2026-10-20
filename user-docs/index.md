@@ -6,7 +6,8 @@ hero:
   text: Know who's in the room.
   tagline: Live attendance, seating and venue alerts for Kharis Church, counted by cameras and checked by your team.
   image:
-    src: /logo.png
+    light: /dove-navy.png
+    dark: /dove-white.png
     alt: Kyro
   actions:
     - theme: brand
