@@ -30,11 +30,11 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       // Browser tab: the see-through dove (navy on light tabs, white on dark; gold where SVG isn't supported).
-      // The home-screen icons with the navy square are in the manifest and below.
+      // Safari uses the Apple icon below for its tabs, so that is the see-through dove too.
       { url: "/dove-icon.svg", type: "image/svg+xml" },
       { url: "/dove-icon.ico", sizes: "16x16 32x32 48x48 64x64" },
     ],
-    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/dove-touch.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
