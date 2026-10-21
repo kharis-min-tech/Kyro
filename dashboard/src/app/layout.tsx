@@ -29,12 +29,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      // Browser tab: the see-through dove (navy on light tabs, white on dark; gold where SVG isn't supported).
-      // Safari uses the Apple icon below for its tabs, so that is the see-through dove too.
-      { url: "/dove-icon.svg", type: "image/svg+xml" },
-      { url: "/dove-icon.ico", sizes: "16x16 32x32 48x48 64x64" },
+      // Browser tab: the see-through white dove, the same as kharis.org.
+      // Safari uses the Apple icon below for its tabs, so that is the same dove.
+      { url: "/kyro-dove-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/kyro-dove-192.png", sizes: "192x192", type: "image/png" },
     ],
-    apple: [{ url: "/dove-touch.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/kyro-dove-180.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
