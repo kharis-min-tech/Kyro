@@ -7,10 +7,10 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    // The see-through white dove, the same as kharis.org (Safari uses the PNG / Apple icon)
+    // The see-through white dove, the same as kharis.org. No Apple icon on purpose:
+    // Safari 26 shows an Apple icon inside a rounded square tile in its tabs.
     ["link", { rel: "icon", href: "/kyro-dove-32.png", sizes: "32x32", type: "image/png" }],
     ["link", { rel: "icon", href: "/kyro-dove-192.png", sizes: "192x192", type: "image/png" }],
-    ["link", { rel: "apple-touch-icon", href: "/kyro-dove-180.png" }],
     ["meta", { name: "theme-color", content: "#4f46e5" }],
     ["link", { rel: "preconnect", href: "https://fonts.googleapis.com" }],
     ["link", { rel: "preconnect", href: "https://fonts.gstatic.com", crossorigin: "" }],
