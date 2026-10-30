@@ -30,6 +30,7 @@ const num = (v, min, max) => {
 const OFFLINE_AFTER_MS = 45_000;  // no report for this long → camera shown offline
 const SAMPLE_EVERY_MS = 60_000;   // one history row per camera per minute
 const MAX_SNAPSHOT_BYTES = 400_000;
+const ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
 const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
 /** Up to 10 rectangles [x1, y1, x2, y2] as 0–1 fractions of the picture. */
@@ -435,6 +436,10 @@ export class VenueHub extends DurableObject {
       const m = marks[id] || { frac: 0, at: 0 };
       if (frac < m.frac - 0.1) { marks[id] = { frac, at: m.at }; dirty = true; continue; }
       if (Math.floor(frac * 20) > Math.floor(m.frac * 20) && frac >= 0.5) {
+        // A room hovering around a mark mustn't buzz everyone's phone over and over:
+        // at most one "filling up" alert per room every 10 minutes. "Full" always goes out.
+        const nowFull = frac >= 1 && m.frac < 1;
+        if (!nowFull && Date.now() - m.at < ALERT_GAP_MS) continue;
         const prev = m.frac;
         marks[id] = { frac, at: Date.now() }; dirty = true;
         this.ctx.waitUntil(notifyCount(this.env, {
