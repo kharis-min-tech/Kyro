@@ -59,6 +59,11 @@ def report(server: str, token: str, cameras: list[dict]) -> dict:
     return _request("POST", f"{server}/api/devices/report", body, token)
 
 
+def job_result(server: str, token: str, result: dict) -> None:
+    """The answer to a request from the website ("Find cameras", "Add this camera")."""
+    _request("POST", f"{server}/api/devices/job", json.dumps(result).encode(), token)
+
+
 def snapshot(server: str, token: str, key: str, jpeg: bytes) -> None:
     from urllib.parse import quote
     _request("PUT", f"{server}/api/devices/snapshot?camera={quote(key)}", jpeg, token, "image/jpeg")

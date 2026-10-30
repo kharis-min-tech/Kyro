@@ -281,6 +281,7 @@ export default function AnalyticsPage() {
   // Edge Live: "" = all cameras; otherwise a camera id from CameraContext.
   const [edgeCamera, setEdgeCamera] = useState("");
   const [edgeError, setEdgeError] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const { cameras } = useCameras();
   useEffect(() => {
     if (!hydrated || inDemoMode()) return;
@@ -346,6 +347,7 @@ export default function AnalyticsPage() {
           setArrival(h.length ? (d.arrival ?? []) : []);
           setSelectedDay((prev) => prev ? (h.find((x) => x.timestamp === prev.timestamp) ?? null) : null);
           setEdgeError(null);
+          setUpdatedAt(new Date());
         })
         .catch((e) => setEdgeError(e instanceof Error ? e.message : "Couldn't load counts"))
         .finally(() => setLoading(false));
@@ -367,8 +369,13 @@ export default function AnalyticsPage() {
   // Auto-refresh every 30s in real mode (demo already polls every 5s)
   useEffect(() => {
     if (isEdgeLive()) {
-      const t = setInterval(loadData, 60_000);
-      return () => clearInterval(t);
+      // Live cameras: today's numbers include the count right now, so keep them fresh,
+      // and catch up straight away when the page comes back into view.
+      const t = setInterval(() => { if (!document.hidden) loadData(); }, 10_000);
+      const back = () => { if (!document.hidden) loadData(); };
+      document.addEventListener("visibilitychange", back);
+      window.addEventListener("focus", back);
+      return () => { clearInterval(t); document.removeEventListener("visibilitychange", back); window.removeEventListener("focus", back); };
     }
     if (inDemoMode()) {
       const t = setInterval(loadData, 5000);
@@ -394,6 +401,7 @@ export default function AnalyticsPage() {
             <p className="text-xs mt-0.5" style={{ color:"#6b7280" }}>
               Attendance trends and seat utilisation
               {hydrated && realDemo && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updates every 5s</span>}
+              {hydrated && edge && updatedAt && <span className="ml-2 px-1.5 py-0.5 rounded text-[10px]" style={{ background:"var(--border-subtle)", color:"#6366f1" }}>Live · updated {updatedAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>}
             </p>
           </div>
           {edge ? (

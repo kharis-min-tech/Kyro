@@ -30,6 +30,7 @@ const num = (v, min, max) => {
 const OFFLINE_AFTER_MS = 45_000;  // no report for this long → camera shown offline
 const SAMPLE_EVERY_MS = 60_000;   // one history row per camera per minute
 const MAX_SNAPSHOT_BYTES = 400_000;
+const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
 /** Up to 10 rectangles [x1, y1, x2, y2] as 0–1 fractions of the picture. */
 function cleanZones(z) {
@@ -67,13 +68,14 @@ export class VenueHub extends DurableObject {
       if (p === "/api/devices/report" && request.method === "POST") return this.withDevice(request, (d) => this.report(d, request));
       if (p === "/api/devices/snapshot" && request.method === "PUT") return this.withDevice(request, (d) => this.snapshot(d, request, url));
       if (p === "/api/devices/stream") return this.withDevice(request, (d) => this.boxStream(d, request));
+      if (p === "/api/devices/job" && request.method === "POST") return this.withDevice(request, (d) => this.jobResult(d, request));
 
       // ── Website (signed-in user) ──
       if (!role) return json({ error: "Please sign in again" }, 401);
       if (p === "/api/live/cameras" && request.method === "GET") return json(await this.cameraList(url.searchParams.get("all") === "1"));
       if (p === "/api/live/venue" && request.method === "GET") return json(await this.venueTotal());
       if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
-      if (p === "/api/live/daily" && request.method === "GET") return json(this.daily(url));
+      if (p === "/api/live/daily" && request.method === "GET") return json(await this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
       if (p.startsWith("/api/live/watch/")) return this.watch(decodeURIComponent(p.split("/").pop()), request);
 
@@ -89,6 +91,10 @@ export class VenueHub extends DurableObject {
       if (p.startsWith("/api/live/cameras/") && request.method === "PATCH") return this.updateCamera(decodeURIComponent(p.split("/").pop()), request);
       if (p.startsWith("/api/live/cameras/") && request.method === "DELETE") return this.removeCamera(decodeURIComponent(p.split("/").pop()));
       if (p === "/api/live/streams" && request.method === "POST") return this.addStream(request);
+      if (p === "/api/live/find-cameras" && request.method === "POST") return this.findCameras();
+      if (p === "/api/live/find-cameras" && request.method === "GET") return json(await this.foundCameras());
+      if (p === "/api/live/find-cameras/add" && request.method === "POST") return this.addFound(request);
+      if (p.startsWith("/api/live/find-cameras/add/") && request.method === "GET") return json(await this.addStatus(decodeURIComponent(p.split("/").pop())));
       return json({ error: "Not found" }, 404);
     } catch (e) {
       return json({ error: e instanceof Error ? e.message : "Error" }, 500);
@@ -237,7 +243,9 @@ export class VenueHub extends DurableObject {
     // "Don't count this area" (e.g. a statue), per camera, as 0–1 fractions of the picture.
     const ignore_zones = Object.fromEntries(Object.values(cams)
       .filter((c) => c.device_id === device.id && c.ignore_zones?.length).map((c) => [c.key, c.ignore_zones]));
-    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, report_every_s: 2, snapshot_every_s: 20 });
+    // Requests waiting for this computer ("Find cameras", "Add this camera").
+    const jobs = await this.jobsFor(device.id);
+    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -460,7 +468,7 @@ export class VenueHub extends DurableObject {
    * Analytics: one point per day (the most people in the building at once),
    * when people arrived (by hour), and a summary. ?days=30&tz=Europe/London[&camera=id]
    */
-  daily(url) {
+  async daily(url) {
     const days = Math.min(400, Math.max(1, Number(url.searchParams.get("days")) || 30));
     const tz = url.searchParams.get("tz") || "UTC";
     const camera = url.searchParams.get("camera");
@@ -468,6 +476,15 @@ export class VenueHub extends DurableObject {
     const rows = camera
       ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
       : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE ts >= ? ORDER BY ts", since).toArray();
+    // History is saved once a minute; add each camera's count right now so today is up to date.
+    const live = await this.get("live", {});
+    const cams = await this.get("cameras", {});
+    const lastTs = rows.length ? rows[rows.length - 1].ts : 0;
+    const now = Object.entries(live)
+      .filter(([id, l]) => (!camera || id === camera) && cams[id] && !cams[id].hidden && !cams[id].pending && this.isOnline(l) && l.updated_at > lastTs)
+      .map(([id, l]) => ({ camera_id: id, ts: l.updated_at, current: l.current, capacity: cams[id].zone_capacity || 0 }))
+      .sort((a, b) => a.ts - b.ts);
+    rows.push(...now);
     const fmt = this.dateFmt(tz);
     let hourFmt;
     try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
@@ -518,6 +535,11 @@ export class VenueHub extends DurableObject {
     let u;
     try { u = new URL(raw); } catch { return json({ error: "That doesn't look like a camera address (it usually starts with rtsp:// or http://)" }, 400); }
     if (!["rtsp:", "rtsps:", "http:", "https:"].includes(u.protocol)) return json({ error: "Camera addresses start with rtsp://, http:// or https://" }, 400);
+    return json({ camera_id: await this.createNetworkCamera(device_id, raw, body) });
+  }
+
+  async createNetworkCamera(device_id, raw, body) {
+    const u = new URL(raw);
     const cams = await this.get("cameras", {});
     const n = Object.keys(cams).length + 1;
     const key = `net-${b64url(crypto.getRandomValues(new Uint8Array(4)))}`;
@@ -533,7 +555,116 @@ export class VenueHub extends DurableObject {
     urls[camera_id] = raw;
     await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("streams", urls);
-    return json({ camera_id });
+    return camera_id;
+  }
+
+  // ── "Find cameras" ────────────────────────────────────────────────────────
+  // Only when an admin presses the button: each switched-on camera computer is
+  // asked (on its next report, ~2 s) to look for cameras on its own network.
+  // Adding one sends the login the admin typed to that computer, which asks the
+  // camera for its video address; the login is deleted as soon as it answers.
+
+  async jobsFor(device_id) {
+    const jobs = await this.get("jobs", {});
+    const now = Date.now();
+    let changed = false;
+    for (const [id, j] of Object.entries(jobs)) {
+      if (now - j.created > JOB_TTL_MS) { delete jobs[id]; changed = true; }
+    }
+    if (changed) await this.ctx.storage.put("jobs", jobs);
+    return Object.values(jobs).filter((j) => j.device_id === device_id && !j.done)
+      .map(({ id, type, xaddr, ip, username, password }) => (type === "add" ? { id, type, xaddr, ip, username, password } : { id, type }));
+  }
+
+  async findCameras() {
+    const devices = await this.get("devices", {});
+    const on = Object.values(devices).filter((d) => d.id.startsWith("box-") && d.last_seen && Date.now() - Date.parse(d.last_seen) < OFFLINE_AFTER_MS);
+    if (!on.length) return json({ error: "No camera computer is switched on. Kyro looks for cameras through the camera computer at church — switch it on and try again." }, 400);
+    const jobs = await this.get("jobs", {});
+    for (const [id, j] of Object.entries(jobs)) if (j.type === "find") delete jobs[id];
+    for (const d of on) {
+      const id = b64url(crypto.getRandomValues(new Uint8Array(9)));
+      jobs[id] = { id, type: "find", device_id: d.id, created: Date.now(), done: false };
+    }
+    await this.ctx.storage.put("jobs", jobs);
+    await this.ctx.storage.put("found", {});
+    return json({ asked: on.length });
+  }
+
+  async foundCameras() {
+    const jobs = await this.get("jobs", {});
+    const found = await this.get("found", {});
+    const devices = await this.get("devices", {});
+    const cams = await this.get("cameras", {});
+    const known = new Set(Object.values(cams).filter((c) => c.kind === "network" && c.address)
+      .map((c) => { try { return `${c.device_id}|${new URL(c.address).hostname}`; } catch { return ""; } }));
+    const finds = Object.values(jobs).filter((j) => j.type === "find");
+    const results = [];
+    for (const [device_id, list] of Object.entries(found)) {
+      for (const f of list) {
+        results.push({ id: f.id, device_id, device_name: devices[device_id]?.name ?? "", ip: f.ip, name: f.name, model: f.model,
+          added: known.has(`${device_id}|${f.ip}`) });
+      }
+    }
+    return { searching: finds.some((j) => !j.done), searched: finds.length > 0 || Object.keys(found).length > 0, results };
+  }
+
+  async addFound(request) {
+    const body = await request.json().catch(() => ({}));
+    const found = await this.get("found", {});
+    let hit = null, device_id = null;
+    for (const [d, list] of Object.entries(found)) {
+      const f = list.find((x) => x.id === body.id);
+      if (f) { hit = f; device_id = d; }
+    }
+    if (!hit) return json({ error: "That camera isn't in the list any more — press Find cameras again" }, 404);
+    const username = String(body.username ?? "").slice(0, 100), password = String(body.password ?? "").slice(0, 200);
+    if (!username) return json({ error: "Type the camera's username" }, 400);
+    const jobs = await this.get("jobs", {});
+    const id = b64url(crypto.getRandomValues(new Uint8Array(9)));
+    jobs[id] = { id, type: "add", device_id, xaddr: hit.xaddr, ip: hit.ip, username, password, created: Date.now(), done: false,
+      name: clean(body.name, 60) || hit.name || "Camera", zone_capacity: num(body.zone_capacity, 0, 100000) };
+    await this.ctx.storage.put("jobs", jobs);
+    return json({ job_id: id });
+  }
+
+  async addStatus(id) {
+    const jobs = await this.get("jobs", {});
+    const j = jobs[id];
+    if (!j || j.type !== "add") return { done: true, ok: false, error: "That took too long — check the camera is switched on and try again" };
+    return j.done ? { done: true, ok: j.ok, error: j.error ?? null, camera_id: j.camera_id ?? null } : { done: false };
+  }
+
+  async jobResult(device, request) {
+    const body = await request.json().catch(() => ({}));
+    const jobs = await this.get("jobs", {});
+    const j = jobs[clean(body.id, 40)];
+    if (!j || j.device_id !== device.id) return json({ ok: true });
+    if (j.type === "find") {
+      const found = await this.get("found", {});
+      found[device.id] = (Array.isArray(body.found) ? body.found.slice(0, 50) : []).map((f) => {
+        let xaddr = "";
+        try { const u = new URL(String(f.xaddr ?? "")); if (u.protocol === "http:" || u.protocol === "https:") xaddr = u.href.slice(0, 300); } catch { /* skip */ }
+        return { id: b64url(crypto.getRandomValues(new Uint8Array(6))), ip: clean(f.ip, 45), name: clean(f.name, 60), model: clean(f.model, 60), xaddr };
+      }).filter((f) => f.ip && f.xaddr);
+      await this.ctx.storage.put("found", found);
+      j.done = true;
+    } else if (j.type === "add") {
+      // The login is never kept once the camera computer has answered.
+      delete j.username; delete j.password; delete j.xaddr;
+      j.done = true;
+      let url = null;
+      try { url = new URL(String(body.url ?? "")); } catch { /* not ok */ }
+      if (body.ok && url && ["rtsp:", "rtsps:"].includes(url.protocol)) {
+        j.ok = true;
+        j.camera_id = await this.createNetworkCamera(device.id, String(body.url).slice(0, 500), { name: j.name, zone_name: j.name, zone_capacity: j.zone_capacity });
+      } else {
+        j.ok = false; j.error = clean(body.error, 200) || "Couldn't add that camera";
+      }
+    }
+    jobs[j.id] = j;
+    await this.ctx.storage.put("jobs", jobs);
+    return json({ ok: true });
   }
 
   /** Network cameras are deleted; a USB camera is just switched off (it would reappear while plugged in). */

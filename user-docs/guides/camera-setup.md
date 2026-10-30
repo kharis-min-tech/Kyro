@@ -124,6 +124,23 @@ If the camera or transmitter is switched off or goes out of range, the receiver 
 - Power the camera and transmitter from the mains or a power bank. Batteries rarely last a whole service.
 :::
 
+### With Wi-Fi security cameras (best for several cameras)
+
+Wi-Fi security cameras (for example **Reolink**, or **TP-Link Tapo** models that support ONVIF) send their picture over the church Wi-Fi, so they only need a power plug. One camera computer can run several of them.
+
+1. Set the camera up in its own app and join it to the **same Wi-Fi** as the camera computer.
+2. In the camera's app, make sure **ONVIF** is on and give the camera a username and password (Tapo: **Advanced settings → Camera account**; Reolink: on by default, use the camera's admin login).
+3. On Kyro's **Cameras** page, press **Find cameras** under **Wi-Fi cameras**. The camera computer looks for cameras on its Wi-Fi for a few seconds.
+4. Next to your camera, click **Add**, give it a name, and type the camera's username and password. Click **Yes, add it**.
+
+Kyro asks the camera for its video, checks it can see the picture, and the camera appears in your camera list.
+
+::: info Safe by design
+Kyro only looks for cameras when you press **Find cameras**, never in the background. Looking doesn't try any passwords. The camera's login is only used to connect to that camera, and it's never shown on the website.
+:::
+
+If no cameras are found, check the camera is switched on, joined to the same Wi-Fi as the camera computer, and has ONVIF switched on. Some cheap action cameras' Wi-Fi only works with their own phone app; use a wireless video transmitter for those (above).
+
 ### With the camera computer next to the camera
 
 Put the small camera computer beside the camera (short USB cable) and let **the computer** connect to the church **Wi-Fi**. Only a power plug is needed. If the Wi-Fi is weak, the live video sends smaller pictures instead of freezing. The counting itself happens on the computer, so it isn't affected.

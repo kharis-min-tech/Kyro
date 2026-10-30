@@ -56,6 +56,10 @@ export interface EdgeDaily {
   };
 }
 
+/** Cameras a camera computer found on its network after "Find cameras". */
+export interface FoundCamera { id: string; device_id: string; device_name: string; ip: string; name: string; model: string; added: boolean }
+export interface FoundCameras { searching: boolean; searched: boolean; results: FoundCamera[] }
+
 export const edgeVenueApi = {
   cameras: (all = false) => edgeFetch<EdgeCamera[]>(`/api/live/cameras${all ? "?all=1" : ""}`),
   venue: () => edgeFetch<VenueTotal>("/api/live/venue"),
@@ -71,6 +75,12 @@ export const edgeVenueApi = {
     location?: "indoor" | "queue"; hidden?: boolean; ignore_zones?: Zone[];
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removeCamera: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "DELETE" }),
+  findCameras: () => edgeFetch<{ asked: number }>("/api/live/find-cameras", { method: "POST" }),
+  foundCameras: () => edgeFetch<FoundCameras>("/api/live/find-cameras"),
+  addFound: (body: { id: string; username: string; password: string; name?: string; zone_capacity?: number }) =>
+    edgeFetch<{ job_id: string }>("/api/live/find-cameras/add", { method: "POST", body: JSON.stringify(body) }),
+  addFoundStatus: (jobId: string) =>
+    edgeFetch<{ done: boolean; ok?: boolean; error?: string | null; camera_id?: string | null }>(`/api/live/find-cameras/add/${enc(jobId)}`),
   addStream: (body: { url: string; name?: string; zone_name?: string; zone_capacity?: number; device_id?: string }) =>
     edgeFetch<{ camera_id: string }>("/api/live/streams", { method: "POST", body: JSON.stringify(body) }),
 };

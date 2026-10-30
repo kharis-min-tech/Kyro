@@ -20,6 +20,7 @@ import {
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
+import { FindCameras } from "@/components/ui/FindCameras";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -1578,6 +1579,10 @@ export default function CamerasPage() {
 
         {edge && canManage && (
           <CameraComputersSection devices={devices} error={devicesErr} onChanged={afterEdgeChange} />
+        )}
+
+        {edge && role === "admin" && (devices?.length ?? 0) > 0 && (
+          <FindCameras onAdded={afterEdgeChange} multipleComputers={(devices?.length ?? 0) > 1} />
         )}
 
         {error && (edge
