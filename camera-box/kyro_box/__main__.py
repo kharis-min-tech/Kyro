@@ -104,6 +104,11 @@ class Box:
                 "status": "error" if error or stale else "online", "error": error,
                 "fps": cam.fps, "width": w, "height": h,
             })
+        # Just unplugged (or the capture card's cable came out): say so now, not after a timeout.
+        for key, (label, _at) in list(self.cameras.unplugged.items()):
+            if key not in {c["key"] for c in out}:
+                out.append({"key": key, "kind": "usb", "label": label, "current": 0, "status": "error",
+                            "error": "Unplugged — check the camera's (or capture card's) USB cable"})
         # Plugged in but not added on the website yet: the website asks an admin.
         for c in self.cameras.standby:
             out.append({"key": c["key"], "kind": "usb", "label": c["label"], "status": "standby"})
@@ -202,7 +207,7 @@ class Box:
 
     # Main thread: count ----------------------------------------------------
     def run(self) -> int:
-        from kyro_box.cameras import NO_SIGNAL, no_signal
+        from kyro_box.cameras import FROZEN, FROZEN_AFTER_S, NO_SIGNAL, fingerprint, no_signal
         from kyro_box.counting import CameraStats, Counter
         from kyro_box.updater import UPDATE_EXIT_CODE
 
@@ -213,6 +218,7 @@ class Box:
         self.counter = Counter()
         log.info("Kyro Camera Box %s running", __version__)
         started = time.time()
+        same_since: dict[str, tuple[bytes, float]] = {}   # camera → (picture fingerprint, when it was first seen)
 
         while not self.stop.is_set():
             cams = self.cameras.active()
@@ -227,6 +233,16 @@ class Box:
                     # Camera / transmitter off or out of range: say so instead of counting 0.
                     st = self.counter.stats.setdefault(cam.key, CameraStats())
                     st.current, st.error, st.counted_at = 0, NO_SIGNAL, time.time()
+                    self.counter.restart_steadying(cam.key)
+                    continue
+                fp, now = fingerprint(frame), time.time()
+                if same_since.get(cam.key, (None,))[0] != fp:
+                    same_since[cam.key] = (fp, now)
+                elif now - same_since[cam.key][1] > FROZEN_AFTER_S:
+                    # Stuck receiver: never pass an old picture's count off as live.
+                    st = self.counter.stats.setdefault(cam.key, CameraStats())
+                    st.current, st.error, st.counted_at = 0, FROZEN, now
+                    self.counter.restart_steadying(cam.key)
                     continue
                 self.counter.count(cam.key, frame)
                 counted = True

@@ -124,6 +124,11 @@ class Counter:
         if s.current > 0:
             s.last_people_at = s.counted_at
 
+    def restart_steadying(self, key: str) -> None:
+        """The picture dropped out (no signal / frozen): when it's back, count fresh —
+        never mix in readings from before the gap."""
+        self._recent.pop(key, None)
+
     def people_seen_recently(self, within_s: float) -> bool:
         now = time.time()
         return any(now - s.last_people_at < within_s for s in self.stats.values())

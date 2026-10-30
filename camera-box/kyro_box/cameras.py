@@ -121,6 +121,16 @@ def no_signal(frame: np.ndarray) -> bool:
     return float(same.mean()) >= 0.95                  # (a small "NO SIGNAL" message still counts as flat)
 
 
+FROZEN = "Picture frozen — the camera or its wireless receiver has stopped sending a live picture. Switch the transmitter off and on again"
+FROZEN_AFTER_S = 10
+
+
+def fingerprint(frame: np.ndarray) -> bytes:
+    """Exactly the same pixels as before? A live camera never sends the very same
+    picture twice (there's always a little sensor noise); a stuck receiver does."""
+    return hashlib.sha1(np.ascontiguousarray(frame[::4, ::4]).tobytes()).digest()
+
+
 class Camera:
     """One camera: reads continuously on its own thread, keeps only the newest picture."""
 
@@ -194,6 +204,11 @@ class Camera:
         with self._lock:
             return self._frame
 
+    def peek_timed(self) -> tuple[Optional[np.ndarray], float]:
+        """The newest picture and when it arrived (to tell a new picture from one already sent)."""
+        with self._lock:
+            return self._frame, self._frame_at
+
     @property
     def alive(self) -> bool:
         if self.stopped:
@@ -223,6 +238,7 @@ class CameraManager:
         saved = settings.load().get("allowed_cameras")
         self.allowed: Optional[set[str]] = set(saved) if isinstance(saved, list) else None
         self.standby: list[dict] = []        # plugged in, waiting for a yes (or switched off)
+        self.unplugged: dict[str, tuple[str, float]] = {}   # key → (name, when): told to the website straight away
         self._probed: dict[str, float] = {}
         self._lock = threading.Lock()
 
@@ -238,6 +254,11 @@ class CameraManager:
                     log.info("Camera %s was unplugged", key)
                     cam.stop()
                     del self.cameras[key]
+                    if cam.kind == "usb":
+                        self.unplugged[key] = (cam.label, time.time())
+            for key in list(self.unplugged):
+                if key in self.cameras or time.time() - self.unplugged[key][1] > 3600:
+                    del self.unplugged[key]
             in_use = {c.key for c in self.cameras.values()}
         named = _named_cameras()
         misses = 0

@@ -24,7 +24,10 @@ MAX_FPS = 15
 # sending is slow (e.g. the camera box is on weak Wi-Fi far across the hall).
 WIDTHS = (1280, 960, 640)
 JPEG_QUALITY = 72
-SLOW_SEND_S = 0.25          # a picture taking longer than this to send = internet is struggling
+# A picture taking longer to send than the time between pictures = the internet can't keep up
+# with smooth video at this size; one sending in under 40% of that = room to go bigger.
+SLOW_SEND_S = 1 / MAX_FPS
+FAST_SEND_S = 0.4 / MAX_FPS
 
 
 class Streamer:
@@ -63,7 +66,7 @@ class Streamer:
 
     def _serve(self, ws) -> None:
         last_ping = time.time()
-        sent: dict[str, int] = {}
+        sent: dict[str, float] = {}     # camera → arrival time of the last picture sent
         size = 0                      # index into WIDTHS
         slow = fast = 0
         while not self.stop.is_set():
@@ -85,10 +88,12 @@ class Streamer:
             cams = {c.key: c for c in self.cameras.active()}
             for key in list(self.watching):
                 cam = cams.get(key)
-                frame = cam.peek() if cam else None
-                if frame is None or sent.get(key) == id(frame):
+                # (Not id(frame): Python reuses a freed picture's id for the next one,
+                # which made new pictures look already sent and halved the video rate.)
+                frame, at = cam.peek_timed() if cam else (None, 0.0)
+                if frame is None or sent.get(key) == at:
                     continue
-                sent[key] = id(frame)
+                sent[key] = at
                 h, w = frame.shape[:2]
                 width = WIDTHS[size]
                 if w > width:
@@ -100,12 +105,15 @@ class Streamer:
                 t0 = time.time()
                 ws.send_binary(bytes([len(k)]) + k + jpg.tobytes())  # waits while the internet is busy
                 # Adapt to the connection: smaller pictures when slow, back up when it recovers.
-                if time.time() - t0 > SLOW_SEND_S:
+                took = time.time() - t0
+                # Several cameras watched share the connection: each gets its share of the time.
+                share = max(1, len(self.watching))
+                if took > SLOW_SEND_S / share:
                     slow, fast = slow + 1, 0
                     if slow >= 3 and size < len(WIDTHS) - 1:
                         size, slow = size + 1, 0
                         log.info("Live video: slow internet — sending %d-wide pictures", WIDTHS[size])
-                else:
+                elif took < FAST_SEND_S / share:
                     fast, slow = fast + 1, 0
                     if fast >= 150 and size > 0:
                         size, fast = size - 1, 0
