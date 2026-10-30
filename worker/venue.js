@@ -33,6 +33,23 @@ const MAX_SNAPSHOT_BYTES = 400_000;
 const ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
 const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
+const MAX_SEATS = 3000;           // per camera
+const SEAT_STATES = ["occupied", "temporarily_vacant", "likely_available", "available", "reserved", "rota_hold", "unknown"];
+/** A seat drawn on the camera's picture (1280×720 coordinates). */
+function cleanSeatDef(s) {
+  if (!s || !Array.isArray(s.bbox) || s.bbox.length !== 4) return null;
+  const b = s.bbox.map((v, i) => Math.min(i % 2 ? 720 : 1280, Math.max(0, Math.round(Number(v) * 10) / 10 || 0)));
+  if (b[2] - b[0] < 2 || b[3] - b[1] < 2) return null;
+  return { seat_id: clean(s.seat_id, 40) || null, row: clean(s.row, 10), number: num(s.number, 0, 10000), section: clean(s.section, 40) || "Main",
+    bbox: b, reserved: !!s.reserved, reserved_for: s.reserved ? clean(s.reserved_for, 60) || null : null };
+}
+/** [seat_id, state, seconds vacant, confidence] from the camera computer. */
+function cleanSeatState(s) {
+  if (!Array.isArray(s)) return null;
+  const state = SEAT_STATES.includes(s[1]) ? s[1] : "unknown";
+  return [clean(s[0], 40), state, num(s[2], 0, 86400), Math.round(Math.min(1, Math.max(0, Number(s[3]) || 0)) * 100) / 100];
+}
+
 /** Up to 10 rectangles [x1, y1, x2, y2] as 0–1 fractions of the picture. */
 function cleanZones(z) {
   if (!Array.isArray(z)) return [];
@@ -69,6 +86,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/devices/report" && request.method === "POST") return this.withDevice(request, (d) => this.report(d, request));
       if (p === "/api/devices/snapshot" && request.method === "PUT") return this.withDevice(request, (d) => this.snapshot(d, request, url));
       if (p === "/api/devices/stream") return this.withDevice(request, (d) => this.boxStream(d, request));
+      if (p === "/api/devices/seats" && request.method === "GET") return this.withDevice(request, (d) => this.boxSeats(d, url));
       if (p === "/api/devices/job" && request.method === "POST") return this.withDevice(request, (d) => this.jobResult(d, request));
 
       // ── Website (signed-in user) ──
@@ -79,11 +97,18 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/daily" && request.method === "GET") return json(await this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
       if (p.startsWith("/api/live/watch/")) return this.watch(decodeURIComponent(p.split("/").pop()), request);
+      if (p.startsWith("/api/live/seat-states/") && request.method === "GET") return json(await this.seatStates(decodeURIComponent(p.split("/").pop())));
+      const lay = p.match(/^\/api\/live\/seats\/([^/]+)\/layouts(?:\/(\d+)(\/activate)?)?$/);
+      if (lay && request.method === "GET" && !lay[2]) return json(await this.listLayouts(decodeURIComponent(lay[1])));
 
       if (p === "/api/live/browser-device" && request.method === "POST") {
         // Camera mode: a signed-in admin/operator's browser becomes a camera computer — no code needed.
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can use Camera mode" }, 403);
         return this.registerBrowser(request);
+      }
+      if (p.startsWith("/api/live/seat-reserve/") && request.method === "POST") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can reserve seats" }, 403);
+        return this.reserveSeats(decodeURIComponent(p.split("/").pop()), request);
       }
       if (role !== "admin") return json({ error: "Only administrators can change camera settings" }, 403);
       if (p === "/api/live/pairing-code" && request.method === "POST") return this.newPairingCode();
@@ -92,6 +117,9 @@ export class VenueHub extends DurableObject {
       if (p.startsWith("/api/live/cameras/") && request.method === "PATCH") return this.updateCamera(decodeURIComponent(p.split("/").pop()), request);
       if (p.startsWith("/api/live/cameras/") && request.method === "DELETE") return this.removeCamera(decodeURIComponent(p.split("/").pop()));
       if (p === "/api/live/streams" && request.method === "POST") return this.addStream(request);
+      if (lay && request.method === "POST" && !lay[2]) return this.createLayout(decodeURIComponent(lay[1]), request);
+      if (lay && request.method === "POST" && lay[3]) return this.activateLayout(decodeURIComponent(lay[1]), Number(lay[2]));
+      if (lay && request.method === "DELETE" && lay[2] && !lay[3]) return this.deleteLayout(decodeURIComponent(lay[1]), Number(lay[2]));
       if (p === "/api/live/find-cameras" && request.method === "POST") return this.findCameras();
       if (p === "/api/live/find-cameras" && request.method === "GET") return json(await this.foundCameras());
       if (p === "/api/live/find-cameras/add" && request.method === "POST") return this.addFound(request);
@@ -179,6 +207,7 @@ export class VenueHub extends DurableObject {
     const now = Date.now();
     const cams = await this.get("cameras", {});
     const live = await this.get("live", {});
+    const seatLive = await this.get("seat_live", {});
     let changed = false;
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
@@ -215,6 +244,7 @@ export class VenueHub extends DurableObject {
         error_reason: c.error ? clean(c.error, 120) : null, fps: Number(c.fps) || 0,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
       };
+      if (Array.isArray(c.seats)) seatLive[camera_id] = { at: now, seats: c.seats.slice(0, MAX_SEATS).map(cleanSeatState).filter(Boolean) };
       if (now - (this.lastSample.get(camera_id) ?? 0) >= SAMPLE_EVERY_MS) {
         this.lastSample.set(camera_id, now);
         const l = live[camera_id];
@@ -231,6 +261,7 @@ export class VenueHub extends DurableObject {
     }
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
+    await this.ctx.storage.put("seat_live", seatLive);
     await this.capacityAlerts(cams, live);
 
     // Tell the box which cameras it may use (added on the website) and which not.
@@ -246,7 +277,15 @@ export class VenueHub extends DurableObject {
       .filter((c) => c.device_id === device.id && c.ignore_zones?.length).map((c) => [c.key, c.ignore_zones]));
     // Requests waiting for this computer ("Find cameras", "Add this camera").
     const jobs = await this.jobsFor(device.id);
-    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, report_every_s: 2, snapshot_every_s: 20 });
+    // Seat layouts: only a version number each time; the box fetches a layout when it changes.
+    const layouts = await this.get("layouts", {});
+    const seat_layouts = {};
+    for (const c of Object.values(cams)) {
+      if (c.device_id !== device.id) continue;
+      const a = (layouts[c.camera_id] ?? []).find((l) => l.is_active);
+      if (a) seat_layouts[c.key] = `${a.id}.${a.version ?? 0}`;
+    }
+    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -561,6 +600,100 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("streams", urls);
     return camera_id;
+  }
+
+  // ── Seat layouts and live seat states ─────────────────────────────────────
+  // A layout is the seats drawn on a camera's picture (1280×720 coordinates, the
+  // same as Kyro's seat engine). The camera computer works out each seat's state
+  // (occupied / away / free, with the grace periods) and reports it every 2 s.
+
+  async listLayouts(camera_id) {
+    return ((await this.get("layouts", {}))[camera_id] ?? []).map(({ version, ...l }) => ({ ...l, seat_count: l.seats.length }));
+  }
+
+  async createLayout(camera_id, request) {
+    const cams = await this.get("cameras", {});
+    if (!cams[camera_id]) return json({ error: "No such camera" }, 404);
+    const body = await request.json().catch(() => ({}));
+    const seen = new Set();
+    const seats = (Array.isArray(body.seats) ? body.seats : []).slice(0, MAX_SEATS).map(cleanSeatDef).filter(Boolean)
+      .map((s, i) => { let id = s.seat_id || `S${i + 1}`; while (seen.has(id)) id += "b"; seen.add(id); return { ...s, seat_id: id }; });
+    if (!seats.length) return json({ error: "Add at least one seat" }, 400);
+    const layouts = await this.get("layouts", {});
+    const list = layouts[camera_id] ?? [];
+    const id = Math.max(0, ...list.map((l) => l.id)) + 1;
+    // The first layout for a camera becomes its active one straight away.
+    const layout = { id, camera_id, name: clean(body.name, 80) || `Layout ${id}`, is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seats, version: 1 };
+    layouts[camera_id] = [...list, layout].slice(-20);
+    await this.ctx.storage.put("layouts", layouts);
+    if (layout.is_active) await this.syncCapacity(camera_id, seats.length);
+    const { version, ...out } = layout;
+    return json({ ...out, seat_count: seats.length });
+  }
+
+  async activateLayout(camera_id, id) {
+    const layouts = await this.get("layouts", {});
+    const list = layouts[camera_id] ?? [];
+    const l = list.find((x) => x.id === id);
+    if (!l) return json({ error: "No such layout" }, 404);
+    for (const x of list) x.is_active = x.id === id;
+    l.version = (l.version ?? 0) + 1;
+    await this.ctx.storage.put("layouts", layouts);
+    await this.syncCapacity(camera_id, l.seats.length);
+    return json({ activated: true, seat_count: l.seats.length });
+  }
+
+  async deleteLayout(camera_id, id) {
+    const layouts = await this.get("layouts", {});
+    layouts[camera_id] = (layouts[camera_id] ?? []).filter((l) => l.id !== id);
+    await this.ctx.storage.put("layouts", layouts);
+    return json({ deleted: true });
+  }
+
+  /** Reserve / unreserve seats (e.g. "Pastor John"): kept in the active layout so every phone and the camera computer agree. */
+  async reserveSeats(camera_id, request) {
+    const body = await request.json().catch(() => ({}));
+    const layouts = await this.get("layouts", {});
+    const l = (layouts[camera_id] ?? []).find((x) => x.is_active);
+    if (!l) return json({ error: "This room has no seat layout yet" }, 404);
+    const ids = new Set((Array.isArray(body.seat_ids) ? body.seat_ids : []).map((s) => clean(s, 40)));
+    for (const s of l.seats) {
+      if (!ids.has(s.seat_id)) continue;
+      s.reserved = !!body.reserved;
+      s.reserved_for = body.reserved ? clean(body.reserved_for, 60) || null : null;
+    }
+    l.version = (l.version ?? 0) + 1;
+    await this.ctx.storage.put("layouts", layouts);
+    return json({ ok: true });
+  }
+
+  /** The room's seat count follows its seat layout, so "seats left" and alerts match the seat map. */
+  async syncCapacity(camera_id, n) {
+    const cams = await this.get("cameras", {});
+    if (cams[camera_id]) { cams[camera_id].zone_capacity = n; await this.ctx.storage.put("cameras", cams); }
+  }
+
+  async boxSeats(device, url) {
+    const key = clean(url.searchParams.get("camera"), 80);
+    const l = ((await this.get("layouts", {}))[`${device.id}:${key}`] ?? []).find((x) => x.is_active);
+    return json(l ? { version: `${l.id}.${l.version ?? 0}`, seats: l.seats } : { version: null, seats: [] });
+  }
+
+  /** The seat map: the active layout with each seat's live state from the camera computer. */
+  async seatStates(camera_id) {
+    const l = ((await this.get("layouts", {}))[camera_id] ?? []).find((x) => x.is_active);
+    if (!l) return { layout: null, seats: [], updated_at: null };
+    const live = (await this.get("seat_live", {}))[camera_id];
+    const fresh = live && Date.now() - live.at < OFFLINE_AFTER_MS;
+    const by = new Map(fresh ? live.seats.map((s) => [s[0], s]) : []);
+    return {
+      layout: { id: l.id, name: l.name }, updated_at: fresh ? new Date(live.at).toISOString() : null,
+      seats: l.seats.map((s) => {
+        const st = by.get(s.seat_id);
+        return { ...s, state: s.reserved ? "reserved" : st ? st[1] : "unknown", confidence: st ? st[3] ?? 0 : 0,
+          occupying_track_id: null, vacancy_seconds: st ? st[2] : 0, in_exclusion_zone: false };
+      }),
+    };
   }
 
   // ── "Find cameras" ────────────────────────────────────────────────────────

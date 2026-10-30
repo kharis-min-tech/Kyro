@@ -9,6 +9,8 @@
  * work correctly. The real token is cached under kyro_real_token.
  */
 
+import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO === "true";
 
@@ -346,6 +348,9 @@ export const zonesApi = {
   },
 };
 
+/** Live on the Cloudflare build: seats go to the website's own server. */
+const liveSeats = () => isEdgeLive();
+
 export const seatsApi = {
   /** Evidence photo URL for a seat-available alert — token as query param
    *  since this is used directly in an <img> src (can't set headers). */
@@ -354,25 +359,31 @@ export const seatsApi = {
     const qs = token ? `?token=${encodeURIComponent(token)}` : "";
     return `${API_URL}/api/v1/seats/${cameraId}/${seatId}/available-snapshot${qs}`;
   },
-  listLayouts: (cameraId: string) =>
-    request<import("@/types").SeatLayout[]>(
+  // Live on the Cloudflare build (no Kyro server): layouts are kept by the website
+  // itself (worker/venue.js) and the camera computer counts each seat.
+  listLayouts: (cameraId: string) => liveSeats()
+    ? edgeFetch<import("@/types").SeatLayout[]>(`/api/live/seats/${encodeURIComponent(cameraId)}/layouts`)
+    : request<import("@/types").SeatLayout[]>(
       `/api/v1/seats/${cameraId}/layouts`
     ),
   createLayout: (
     cameraId: string,
     body: { name: string; seats: import("@/types").SeatDefinition[] }
-  ) =>
-    request<import("@/types").SeatLayout>(
+  ) => liveSeats()
+    ? edgeFetch<import("@/types").SeatLayout>(`/api/live/seats/${encodeURIComponent(cameraId)}/layouts`, { method: "POST", body: JSON.stringify(body) })
+    : request<import("@/types").SeatLayout>(
       `/api/v1/seats/${cameraId}/layouts`,
       { method: "POST", body: JSON.stringify(body) }
     ),
-  activateLayout: (cameraId: string, layoutId: number) =>
-    request<{ activated: boolean; seat_count: number }>(
+  activateLayout: (cameraId: string, layoutId: number) => liveSeats()
+    ? edgeFetch<{ activated: boolean; seat_count: number }>(`/api/live/seats/${encodeURIComponent(cameraId)}/layouts/${layoutId}/activate`, { method: "POST" })
+    : request<{ activated: boolean; seat_count: number }>(
       `/api/v1/seats/${cameraId}/layouts/${layoutId}/activate`,
       { method: "POST" }
     ),
-  deleteLayout: (cameraId: string, layoutId: number) =>
-    request<void>(`/api/v1/seats/${cameraId}/layouts/${layoutId}`, { method: "DELETE" }),
+  deleteLayout: (cameraId: string, layoutId: number) => liveSeats()
+    ? edgeFetch<void>(`/api/live/seats/${encodeURIComponent(cameraId)}/layouts/${layoutId}`, { method: "DELETE" })
+    : request<void>(`/api/v1/seats/${cameraId}/layouts/${layoutId}`, { method: "DELETE" }),
 
   /** Auto-generate and activate a layout from the camera's capacity. Called when a camera is first registered. */
   autoGenerateLayout: async (cameraId: string, cameraName: string, capacity: number) => {

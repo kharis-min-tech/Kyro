@@ -10,7 +10,7 @@ import { useReviewContext } from "@/lib/ReviewContext";
 import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
-import { useEdgeVenue } from "@/lib/edgeVenue";
+import { useEdgeVenue, useEdgeSeatStates, edgeVenueApi } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -777,6 +777,8 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   const { venue: edgeVenue, error: edgeError } = useEdgeVenue(edge);
   const edgeZone = edgeVenue?.zones.find((z) => z.camera_id === camera.camera_id) ?? null;
   const edgeRunning = edge ? !!edgeZone?.is_running : undefined;
+  // Seat-by-seat states, when this room has a seat layout (Seat Editor).
+  const edgeSeats = useEdgeSeatStates(camera.camera_id, edge);
   // Questions for this room, from the same list the app-wide pop-up shows —
   // so the count drops as soon as one is answered anywhere.
   const { reviews: allQuestions } = useReviewContext();
@@ -809,6 +811,8 @@ function CameraSeatView({ camera }: { camera: Camera }) {
 
   useEffect(() => {
     if (isQueue || loadedId === camera.camera_id) return;
+    // Live on the website on its own: reserved seats come with the seat states.
+    if (isEdgeLive()) { setOverrides({}); setLoadedId(camera.camera_id); return; }
     if (inDemoMode()) {
       try {
         const stored = JSON.parse(localStorage.getItem(`kyro_demo_reserved_${camera.camera_id}`) ?? "{}");
@@ -826,7 +830,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       .catch(() => { setOverrides({}); setLoadedId(camera.camera_id); });
   }, [camera.camera_id, loadedId, isQueue]);
 
-  const rawSeats     = data?.seat_states ?? [];
+  const rawSeats     = edge ? edgeSeats.seats : data?.seat_states ?? [];
   const overriden    = rawSeats.map((s) => overrides[s.seat_id] ? { ...s, ...overrides[s.seat_id] } : s);
   // Apply the zone rules the operator saved (in demo/local mode).
   const { seats: mergedSeats, seatZoneMap } = applyZonesToSeats(overriden, zones);
@@ -846,7 +850,13 @@ function CameraSeatView({ camera }: { camera: Camera }) {
       else if (action.action === "mark_available") next[action.seatId] = { state: "available" };
       return next;
     });
-    if (!inDemoMode()) {
+    if (isEdgeLive()) {
+      // Saved on the website, so every phone and the camera computer see it.
+      if (action.action === "reserve" || action.action === "unreserve")
+        edgeVenueApi.reserveSeats(camera.camera_id, [action.seatId], action.action === "reserve", action.reservedFor)
+          .then(() => { setOverrides((prev) => { const n = { ...prev }; delete n[action.seatId]; return n; }); edgeSeats.reload(); })
+          .catch((e) => alert(e instanceof Error ? e.message : "Couldn't save that"));
+    } else if (!inDemoMode()) {
       if (action.action === "reserve")   reservedApi.reserve(camera.camera_id, action.seatId, action.reservedFor).catch(console.error);
       if (action.action === "unreserve") reservedApi.unreserve(camera.camera_id, action.seatId).catch(console.error);
     } else {

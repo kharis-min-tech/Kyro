@@ -45,6 +45,9 @@ _DEFAULT_LONG_ABSENCE_TIMEOUT = 300.0    # 5 min — long absence before seat be
 # simulator lives at SEAT_VACANT_GRACE_MS in dashboard/src/lib/demo.ts.
 
 
+_UNKNOWN_TO_FREE_S = 10.0       # a seat nobody's been seen in since counting started → free after this
+
+
 @dataclass
 class Seat:
     """
@@ -110,6 +113,17 @@ class Seat:
         self._vacancy_start_time = time.monotonic()
         self.state = OccupancyState.TEMPORARILY_VACANT
         self.confidence = 0.60
+
+    def set_reserved(self, reserved: bool, reserved_for: Optional[str] = None) -> None:
+        """Reserve / unreserve during a service without touching any other seat."""
+        if reserved == self.reserved and reserved_for == self.reserved_for:
+            return
+        self.reserved, self.reserved_for = reserved, reserved_for if reserved else None
+        if reserved:
+            self.state, self.confidence = OccupancyState.RESERVED, 1.0
+        elif self.state == OccupancyState.RESERVED:
+            self.state, self.confidence, self._frames_vacant = OccupancyState.UNKNOWN, 0.0, 0
+            self._vacancy_start_time = None
 
     def mark_occupied(self, track_id: int, confidence: float) -> None:
         """Call when a person is detected overlapping this seat."""
@@ -193,8 +207,12 @@ class Seat:
             return
 
         if self.state == OccupancyState.UNKNOWN:
+            # Just started and nobody here: free once it's been empty for a little while
+            # (by time, so it's the same however fast the computer counts).
             self._frames_vacant += 1
-            if self._frames_vacant > 10:
+            if self._vacancy_start_time is None:
+                self._vacancy_start_time = now
+            if self._frames_vacant >= 2 and now - self._vacancy_start_time >= _UNKNOWN_TO_FREE_S:
                 self.state = OccupancyState.AVAILABLE
                 self.confidence = 0.85
 

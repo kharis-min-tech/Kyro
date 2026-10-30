@@ -5,7 +5,7 @@ The Seat Editor is where an administrator draws the seats onto a camera's pictur
 <Shot name="seat-editor" alt="Seat Layout Editor with the camera menu, Grid, Manual draw and Mark zones modes, the drawing area and saved layouts" />
 
 ::: info Needs the camera system
-The Seat Editor works on a real camera picture, and saving layouts needs the Kyro server. In Demo mode, use **Upload camera frame** to try it with a photo.
+The Seat Editor works on a real camera picture. In Live mode, choose the camera at the top: its latest picture from the camera computer loads by itself. Draw the seats where people's bodies are when they sit, then **Save**. The first layout you save for a room starts working straight away: within a few seconds the camera computer shows each seat on the [Seat Map](/pages/seat-map), and the room's seat count is updated to match. In Demo mode, use **Upload camera frame** to try it with a photo.
 :::
 
 ## Before you start

@@ -4,6 +4,10 @@ The Seat Map shows every seat in a room as a dot, coloured by whether it's taken
 
 <Shot name="seat-map" alt="Seat Map for Main Floor showing capacity utilisation 79.9%, 72 of 91 seats occupied, and a dot map of seats facing the stage" />
 
+::: tip Live mode: draw the seats first
+For seat-by-seat dots from the cameras, draw each room's seats once in the [Seat Editor](/pages/seat-editor), on that camera's picture. Until then, the Seat Map shows the room's **people count** and **seats left**.
+:::
+
 ## Choose a room
 
 The tabs along the top are your cameras, named by room. Tap one to see its seats. An outdoor queue camera shows only **People outside now**.
@@ -16,7 +20,7 @@ The stage is at the top, and each row is lettered from the front (A, B, C…).
 |---|---|
 | <Icon name="dot" color="#ff4d6d" /> Red | Occupied |
 | <Icon name="dot" color="#2a2f45" /> Dark | Free |
-| <Icon name="dot" color="#ffd60a" /> Yellow | Away briefly: the person has stepped out and is expected back |
+| <Icon name="dot" color="#ffd60a" /> Yellow | Away briefly: the person has stepped out and is expected back. After **3 minutes** the seat shows as free |
 | <Icon name="dot" color="#9b5de5" /> Purple | Reserved, or held while the person is on stage, in the choir or at the altar |
 | Faded, dashed | In an *ignore* area, so it isn't counted |
 

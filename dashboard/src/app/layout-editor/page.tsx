@@ -8,6 +8,7 @@ import { seatsApi } from "@/lib/api";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import type { SeatLayout } from "@/types";
 import { Trash2, Play, Info, X } from "lucide-react";
+import { useCameras } from "@/hooks/useCameras";
 
 const DEFAULT_CAMERA = process.env.NEXT_PUBLIC_CAMERA_ID ?? "cam-01";
 
@@ -18,13 +19,17 @@ export default function LayoutEditorPage() {
   const [deleting, setDeleting]         = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [status, setStatus]             = useState<{ msg: string; ok: boolean } | null>(null);
-  // null until mounted: edge Live (Cloudflare build, no Kyro server) has no
-  // seat layouts, so don't mount the editor or call the layout API there.
+  // Live on the website on its own: layouts are saved on the website and the
+  // camera computer counts each seat (seatsApi picks the right place).
   const [edge, setEdge]                 = useState<boolean | null>(null);
   useEffect(() => { setEdge(isEdgeLive()); }, []);
+  const { cameras } = useCameras();
+  // The camera switcher's default id doesn't exist on the live site: start on the first camera.
+  useEffect(() => {
+    if (edge && cameras.length && !cameras.some((c) => c.camera_id === cameraId)) setCameraId(cameras[0].camera_id);
+  }, [edge, cameras, cameraId]);
 
   async function loadLayouts() {
-    if (isEdgeLive()) { setLayouts([]); return; }
     try { setLayouts(await seatsApi.listLayouts(cameraId)); }
     catch { setLayouts([]); }
   }
@@ -72,25 +77,10 @@ export default function LayoutEditorPage() {
               Venue snapshot loads automatically — draw seats and mark zones (stage, altar, entrance) right on it
             </p>
           </div>
-          {edge === false && <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />}
+          {edge !== null && <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />}
         </div>
 
-        {edge && (
-          <div className="flex items-start gap-2.5 rounded-xl px-4 py-4 max-w-2xl"
-            style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)" }}>
-            <Info size={15} className="text-indigo-400 shrink-0 mt-0.5" />
-            <div className="text-xs text-gray-400 leading-relaxed">
-              <p className="text-sm font-semibold text-white mb-1">Seat layouts need the Kyro server</p>
-              <p>
-                Camera Mode and camera computers count the people in each room — they don&apos;t use seat layouts.
-                To see each room&apos;s count and seats left, open the Seat Map; to set a room&apos;s number of seats,
-                use the Cameras page.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {edge === false && <>
+        {edge !== null && (!edge || cameras.some((c) => c.camera_id === cameraId)) && <>
         {/* Editor */}
         <div className="mb-8">
           <SeatLayoutEditor cameraId={cameraId} onSaved={() => loadLayouts()} />

@@ -75,6 +75,10 @@ export const edgeVenueApi = {
     location?: "indoor" | "queue"; hidden?: boolean; ignore_zones?: Zone[];
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removeCamera: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "DELETE" }),
+  seatStates: (cameraId: string) =>
+    edgeFetch<{ layout: { id: number; name: string } | null; seats: import("@/types").SeatState[]; updated_at: string | null }>(`/api/live/seat-states/${enc(cameraId)}`),
+  reserveSeats: (cameraId: string, seatIds: string[], reserved: boolean, reservedFor?: string | null) =>
+    edgeFetch<{ ok: boolean }>(`/api/live/seat-reserve/${enc(cameraId)}`, { method: "POST", body: JSON.stringify({ seat_ids: seatIds, reserved, reserved_for: reservedFor ?? null }) }),
   findCameras: () => edgeFetch<{ asked: number }>("/api/live/find-cameras", { method: "POST" }),
   foundCameras: () => edgeFetch<FoundCameras>("/api/live/find-cameras"),
   addFound: (body: { id: string; username: string; password: string; name?: string; zone_capacity?: number }) =>
@@ -245,4 +249,28 @@ export function edgeCounterSeries(rows: EdgeHistoryPoint[]): { t: number; entrie
     (by[r.camera_id] ??= []).push({ t: Date.parse(r.timestamp), entries: r.total_entries || 0, exits: r.total_exits || 0 });
   }
   return Object.values(by).map((pts) => pts.sort((a, b) => a.t - b.t));
+}
+
+/** The seat map on the live site: each seat's state from the camera computer, every 2 s. */
+export function useEdgeSeatStates(cameraId: string, enabled: boolean) {
+  const [seats, setSeats] = useState<import("@/types").SeatState[]>([]);
+  const [hasLayout, setHasLayout] = useState(false);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!enabled || !cameraId) { setSeats([]); setHasLayout(false); return; }
+    let alive = true;
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const r = await edgeVenueApi.seatStates(cameraId);
+        if (!alive) return;
+        setSeats(r.seats); setHasLayout(!!r.layout); setUpdatedAt(r.updated_at);
+      } catch { /* keep the last picture of the room */ }
+    };
+    load();
+    const t = setInterval(load, 2000);
+    return () => { alive = false; clearInterval(t); };
+  }, [cameraId, enabled, tick]);
+  return { seats, hasLayout, updatedAt, reload: () => setTick((n) => n + 1) };
 }

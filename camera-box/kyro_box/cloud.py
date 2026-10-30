@@ -59,6 +59,12 @@ def report(server: str, token: str, cameras: list[dict]) -> dict:
     return _request("POST", f"{server}/api/devices/report", body, token)
 
 
+def seats(server: str, token: str, key: str) -> dict:
+    """A camera's seat layout (drawn on the website): {"version": ..., "seats": [...]}."""
+    from urllib.parse import quote
+    return _request("GET", f"{server}/api/devices/seats?camera={quote(key)}", token=token)
+
+
 def job_result(server: str, token: str, result: dict) -> None:
     """The answer to a request from the website ("Find cameras", "Add this camera")."""
     _request("POST", f"{server}/api/devices/job", json.dumps(result).encode(), token)

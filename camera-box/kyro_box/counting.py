@@ -46,6 +46,7 @@ class CameraStats:
     error: Optional[str] = None
     last_people_at: float = 0.0
     seconds_per_count: float = 0.0
+    seats: Optional[list] = None      # [seat_id, state, seconds vacant, confidence] per seat, if it has a layout
 
 
 @dataclass
@@ -63,6 +64,7 @@ class Counter:
         self._pipelines: dict[str, object] = {}
         self._recent: dict[str, list[int]] = {}
         self.ignore_zones: dict[str, list] = {}   # camera key → "don't count this area" rectangles
+        self._seats: dict[str, tuple[str, list]] = {}   # camera key → (layout version, seats drawn on the website)
         self._day = dt.date.today()
         self._lock = threading.Lock()
         self.ready = True
@@ -73,12 +75,50 @@ class Counter:
             made_here = pipeline_module.PersonDetector
             pipeline_module.PersonDetector = lambda _cfg: self._detector   # share the one loaded model
             try:
-                p = pipeline_module.VisionPipeline(camera_id=key, seats=[], cfg=self._config)
+                p = pipeline_module.VisionPipeline(camera_id=key, seats=self._make_seats(key), cfg=self._config)
             finally:
                 pipeline_module.PersonDetector = made_here
             self._pipelines[key] = p
             self.stats.setdefault(key, CameraStats())
         return self._pipelines[key]
+
+    def _make_seats(self, key: str) -> list:
+        import numpy as np
+        from ai.seat_detection.seat import Seat
+        out = []
+        for s in self._seats.get(key, ("", []))[1]:
+            try:
+                out.append(Seat(seat_id=str(s["seat_id"]), bbox=np.array(s["bbox"], dtype=np.float32), row=str(s.get("row", "")),
+                                number=int(s.get("number", 0)), section=str(s.get("section") or "Main"),
+                                reserved=bool(s.get("reserved")), reserved_for=s.get("reserved_for")))
+            except (KeyError, TypeError, ValueError):
+                continue
+        return out
+
+    def seat_version(self, key: str) -> Optional[str]:
+        return self._seats.get(key, (None,))[0]
+
+    def set_seats(self, key: str, version: Optional[str], seats: list) -> None:
+        """A new seat layout from the website: start this camera's seat tracking afresh with it."""
+        if version is None:
+            self._seats.pop(key, None)
+        else:
+            old = self._seats.get(key, (None, []))[1]
+            self._seats[key] = (version, seats)
+            geometry = lambda lst: [(s.get("seat_id"), tuple(s.get("bbox") or ())) for s in lst]
+            p = self._pipelines.get(key)
+            if p is not None and geometry(old) == geometry(seats):
+                # Only reservations changed (e.g. a seat reserved mid-service): update those
+                # seats and keep every other seat's state and timers.
+                by_id = {s["seat_id"]: s for s in seats}
+                for seat in p._seat_engine.seats:
+                    s = by_id.get(seat.seat_id)
+                    if s is not None:
+                        seat.set_reserved(bool(s.get("reserved")), s.get("reserved_for"))
+                return
+        self._pipelines.pop(key, None)
+        if key in self.stats:
+            self.stats[key].seats = None
 
     def forget(self, keys_still_present: set[str]) -> None:
         for key in list(self._pipelines):
@@ -121,6 +161,9 @@ class Counter:
         s.entries, s.exits = a.total_entries, a.total_exits
         s.counted_at, s.error = time.time(), None
         s.seconds_per_count = round(time.time() - t0, 2)
+        if key in self._seats:
+            s.seats = [[d["seat_id"], d["state"], int(d.get("vacancy_seconds") or 0), round(float(d.get("confidence") or 0), 2)]
+                       for d in result.seat_states]
         if s.current > 0:
             s.last_people_at = s.counted_at
 

@@ -19,7 +19,7 @@ Extended logic:
 
 4. Long absence timeout:
    - Vacancy → TEMPORARILY_VACANT → (3 min) → still TEMPORARILY_VACANT
-   - After 30 minutes: LIKELY_AVAILABLE (configurable via SEAT_LONG_ABSENCE_TIMEOUT)
+   - After 3 minutes: LIKELY_AVAILABLE, shown as Free (configurable via SEAT_LONG_ABSENCE_TIMEOUT)
 """
 
 from __future__ import annotations
@@ -39,7 +39,11 @@ logger = logging.getLogger(__name__)
 
 # 30-minute long absence timeout (configurable via env)
 import os
-_LONG_ABSENCE_TIMEOUT = float(os.getenv("SEAT_LONG_ABSENCE_TIMEOUT", "1800.0"))
+# Grace period: a seat whose person stepped out shows "Away" for this long, then
+# "Free" (fully free after twice this). 3 minutes — the operations team's 2–5 min
+# band, and the same as the dashboard demo (SEAT_VACANT_GRACE_MS). It was 30 min,
+# which kept empty seats "Away" for half a service.
+_LONG_ABSENCE_TIMEOUT = float(os.getenv("SEAT_LONG_ABSENCE_TIMEOUT", "180.0"))
 
 
 def _compute_iou(box_a: np.ndarray, box_b: np.ndarray) -> float:

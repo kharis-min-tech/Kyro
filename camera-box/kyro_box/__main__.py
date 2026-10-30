@@ -103,6 +103,7 @@ class Box:
                 "entries": s.entries if s else 0, "exits": s.exits if s else 0,
                 "status": "error" if error or stale else "online", "error": error,
                 "fps": cam.fps, "width": w, "height": h,
+                **({"seats": s.seats} if s is not None and s.seats is not None else {}),
             })
         # Just unplugged (or the capture card's cable came out): say so now, not after a timeout.
         for key, (label, _at) in list(self.cameras.unplugged.items()):
@@ -132,6 +133,22 @@ class Box:
                     cloud.snapshot(server, token, cam.key, jpg.tobytes())
                 except cloud.CloudError as e:
                     log.info("Picture upload failed for %s: %s", cam.key, e)
+
+    def _sync_seats(self, server: str, token: str, versions) -> None:
+        """Seat layouts drawn on the website: fetch one only when it changed."""
+        if self.counter is None or not isinstance(versions, dict):
+            return
+        for key in list(self.counter._seats):
+            if key not in versions:
+                self.counter.set_seats(key, None, [])
+        for key, version in versions.items():
+            if self.counter.seat_version(key) != version:
+                try:
+                    lay = cloud.seats(server, token, key)
+                    self.counter.set_seats(key, lay.get("version"), lay.get("seats") or [])
+                    log.info("Seat layout for %s: %d seats", key, len(lay.get("seats") or []))
+                except cloud.CloudError as e:
+                    log.info("Couldn't fetch the seat layout for %s: %s", key, e)
 
     # Requests from the website: "Find cameras" and "Add this camera" ---------
     def _start_jobs(self, server: str, token: str, jobs: list) -> None:
@@ -185,6 +202,7 @@ class Box:
                     self.counter.ignore_zones = res["ignore_zones"]
                 self.cameras.sync_network(res.get("streams", []))
                 self._start_jobs(cfg["server"], cfg["token"], res.get("jobs", []))
+                self._sync_seats(cfg["server"], cfg["token"], res.get("seat_layouts"))
                 self.report_every = float(res.get("report_every_s", 5))
                 self.snapshot_every = float(res.get("snapshot_every_s", 20))
                 self._send_snapshots(cfg["server"], cfg["token"])

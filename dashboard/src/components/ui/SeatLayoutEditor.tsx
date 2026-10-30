@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Upload, Trash2, Grid, PenLine, MapPin, RefreshCw } from "lucide-react";
 import type { SeatDefinition } from "@/types";
 import { seatsApi, zonesApi, camerasApi, type ZoneDef, type ZoneType } from "@/lib/api";
+import { edgeToken, isEdgeLive } from "@/lib/edgeAuth";
 
 // Presets shown in the "Mark zones" panel. Picking one sets BOTH the
 // display label and the zone_type that actually controls behavior — so
@@ -160,12 +161,14 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   const loadBackgroundFromCamera = useCallback(async () => {
     setLoadingBg(true);
     setBgError(false);
-    // No Kyro server (Demo, or the website on its own): there's no camera
-    // picture to fetch — go straight to "upload one" instead of a failed request.
-    if (!process.env.NEXT_PUBLIC_API_URL) { setBgError(true); setLoadingBg(false); return; }
+    // Live on the website on its own: the latest picture the camera computer sent.
+    const live = isEdgeLive();
+    // No Kyro server (Demo): there's no camera picture to fetch — go straight to
+    // "upload one" instead of a failed request.
+    if (!live && !process.env.NEXT_PUBLIC_API_URL) { setBgError(true); setLoadingBg(false); return; }
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
-      const res = await fetch(camerasApi.snapshotUrl(cameraId), {
+      const token = live ? edgeToken() ?? "" : typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
+      const res = await fetch(live ? `/api/live/snapshot/${encodeURIComponent(cameraId)}` : camerasApi.snapshotUrl(cameraId), {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
       });
       if (!res.ok || res.status === 204) { setBgError(true); return; }

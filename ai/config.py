@@ -173,7 +173,7 @@ class SeatConfig:
 
     # Seconds before a vacated seat transitions from
     # TEMPORARILY_VACANT → LIKELY_AVAILABLE
-    vacancy_timeout_seconds: float = float(os.getenv("SEAT_VACANCY_TIMEOUT", "300.0"))
+    vacancy_timeout_seconds: float = float(os.getenv("SEAT_VACANCY_TIMEOUT", "120.0"))
 
     # Confidence score thresholds
     occupied_min_confidence: float = 0.70
