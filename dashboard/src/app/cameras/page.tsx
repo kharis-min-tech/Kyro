@@ -22,6 +22,7 @@ import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { FindCameras } from "@/components/ui/FindCameras";
 import { FaceMatching } from "@/components/ui/FaceMatching";
+import { CountOnThisComputer } from "@/components/ui/CountOnThisComputer";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -306,7 +307,7 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
             {edgeCam && !cam.is_active && !edgeCam.hidden && (
               <p className="text-xs text-gray-500 mb-2 leading-relaxed">
                 {edgeCam.kind === "web"
-                  ? "This camera was added by Camera Mode, so it only counts while the Camera Mode page is open on that computer. For everyday counting, install the Kyro counter on that computer (Camera Mode → Want the installed version?) — it then counts by itself, with no page open."
+                  ? "This camera counts on that computer's browser, so it only counts while that page stays open there. That's fine for a service. To have it count by itself — nothing open, and after restarts — pair a camera computer instead."
                   : edgeCam.kind === "usb"
                     ? "Not counting right now: the computer this camera is plugged into isn't sending counts. Check that computer is on and online, and the camera is plugged in."
                     : "Not counting right now: the camera computer can't reach this camera. Check the camera is on and the address is right."}
@@ -1578,6 +1579,10 @@ export default function CamerasPage() {
             operators were understandably confused why Live mode would advertise
             itself as 'local-only'. Cameras added here still persist, same as
             any Kyro deployment. */}
+
+        {edge && canManage && (
+          <CountOnThisComputer alreadyCounting={cameras.some((c) => (c as { kind?: string }).kind === "web")} />
+        )}
 
         {edge && canManage && (
           <CameraComputersSection devices={devices} error={devicesErr} onChanged={afterEdgeChange} />

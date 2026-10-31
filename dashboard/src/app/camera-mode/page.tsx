@@ -63,7 +63,11 @@ export default function CameraModePage() {
     const isDemo = localStorage.getItem("kyro_mode") !== "live";
     demoRef.current = isDemo; setDemo(isDemo);
     setAllowed(isDemo || (isEdgeLive() && (role === "admin" || role === "operator")));
-    try { setAuto(localStorage.getItem(AUTO_KEY) === "1"); } catch {}
+    // Sent here by the Cameras page's "Start counting" button: begin straight away,
+    // and keep doing so if this page is reopened on this computer.
+    const asked = new URLSearchParams(window.location.search).get("start") === "1";
+    if (asked) { try { localStorage.setItem(AUTO_KEY, "1"); } catch {} }
+    try { setAuto(asked || localStorage.getItem(AUTO_KEY) === "1"); } catch { setAuto(asked); }
     offRef.current = loadOff(); setOff(offRef.current);
     setReady(true);
   }, []);

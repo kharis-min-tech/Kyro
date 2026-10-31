@@ -6,6 +6,20 @@ A camera has to plug into a computer that runs Kyro, but it can be **any** compu
 
 For every Sunday, [install Kyro on the camera computer](#install-kyro-on-the-camera-computer-one-time-about-20-minutes): it counts by itself with no page open. Camera Mode is for emergencies and quick tests.
 
+## The quickest way: count with the computer you're on (nothing to install)
+
+Plug the camera into the church computer — straight in, or a wireless transmitter's receiver through an HDMI-to-USB capture card — then, **on that computer**:
+
+1. Open kyro.kharischurch.com and sign in.
+2. Go to **Cameras**. At the top, under **Count with this computer**, press **Start counting**.
+3. Allow the browser to use the camera when it asks.
+
+Kyro counts from then on. It appears on your Cameras page and the Dashboard like any other camera.
+
+::: warning Keep the page open
+Counting only runs while that page stays open on that computer. Keep the tab open and stop the computer sleeping for the whole service. Use Chrome or Edge. For counting that runs by itself — nothing open, and after restarts — install the Kyro counter (below).
+:::
+
 ## In an emergency: Camera Mode (nothing to install)
 
 Full details, with pictures: [Camera Mode](/pages/camera-mode).
