@@ -29,11 +29,12 @@ const num = (v, min, max) => {
 
 const OFFLINE_AFTER_MS = 45_000;  // no report for this long → camera shown offline
 const SAMPLE_EVERY_MS = 60_000;   // one history row per camera per minute
-const MAX_SNAPSHOT_BYTES = 400_000;
+const MAX_SNAPSHOT_BYTES = 120_000;   // a stored value is capped at 128 KB
 const ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
 const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
-const MAX_SEATS = 3000;           // per camera
+const MAX_SEATS = 900;            // per camera: a stored value is capped at 128 KB
+const SAFE_VALUE_BYTES = 110_000; // comfortably inside that 128 KB
 const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
 const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
 const SERVICE_END_PEOPLE = 3;     // fewer than this …
@@ -49,7 +50,12 @@ function serviceName(ms) {
   return `${day} ${part} service · ${date}`;
 }
 const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed this long
-const FACE_FRESH_MS = 15_000;         // face codes older than this aren't compared
+// Face codes older than this aren't compared. The box refreshes every 4 s and
+// reports every 2 s, so this must comfortably exceed both or de-duplication
+// flickers on and off and the total jumps about. Over-subtraction from a code
+// that outlives the person is prevented by the clamp in venueTotal(), not here.
+const FACE_FRESH_MS = 10_000;
+const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
 const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question"];
 function cleanQuestion(q, camera_id) {
@@ -89,7 +95,7 @@ function cleanSeatDef(s) {
   if (!s || !Array.isArray(s.bbox) || s.bbox.length !== 4) return null;
   const b = s.bbox.map((v, i) => Math.min(i % 2 ? 720 : 1280, Math.max(0, Math.round(Number(v) * 10) / 10 || 0)));
   if (b[2] - b[0] < 2 || b[3] - b[1] < 2) return null;
-  return { seat_id: clean(s.seat_id, 40) || null, row: clean(s.row, 10), number: num(s.number, 0, 10000), section: clean(s.section, 40) || "Main",
+  return { seat_id: clean(s.seat_id, 24) || null, row: clean(s.row, 10), number: num(s.number, 0, 10000), section: clean(s.section, 24) || "Main",
     bbox: b, reserved: !!s.reserved, reserved_for: s.reserved ? clean(s.reserved_for, 60) || null : null };
 }
 /** [seat_id, state, seconds vacant, confidence] from the camera computer. */
@@ -125,6 +131,27 @@ export class VenueHub extends DurableObject {
 
   async get(key, fallback) { return (await this.ctx.storage.get(key)) ?? fallback; }
 
+  // Seat layouts and live seat states are kept one key PER CAMERA. A single
+  // storage value is capped at 128 KB, and one 1,000-seat room already fills it —
+  // sharing one key across cameras made every report fail once a big room was found.
+  // The seats themselves live one key PER LAYOUT, because a stored value is
+  // capped at 128 KB and a big room's seats fill most of one on their own.
+  async layoutsOf(camera_id) { return await this.get(`layouts:${camera_id}`, []); }
+  async putLayouts(camera_id, list) {
+    await this.ctx.storage.put(`layouts:${camera_id}`, list.map(({ seats, ...meta }) => meta));
+    for (const l of list) {
+      if (!l.seats) continue;
+      // Last line of defence: whatever the seat names are, this must fit one stored value.
+      let seats = l.seats;
+      while (seats.length && JSON.stringify(seats).length > SAFE_VALUE_BYTES) seats = seats.slice(0, Math.floor(seats.length * 0.9));
+      if (seats.length !== l.seats.length) console.log(`trimmed ${camera_id} layout ${l.id} to ${seats.length} seats to fit storage`);
+      await this.ctx.storage.put(`lseats:${camera_id}:${l.id}`, seats);
+    }
+  }
+  async seatsOf(camera_id, id) { return await this.get(`lseats:${camera_id}:${id}`, []); }
+  /** A layout with its seats loaded. */
+  async layoutWithSeats(camera_id, l) { return l ? { ...l, seats: await this.seatsOf(camera_id, l.id) } : null; }
+
   async fetch(request) {
     const url = new URL(request.url);
     const p = url.pathname;
@@ -150,11 +177,19 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
       if (p === "/api/live/daily" && request.method === "GET") return json(await this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
-      if (p.startsWith("/api/live/watch/")) return this.watch(decodeURIComponent(p.split("/").pop()), request);
+      if (p.startsWith("/api/live/watch/")) {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can watch the live cameras" }, 403);
+        return this.watch(decodeURIComponent(p.split("/").pop()), request);
+      }
       const user = decodeURIComponent(request.headers.get("X-Kyro-User") || "");
-      if (p === "/api/live/questions" && request.method === "GET") return json(await this.listQuestions(role));
+      if (p === "/api/live/questions" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators see AI questions" }, 403);
+        return json(await this.listQuestions(role));
+      }
       const qm = p.match(/^\/api\/live\/questions\/([\w-]+)\/(answer|snapshot)$/);
-      if (qm && qm[2] === "snapshot" && request.method === "GET") return this.getQuestionSnapshot(qm[1]);
+      // A question's photo shows people in the building: only those it's asked of may see it.
+      if (qm && role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators see AI questions" }, 403);
+      if (qm && qm[2] === "snapshot" && request.method === "GET") return this.getQuestionSnapshot(qm[1], role);
       if (qm && qm[2] === "answer" && request.method === "POST") return this.answerQuestion(qm[1], role, user, request);
       if (p === "/api/live/rota" && request.method === "GET") return json(await this.get("rota", []));
       if (p.startsWith("/api/live/zones/") && request.method === "GET") return json((await this.get("seat_zones", {}))[decodeURIComponent(p.split("/").pop())] ?? []);
@@ -238,6 +273,15 @@ export class VenueHub extends DurableObject {
     const id = `web-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
     const token = b64url(crypto.getRandomValues(new Uint8Array(32)));
     const devices = await this.get("devices", {});
+    // Every Camera Mode browser adds an entry. Without a limit the device list
+    // eventually outgrows one stored value and then EVERY camera report fails,
+    // so drop ones that haven't counted for a day, then the oldest beyond the cap.
+    const web = Object.values(devices).filter((d) => d.id.startsWith("web-"));
+    const stale = (d) => Date.now() - Date.parse(d.last_seen || d.paired_at) > 24 * 3600_000;
+    for (const d of web) if (stale(d)) delete devices[d.id];
+    const left = Object.values(devices).filter((d) => d.id.startsWith("web-"))
+      .sort((a, b) => Date.parse(b.last_seen || b.paired_at) - Date.parse(a.last_seen || a.paired_at));
+    for (const d of left.slice(MAX_WEB_DEVICES - 1)) delete devices[d.id];
     devices[id] = {
       id, name: clean(body.name, 60) || "Camera mode", platform: "Web browser",
       token_hash: await sha256(token), paired_at: new Date().toISOString(), last_seen: null, version: clean(body.version, 20),
@@ -282,7 +326,6 @@ export class VenueHub extends DurableObject {
     const now = Date.now();
     const cams = await this.get("cameras", {});
     const live = await this.get("live", {});
-    const seatLive = await this.get("seat_live", {});
     const newQuestions = [];
     // Face matching runs only while a service is being recorded (and only if switched on).
     const faceOn = (await this.privacy()).face_matching && !!(await this.get("service_live", null));
@@ -327,7 +370,13 @@ export class VenueHub extends DurableObject {
       if (Array.isArray(c.faces) && faceOn) {
         this.faceCodes.set(camera_id, { at: now - Math.min(30, Number(c.faces_age_s) || 0) * 1000, codes: c.faces.slice(0, 250).map(unpackFace).filter(Boolean) });
       }
-      if (Array.isArray(c.seats)) seatLive[camera_id] = { at: now, seats: c.seats.slice(0, MAX_SEATS).map(cleanSeatState).filter(Boolean) };
+      if (Array.isArray(c.seats)) {
+        // Its own key, and its own try/catch: seat colours are cosmetic, the count is not.
+        try {
+          await this.ctx.storage.put(`seat_live:${camera_id}`,
+            { at: now, seats: c.seats.slice(0, MAX_SEATS).map(cleanSeatState).filter(Boolean) });
+        } catch (e) { console.log("seat states too big to store", camera_id, e && e.message); }
+      }
       if (now - (this.lastSample.get(camera_id) ?? 0) >= SAMPLE_EVERY_MS) {
         this.lastSample.set(camera_id, now);
         const l = live[camera_id];
@@ -344,9 +393,8 @@ export class VenueHub extends DurableObject {
     }
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
-    await this.ctx.storage.put("seat_live", seatLive);
     await this.capacityAlerts(cams, live);
-    await this.trackService(now);
+    try { await this.trackService(now); } catch (e) { console.log("service tracking failed", e && e.message); }
 
     // Tell the box which cameras it may use (added on the website) and which not.
     const mine = Object.values(cams).filter((c) => c.device_id === device.id && c.kind !== "network");
@@ -375,11 +423,10 @@ export class VenueHub extends DurableObject {
       if (zonesAll[c.camera_id]?.length) zonesFor[c.key] = zonesAll[c.camera_id];
     }
     // Seat layouts: only a version number each time; the box fetches a layout when it changes.
-    const layouts = await this.get("layouts", {});
     const seat_layouts = {};
     for (const c of Object.values(cams)) {
       if (c.device_id !== device.id) continue;
-      const a = (layouts[c.camera_id] ?? []).find((l) => l.is_active);
+      const a = (await this.layoutsOf(c.camera_id)).find((l) => l.is_active);
       if (a) seat_layouts[c.key] = `${a.id}.${a.version ?? 0}`;
     }
     return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor,
@@ -527,7 +574,11 @@ export class VenueHub extends DurableObject {
     const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
-    const twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(zones.filter((z) => z.is_running).map((z) => z.camera_id))) : 0;
+    const running = zones.filter((z) => z.is_running);
+    let twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
+    // Someone can't be double-counted more often than the smaller overlapping camera sees people.
+    const counts = running.map((z) => z.current || 0).sort((a, b) => b - a);
+    twice = Math.min(twice, counts.slice(1).reduce((a, b) => a + b, 0));
     return {
       seen_on_two_cameras: twice,
       total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"), total_entries: sum("entries"), total_exits: sum("exits"),
@@ -592,17 +643,39 @@ export class VenueHub extends DurableObject {
 
   /** Each room's highest camera count on a day (for the end-of-service send). */
   async dayPeaks(date, tz) {
+    // The day's attendance = the most people in the building AT ONE MOMENT, and
+    // each room's share at that moment. (Adding up each camera's own best moment
+    // over-counts: two cameras on one hall peak at different times as people move.)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
     const fmt = this.dateFmt(tz);
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
-    const rows = this.ctx.storage.sql.exec("SELECT camera_id, ts, current FROM history WHERE ts >= ? AND ts < ?", start, end).toArray();
-    const peak = {};
-    for (const r of rows) if (fmt.format(new Date(r.ts)) === date) peak[r.camera_id] = Math.max(peak[r.camera_id] || 0, r.current || 0);
+    const rows = this.ctx.storage.sql.exec("SELECT camera_id, ts, current FROM history WHERE ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
     const cams = await this.get("cameras", {});
-    return Object.entries(peak)
-      .filter(([id]) => cams[id] && !cams[id].hidden && cams[id].location !== "queue")
-      .map(([id, count]) => ({ camera_id: id, zone: cams[id].zone_name || cams[id].name, count }));
+    const counts = x => cams[x] && !cams[x].hidden && cams[x].location !== "queue";
+    const STALE = 3 * 60_000;      // a camera that stopped reporting no longer counts
+    const last = new Map();
+    let best = 0, bestAt = null;
+    for (const r of rows) {
+      if (fmt.format(new Date(r.ts)) !== date || !counts(r.camera_id)) continue;
+      last.set(r.camera_id, { current: r.current || 0, ts: r.ts });
+      let total = 0;
+      for (const [id, v] of last) {
+        if (r.ts - v.ts > STALE) { last.delete(id); continue; }
+        total += v.current;
+      }
+      if (total > best) { best = total; bestAt = new Map([...last].map(([id, v]) => [id, v.current])); }
+    }
+    if (!bestAt) return [];
+    // Two cameras can cover one room: report the room once, with their sum.
+    const byZone = new Map();
+    for (const [id, n] of bestAt) {
+      if (!n) continue;
+      const zone = cams[id].zone_name || cams[id].name;
+      byZone.set(zone, (byZone.get(zone) ?? 0) + n);
+    }
+    return [...byZone].map(([zone, count]) => ({ zone, count }));
   }
+
 
   dateFmt(tz) {
     try { return new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }); }
@@ -736,7 +809,9 @@ export class VenueHub extends DurableObject {
     return json({ ok: true });
   }
 
-  async getQuestionSnapshot(id) {
+  async getQuestionSnapshot(id, role) {
+    const q = (await this.get("questions", {}))[id];
+    if (q && q.target_role === "admin" && role !== "admin") return json({ error: "Only an administrator sees this one" }, 403);
     const img = await this.ctx.storage.get(`qsnap:${id}`);
     if (!img) return new Response(null, { status: 204 });
     return new Response(img, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
@@ -774,6 +849,7 @@ export class VenueHub extends DurableObject {
     const rota = await this.get("rota", []);
     const now = Date.now();
     const added = [];
+    let seatIdBudget = 2000;      // across the whole request, so "rota" always fits in one stored value
     // On the live site the seating areas are the camera rooms: an entry for a room
     // applies to that camera (its rows / seats, or the whole room if none are given).
     const rooms = Object.values(await this.get("cameras", {})).filter((c) => !c.hidden);
@@ -787,13 +863,14 @@ export class VenueHub extends DurableObject {
         camera_id: e.camera_id ? clean(e.camera_id, 120) : (e.section && roomFor(e.section)?.camera_id) || null,
         section: e.section ? (roomFor(e.section) ? ((e.rows?.length || e.seat_ids?.length) ? null : "Main") : clean(e.section, 40)) : null,
         rows: (Array.isArray(e.rows) ? e.rows : []).slice(0, 50).map((r) => clean(r, 10)).filter(Boolean),
-        seat_ids: (Array.isArray(e.seat_ids) ? e.seat_ids : []).slice(0, 500).map((s) => clean(s, 40)).filter(Boolean),
+        seat_ids: (Array.isArray(e.seat_ids) ? e.seat_ids : []).slice(0, Math.max(0, seatIdBudget)).map((s) => clean(s, 40)).filter(Boolean),
         is_active: true,
       };
+      seatIdBudget -= entry.seat_ids.length;
       rota.push(entry); added.push(entry);
     }
     // Entries that ended over a day ago are tidied away.
-    const keep = rota.filter((e) => Date.parse(e.end_time) > now - 86400_000).slice(-300);
+    const keep = rota.filter((e) => Date.parse(e.end_time) > now - 86400_000).slice(-100);
     await this.ctx.storage.put("rota", keep);
     return json({ added });
   }
@@ -850,7 +927,10 @@ export class VenueHub extends DurableObject {
       this.recentTotals = [...(this.recentTotals ?? []).filter((x) => now - x.at <= PEAK_HOLD_MS), { at: now, people }];
       const held = this.recentTotals[0].at <= now - PEAK_HOLD_MS / 2 ? Math.min(...this.recentTotals.map((x) => x.people)) : 0;
       if (held > live.peak) { live.peak = held; live.peak_at = new Date(now).toISOString(); }
-      for (const z of v.zones) live.rooms[z.zone_name] = Math.max(live.rooms[z.zone_name] ?? 0, z.current);
+      // Two cameras can cover one room: add them up, then keep the busiest that room has been.
+      const nowByRoom = {};
+      for (const z of v.zones) nowByRoom[z.zone_name] = (nowByRoom[z.zone_name] ?? 0) + (z.current || 0);
+      for (const [room, n] of Object.entries(nowByRoom)) live.rooms[room] = Math.max(live.rooms[room] ?? 0, n);
       if (people >= SERVICE_END_PEOPLE) { if (st.quiet_since) { st.quiet_since = null; dirty = true; } }
       else if (!st.quiet_since) { st.quiet_since = now; dirty = true; }
       await this.ctx.storage.put("service_live", live);
@@ -880,7 +960,7 @@ export class VenueHub extends DurableObject {
       rooms: live.rooms, status: "ask", face_data_deleted_at: new Date().toISOString() };
     const list = await this.get("services", []);
     list.unshift(svc);
-    await this.ctx.storage.put("services", list.slice(0, 500));
+    await this.ctx.storage.put("services", list.slice(0, 200));   // ~76 KB, inside the 128 KB limit
     await this.ctx.storage.delete("service_live");
     // Face matching data belongs to the service: wiped as soon as it ends.
     this.faceCodes.clear();
@@ -1000,20 +1080,19 @@ export class VenueHub extends DurableObject {
     const cams = await this.get("cameras", {});
     if (!cams[camera_id]) return json({ error: "No such camera" }, 404);
     const seats = (Array.isArray(body.seats) ? body.seats : []).slice(0, MAX_SEATS).map(cleanSeatDef).filter((s) => s && s.seat_id);
-    const layouts = await this.get("layouts", {});
-    const list = layouts[camera_id] ?? [];
+    const list = await this.layoutsOf(camera_id);
     let auto = list.find((l) => l.source === "auto");
-    const keepReserved = new Map((auto?.seats ?? []).filter((s) => s.reserved).map((s) => [s.seat_id, s.reserved_for]));
+    const was = auto ? await this.seatsOf(camera_id, auto.id) : [];
+    const keepReserved = new Map(was.filter((s) => s.reserved).map((s) => [s.seat_id, s.reserved_for]));
     for (const s of seats) if (keepReserved.has(s.seat_id)) { s.reserved = true; s.reserved_for = keepReserved.get(s.seat_id); }
     if (!auto) {
       auto = { id: Math.max(0, ...list.map((l) => l.id)) + 1, camera_id, name: "Found by Kyro", source: "auto",
-        is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seats: [], version: 0 };
+        is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seat_count: 0, version: 0 };
       list.push(auto);
     }
-    auto.seats = seats; auto.version = (auto.version ?? 0) + 1;
+    auto.seats = seats; auto.seat_count = seats.length; auto.version = (auto.version ?? 0) + 1;
     auto.stage = body.stage === "bottom" ? "bottom" : "top";
-    layouts[camera_id] = list;
-    await this.ctx.storage.put("layouts", layouts);
+    await this.putLayouts(camera_id, list);
     if (auto.is_active) await this.syncCapacity(camera_id, seats.length);
     return json({ version: `${auto.id}.${auto.version}`, active: auto.is_active });
   }
@@ -1024,7 +1103,7 @@ export class VenueHub extends DurableObject {
   // (occupied / away / free, with the grace periods) and reports it every 2 s.
 
   async listLayouts(camera_id) {
-    return ((await this.get("layouts", {}))[camera_id] ?? []).map(({ version, ...l }) => ({ ...l, seat_count: l.seats.length }));
+    return (await this.layoutsOf(camera_id)).map(({ version, ...l }) => ({ ...l, seats: [], seat_count: l.seat_count ?? 0 }));
   }
 
   async createLayout(camera_id, request) {
@@ -1035,43 +1114,43 @@ export class VenueHub extends DurableObject {
     const seats = (Array.isArray(body.seats) ? body.seats : []).slice(0, MAX_SEATS).map(cleanSeatDef).filter(Boolean)
       .map((s, i) => { let id = s.seat_id || `S${i + 1}`; while (seen.has(id)) id += "b"; seen.add(id); return { ...s, seat_id: id }; });
     if (!seats.length) return json({ error: "Add at least one seat" }, 400);
-    const layouts = await this.get("layouts", {});
-    const list = layouts[camera_id] ?? [];
+    if (seats.length > MAX_SEATS) return json({ error: `That's ${seats.length} seats. Kyro handles up to ${MAX_SEATS} per camera — use another camera for the rest of the room.` }, 400);
+    const list = await this.layoutsOf(camera_id);
     const id = Math.max(0, ...list.map((l) => l.id)) + 1;
     // The first layout for a camera becomes its active one straight away.
-    const layout = { id, camera_id, name: clean(body.name, 80) || `Layout ${id}`, is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seats, version: 1 };
-    layouts[camera_id] = [...list, layout].slice(-20);
-    await this.ctx.storage.put("layouts", layouts);
+    const layout = { id, camera_id, name: clean(body.name, 80) || `Layout ${id}`, is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seats, seat_count: seats.length, version: 1 };
+    const keep = [...list, layout].slice(-5);
+    for (const gone of [...list, layout].slice(0, -5)) await this.ctx.storage.delete(`lseats:${camera_id}:${gone.id}`);
+    await this.putLayouts(camera_id, keep);
     if (layout.is_active) await this.syncCapacity(camera_id, seats.length);
     const { version, ...out } = layout;
     return json({ ...out, seat_count: seats.length });
   }
 
   async activateLayout(camera_id, id) {
-    const layouts = await this.get("layouts", {});
-    const list = layouts[camera_id] ?? [];
+    const list = await this.layoutsOf(camera_id);
     const l = list.find((x) => x.id === id);
     if (!l) return json({ error: "No such layout" }, 404);
     for (const x of list) x.is_active = x.id === id;
     l.version = (l.version ?? 0) + 1;
-    await this.ctx.storage.put("layouts", layouts);
-    await this.syncCapacity(camera_id, l.seats.length);
-    return json({ activated: true, seat_count: l.seats.length });
+    await this.putLayouts(camera_id, list);
+    await this.syncCapacity(camera_id, l.seat_count ?? 0);
+    return json({ activated: true, seat_count: l.seat_count ?? 0 });
   }
 
   async deleteLayout(camera_id, id) {
-    const layouts = await this.get("layouts", {});
-    layouts[camera_id] = (layouts[camera_id] ?? []).filter((l) => l.id !== id);
-    await this.ctx.storage.put("layouts", layouts);
+    await this.putLayouts(camera_id, (await this.layoutsOf(camera_id)).filter((l) => l.id !== id));
+    await this.ctx.storage.delete(`lseats:${camera_id}:${id}`);
     return json({ deleted: true });
   }
 
   /** Reserve / unreserve seats (e.g. "Pastor John"): kept in the active layout so every phone and the camera computer agree. */
   async reserveSeats(camera_id, request) {
     const body = await request.json().catch(() => ({}));
-    const layouts = await this.get("layouts", {});
-    const l = (layouts[camera_id] ?? []).find((x) => x.is_active);
+    const list = await this.layoutsOf(camera_id);
+    const l = list.find((x) => x.is_active);
     if (!l) return json({ error: "This room has no seat layout yet" }, 404);
+    l.seats = await this.seatsOf(camera_id, l.id);
     const ids = new Set((Array.isArray(body.seat_ids) ? body.seat_ids : []).map((s) => clean(s, 40)));
     for (const s of l.seats) {
       if (!ids.has(s.seat_id)) continue;
@@ -1079,7 +1158,7 @@ export class VenueHub extends DurableObject {
       s.reserved_for = body.reserved ? clean(body.reserved_for, 60) || null : null;
     }
     l.version = (l.version ?? 0) + 1;
-    await this.ctx.storage.put("layouts", layouts);
+    await this.putLayouts(camera_id, list);
     return json({ ok: true });
   }
 
@@ -1091,15 +1170,17 @@ export class VenueHub extends DurableObject {
 
   async boxSeats(device, url) {
     const key = clean(url.searchParams.get("camera"), 80);
-    const l = ((await this.get("layouts", {}))[`${device.id}:${key}`] ?? []).find((x) => x.is_active);
-    return json(l ? { version: `${l.id}.${l.version ?? 0}`, seats: l.seats } : { version: null, seats: [] });
+    const cid = `${device.id}:${key}`;
+    const l = (await this.layoutsOf(cid)).find((x) => x.is_active);
+    return json(l ? { version: `${l.id}.${l.version ?? 0}`, seats: await this.seatsOf(cid, l.id) } : { version: null, seats: [] });
   }
 
   /** The seat map: the active layout with each seat's live state from the camera computer. */
   async seatStates(camera_id) {
-    const l = ((await this.get("layouts", {}))[camera_id] ?? []).find((x) => x.is_active);
+    const meta = (await this.layoutsOf(camera_id)).find((x) => x.is_active);
+    const l = await this.layoutWithSeats(camera_id, meta);
     if (!l) return { layout: null, seats: [], updated_at: null };
-    const live = (await this.get("seat_live", {}))[camera_id];
+    const live = await this.get(`seat_live:${camera_id}`, null);
     const fresh = live && Date.now() - live.at < OFFLINE_AFTER_MS;
     const by = new Map(fresh ? live.seats.map((s) => [s[0], s]) : []);
     return {
@@ -1231,6 +1312,9 @@ export class VenueHub extends DurableObject {
       const urls = await this.get("streams", {});
       delete urls[camera_id];
       await this.ctx.storage.put("streams", urls);
+      await this.ctx.storage.delete(`layouts:${camera_id}`);
+      await this.ctx.storage.delete(`seat_live:${camera_id}`);
+      await this.ctx.storage.delete(`snap:${camera_id}`);
     } else {
       c.hidden = true;
     }

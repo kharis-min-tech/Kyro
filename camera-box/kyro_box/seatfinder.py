@@ -41,7 +41,9 @@ CHAIR_CHECKS = 2         # a chair seen on this many looks = a seat
 CHAIR_FIRST_AFTER_S = 60 # first look for chairs this long after a camera starts
 STANDING_RATIO = 2.6     # taller than this × wider = standing, not sitting → ask
 PUBLISH_EVERY_S = 30     # send the seat list to the website at most this often
-MAX_SEATS = 3000
+# The website keeps a camera's seats in one stored value capped at 128 KB, which
+# is about 900 seats. Kyro sends its surest seats up to this many.
+MAX_SEATS = 800
 ASK_PER_HOUR = 12        # never flood anyone with questions
 ROWS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 
@@ -201,6 +203,8 @@ class SeatFinder:
                    ["Stage at the top", "Stage at the bottom", "Ignore"], small, None, now)
 
     def _send(self, c: _Camera, kind: str, place: Optional[int], text: str, options: list, crop, box, now: float) -> None:
+        if crop is None or not crop.size:
+            return
         qid = f"seat-{uuid.uuid4().hex[:12]}"
         ok, jpg = cv2.imencode(".jpg", crop, [cv2.IMWRITE_JPEG_QUALITY, 78])
         q = {"type": "review_request", "review_id": qid, "camera_id": c.key, "review_type": "seat_question", "target_role": "admin",
@@ -242,6 +246,8 @@ class SeatFinder:
         seats = [p for p in c.places if p["status"] == "seat"]
         if not seats:
             return []
+        if len(seats) > MAX_SEATS:          # the ones Kyro has seen used most
+            seats = sorted(seats, key=lambda p: -(p["seen"] + 5 * p["chairs"]))[:MAX_SEATS]
         h = float(np.median([p["box"][3] - p["box"][1] for p in seats]))
         order = sorted(seats, key=lambda p: (p["box"][1] + p["box"][3]) / 2, reverse=(c.stage == "bottom"))
         rows, row = [], [order[0]]

@@ -106,15 +106,19 @@ class FaceCodes:
                 crop = frame[Y1:Y2, X1:X2]
                 if crop.shape[0] < MIN_FACE_PX or crop.shape[1] < MIN_FACE_PX:
                     continue
-                self._det.setInputSize((crop.shape[1], crop.shape[0]))
-                _, faces = self._det.detect(crop)
-                if faces is None or not len(faces):
+                try:
+                    self._det.setInputSize((crop.shape[1], crop.shape[0]))
+                    _, faces = self._det.detect(crop)
+                    if faces is None or not len(faces):
+                        continue
+                    f = max(faces, key=lambda r: r[14])       # the surest face in this person's head area
+                    if f[2] < MIN_FACE_PX or f[14] < MIN_FACE_SCORE:
+                        continue
+                    # alignCrop raises when the face's landmarks fall outside the crop.
+                    aligned = self._rec.alignCrop(crop, f)
+                    code = self._rec.feature(aligned).reshape(-1).astype(np.float32)
+                except cv2.error:
                     continue
-                f = max(faces, key=lambda r: r[14])           # the surest face in this person's head area
-                if f[2] < MIN_FACE_PX or f[14] < MIN_FACE_SCORE:
-                    continue
-                aligned = self._rec.alignCrop(crop, f)
-                code = self._rec.feature(aligned).reshape(-1).astype(np.float32)
                 n = float(np.linalg.norm(code))
                 if n > 0:
                     out.append(code / n)

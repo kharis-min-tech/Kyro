@@ -311,7 +311,10 @@ class Box:
                     st.current, st.error, st.counted_at = 0, FROZEN, now
                     self.counter.restart_steadying(cam.key)
                     continue
-                self.counter.count(cam.key, frame)
+                try:
+                    self.counter.count(cam.key, frame)
+                except Exception:  # noqa: BLE001 — counting must survive any one camera's bad frame
+                    log.exception("Counting failed on %s — carrying on", cam.key)
                 counted = True
             if self.updater.due(self.counter.people_seen_recently(self.updater.QUIET_FOR_S)):
                 self.exit_code = UPDATE_EXIT_CODE
