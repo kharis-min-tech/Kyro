@@ -55,6 +55,7 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // flickers on and off and the total jumps about. Over-subtraction from a code
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
+const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
 const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question"];
@@ -182,6 +183,11 @@ export class VenueHub extends DurableObject {
         return this.watch(decodeURIComponent(p.split("/").pop()), request);
       }
       const user = decodeURIComponent(request.headers.get("X-Kyro-User") || "");
+      // A role is derived from the pages someone was given, so "Analytics only"
+      // comes out as operator. Check the actual page too, or that person could
+      // change the rota or black out part of the hall with an ignore area.
+      const pages = (request.headers.get("X-Kyro-Pages") || "").split(",").filter(Boolean);
+      const mayUse = (page) => role === "admin" || pages.includes(page);
       if (p === "/api/live/questions" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators see AI questions" }, 403);
         return json(await this.listQuestions(role));
@@ -201,8 +207,11 @@ export class VenueHub extends DurableObject {
       if (svc && svc[2] === "end" && request.method === "POST") return this.endServiceNow(svc[1]);
       if (svc && svc[2] === "rename" && request.method === "POST") return this.renameService(svc[1], request);
       if (svc && !svc[2] && request.method === "DELETE") return this.deleteService(svc[1], user);
-      if (["/api/live/rota", "/api/live/zones/"].some((x) => p.startsWith(x)) && role !== "admin" && role !== "operator")
-        return json({ error: "Only administrators and operators can change this" }, 403);
+      if (["/api/live/rota", "/api/live/zones/"].some((x) => p.startsWith(x))) {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can change this" }, 403);
+        const page = p.startsWith("/api/live/rota") ? "rota" : "seating";
+        if (!mayUse(page)) return json({ error: `You don't have the ${page === "rota" ? "Rota" : "Seat Map"} page` }, 403);
+      }
       if (p === "/api/live/rota" && request.method === "POST") return this.addRota(request);
       if (p.startsWith("/api/live/rota/") && request.method === "DELETE") return this.removeRota(decodeURIComponent(p.split("/").pop()));
       if (p.startsWith("/api/live/zones/") && request.method === "PUT") return this.saveZones(decodeURIComponent(p.split("/").pop()), request);
@@ -217,6 +226,7 @@ export class VenueHub extends DurableObject {
       }
       if (p.startsWith("/api/live/seat-reserve/") && request.method === "POST") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can reserve seats" }, 403);
+        if (!mayUse("seating")) return json({ error: "You don't have the Seat Map page" }, 403);
         return this.reserveSeats(decodeURIComponent(p.split("/").pop()), request);
       }
       if (role !== "admin") return json({ error: "Only administrators can change camera settings" }, 403);
@@ -440,8 +450,13 @@ export class VenueHub extends DurableObject {
     // Names every computer has (or that say nothing about the camera) can't identify one.
     if (!want || /^(usb camera|camera|webcam|usb video device)( \d+)?$/.test(want)
       || /facetime|integrated|built-?in|iphone|ipad|desk view|virtual|obs/.test(want)) return null;
+    // Only a camera that has been gone a good while, and the same sort of camera.
+    // (Two computers starting together must not steal each other's cameras: the
+    // loser would come back as a brand-new "pending" camera and count nothing.)
+    const kind = cams[camera_id]?.kind;
+    const gone = (id) => !this.isOnline(live[id]) && Date.now() - (live[id]?.updated_at ?? 0) > MOVED_AFTER_MS;
     const matches = Object.values(cams).filter((o) => o.camera_id !== camera_id && o.device_id !== device_id
-      && o.kind !== "network" && norm(o.label ?? o.name) === want && !this.isOnline(live[o.camera_id]));
+      && o.kind !== "network" && o.kind === kind && norm(o.label ?? o.name) === want && gone(o.camera_id));
     // Most recently used first.
     matches.sort((a, b) => (live[b.camera_id]?.updated_at ?? 0) - (live[a.camera_id]?.updated_at ?? 0));
     return matches[0] ?? null;

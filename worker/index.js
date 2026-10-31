@@ -100,6 +100,7 @@ export default {
         headers.delete("X-Kyro-Role"); // never trust a role sent by the caller
         headers.delete("X-Kyro-Internal");
         headers.delete("X-Kyro-User");
+        headers.delete("X-Kyro-Pages");
         if (url.pathname.startsWith("/api/live/")) {
           // A browser can't add headers to a WebSocket, so live video sends the
           // sign-in token as its second "protocol" instead: ["kyro", token].
@@ -112,6 +113,7 @@ export default {
           if (!me) return json({ error: "Please sign in again" }, 401);
           headers.set("X-Kyro-Role", me.role);
           headers.set("X-Kyro-User", encodeURIComponent(me.display_name || me.username || ""));
+          headers.set("X-Kyro-Pages", (me.pages || []).join(","));
         }
         return hub.fetch(new Request(request, { headers }));
       }
