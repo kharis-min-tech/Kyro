@@ -1,6 +1,25 @@
 # Sessions
 
-A session is one recorded service on one camera. Start a session when the service begins and end it when it finishes. Kyro saves the peak, the entries and the full record for later.
+A session is one recorded service. Kyro saves the busiest number, the average and the full minute-by-minute record for later.
+
+## Live mode: services record themselves
+
+In Live mode you don't start, end or save anything:
+
+- **Starts by itself** when the cameras have seen at least 5 people for 2 minutes. The start time is when they arrived.
+- **Ends by itself** when the hall has been nearly empty (fewer than 3 people) for 15 minutes. The end time is when people left. An administrator can also tap **End the service now**.
+- **Named by itself**, for example *Sunday morning service · 2 Nov*. Tap the pencil to rename it.
+- The **busiest** number only counts a number that held for at least 10 seconds, so a moment's flicker isn't recorded.
+
+When a service ends, administrators see **Service ended — keep the record?** at the bottom of the screen (and on the Services page):
+
+- **Keep:** the record stays, with its download (**CSV**).
+- **Delete:** the service's record and its minute-by-minute counts are removed for good.
+- **Decide later:** it waits on the Services page, marked *Keep this record?*.
+
+If [face matching](/pages/cameras#face-matching-across-cameras) is switched on, it only runs **while a service is being recorded**, and its face codes are wiped the moment the service ends, whether you keep the record or not.
+
+The rest of this page is for Demo mode and Kyro with its own server, where sessions are started by hand.
 
 <Shot name="sessions" alt="Sessions page with a card for each camera showing Now, Peak and Entries and a Start session button, and a list of past sessions" />
 

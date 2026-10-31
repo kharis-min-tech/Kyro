@@ -8,6 +8,7 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 import { GlobalReviewOverlay } from "@/components/ui/GlobalReviewOverlay";
 import { GlobalSeatAlertOverlay } from "@/components/ui/GlobalSeatAlertOverlay";
 import { NewCameraPrompt } from "@/components/ui/NewCameraPrompt";
+import { ServiceEndedPrompt } from "@/components/ui/AutoServices";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
 import { PageGuard } from "@/components/ui/PageGuard";
@@ -74,6 +75,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <GlobalSeatAlertOverlay />
                 {/* "We see you've connected a camera — add it to Kyro?" (admins, Live) */}
                 <NewCameraPrompt />
+                {/* "Service ended — keep the record?" (admins, Live) */}
+                <ServiceEndedPrompt />
               </SeatAlertProvider>
             </ReviewProvider>
           </CameraProvider>

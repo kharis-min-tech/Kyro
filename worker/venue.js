@@ -34,6 +34,20 @@ const ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
 const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
 const MAX_SEATS = 3000;           // per camera
+const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
+const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
+const SERVICE_END_PEOPLE = 3;     // fewer than this …
+const SERVICE_END_MS = 15 * 60_000;    // … for this long = the service has ended
+const PEAK_HOLD_MS = 10_000;      // a service's "busiest" number must hold this long
+/** "Sunday morning service", from the church's local time. */
+function serviceName(ms) {
+  const tz = "Europe/London";
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: tz, weekday: "long" }).format(new Date(ms));
+  const h = Number(new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(new Date(ms)));
+  const part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
+  const date = new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(new Date(ms));
+  return `${day} ${part} service · ${date}`;
+}
 const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed this long
 const FACE_FRESH_MS = 15_000;         // face codes older than this aren't compared
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
@@ -145,6 +159,13 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/rota" && request.method === "GET") return json(await this.get("rota", []));
       if (p.startsWith("/api/live/zones/") && request.method === "GET") return json((await this.get("seat_zones", {}))[decodeURIComponent(p.split("/").pop())] ?? []);
       if (p === "/api/live/privacy" && request.method === "GET") return json(await this.privacy());
+      if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
+      const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
+      if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
+      if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
+      if (svc && svc[2] === "end" && request.method === "POST") return this.endServiceNow(svc[1]);
+      if (svc && svc[2] === "rename" && request.method === "POST") return this.renameService(svc[1], request);
+      if (svc && !svc[2] && request.method === "DELETE") return this.deleteService(svc[1], user);
       if (["/api/live/rota", "/api/live/zones/"].some((x) => p.startsWith(x)) && role !== "admin" && role !== "operator")
         return json({ error: "Only administrators and operators can change this" }, 403);
       if (p === "/api/live/rota" && request.method === "POST") return this.addRota(request);
@@ -263,7 +284,8 @@ export class VenueHub extends DurableObject {
     const live = await this.get("live", {});
     const seatLive = await this.get("seat_live", {});
     const newQuestions = [];
-    const faceOn = (await this.privacy()).face_matching;
+    // Face matching runs only while a service is being recorded (and only if switched on).
+    const faceOn = (await this.privacy()).face_matching && !!(await this.get("service_live", null));
     if (!faceOn) this.faceCodes.clear();
     let changed = false;
 
@@ -324,6 +346,7 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("live", live);
     await this.ctx.storage.put("seat_live", seatLive);
     await this.capacityAlerts(cams, live);
+    await this.trackService(now);
 
     // Tell the box which cameras it may use (added on the website) and which not.
     const mine = Object.values(cams).filter((c) => c.device_id === device.id && c.kind !== "network");
@@ -504,7 +527,7 @@ export class VenueHub extends DurableObject {
     const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
-    const twice = (await this.privacy()).face_matching ? this.sameFaces(new Set(zones.filter((z) => z.is_running).map((z) => z.camera_id))) : 0;
+    const twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(zones.filter((z) => z.is_running).map((z) => z.camera_id))) : 0;
     return {
       seen_on_two_cameras: twice,
       total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"), total_entries: sum("entries"), total_exits: sum("exits"),
@@ -794,6 +817,125 @@ export class VenueHub extends DurableObject {
     all[camera_id] = list;
     await this.ctx.storage.put("seat_zones", all);
     return json(list);
+  }
+
+  // ── Services: recorded automatically ─────────────────────────────────────
+  // A service starts by itself when the cameras see people (SERVICE_START_PEOPLE
+  // for SERVICE_START_MS) and ends by itself when the hall has been empty for
+  // SERVICE_END_MS. Nobody has to press start or save. When it ends, any face
+  // matching data is wiped, and an admin is asked whether to keep the service's
+  // record or delete it.
+
+  async trackService(now) {
+    const v = await this.venueTotal();
+    const people = v.total_current;
+    const st = await this.get("service_state", { busy_since: null, quiet_since: null });
+    let live = await this.get("service_live", null);
+    let dirty = false;
+    if (!live) {
+      if (people >= SERVICE_START_PEOPLE) {
+        if (!st.busy_since) { st.busy_since = now; dirty = true; }
+        if (now - st.busy_since >= SERVICE_START_MS) {
+          live = { id: `svc-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`, name: serviceName(st.busy_since),
+            started_at: new Date(st.busy_since).toISOString(), peak: 0, peak_at: null, rooms: {} };
+          this.recentTotals = [];
+          st.busy_since = null; st.quiet_since = null;
+          await this.ctx.storage.put("service_live", live);
+          dirty = true;
+        }
+      } else if (st.busy_since) { st.busy_since = null; dirty = true; }
+    } else {
+      // "Busiest" only counts a number that held for PEAK_HOLD_MS: a moment's flicker (or the
+      // seconds before face matching merges people seen on two cameras) isn't recorded.
+      this.recentTotals = [...(this.recentTotals ?? []).filter((x) => now - x.at <= PEAK_HOLD_MS), { at: now, people }];
+      const held = this.recentTotals[0].at <= now - PEAK_HOLD_MS / 2 ? Math.min(...this.recentTotals.map((x) => x.people)) : 0;
+      if (held > live.peak) { live.peak = held; live.peak_at = new Date(now).toISOString(); }
+      for (const z of v.zones) live.rooms[z.zone_name] = Math.max(live.rooms[z.zone_name] ?? 0, z.current);
+      if (people >= SERVICE_END_PEOPLE) { if (st.quiet_since) { st.quiet_since = null; dirty = true; } }
+      else if (!st.quiet_since) { st.quiet_since = now; dirty = true; }
+      await this.ctx.storage.put("service_live", live);
+      // If every camera computer goes off, no reports come in: a timer still ends the service.
+      if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 5 * 60_000);
+      if (st.quiet_since && now - st.quiet_since >= SERVICE_END_MS) {
+        await this.finishService(live, st.quiet_since);
+        st.quiet_since = null; dirty = true;
+      }
+    }
+    if (dirty) await this.ctx.storage.put("service_state", st);
+  }
+
+  async alarm() {
+    if (await this.get("service_live", null)) await this.trackService(Date.now());
+  }
+
+  async finishService(live, endedMs) {
+    const started = Date.parse(live.started_at);
+    const rows = this.ctx.storage.sql.exec("SELECT ts, camera_id, current, entries, exits FROM history WHERE ts >= ? AND ts <= ? ORDER BY ts", started, endedMs).toArray();
+    // Average of the venue total over the service's minutes.
+    const byMin = new Map();
+    for (const r of rows) { const m = Math.floor(r.ts / 60000); const o = byMin.get(m) ?? new Map(); o.set(r.camera_id, r.current || 0); byMin.set(m, o); }
+    const totals = [...byMin.values()].map((o) => [...o.values()].reduce((a, b) => a + b, 0));
+    const svc = { id: live.id, name: live.name, started_at: live.started_at, ended_at: new Date(endedMs).toISOString(),
+      peak: live.peak, peak_at: live.peak_at, average: totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : live.peak,
+      rooms: live.rooms, status: "ask", face_data_deleted_at: new Date().toISOString() };
+    const list = await this.get("services", []);
+    list.unshift(svc);
+    await this.ctx.storage.put("services", list.slice(0, 500));
+    await this.ctx.storage.delete("service_live");
+    // Face matching data belongs to the service: wiped as soon as it ends.
+    this.faceCodes.clear();
+  }
+
+  async listServices() {
+    const live = await this.get("service_live", null);
+    const st = await this.get("service_state", {});
+    return { live: live && { ...live, quiet_since: st.quiet_since ? new Date(st.quiet_since).toISOString() : null },
+      services: await this.get("services", []), face_matching_now: !!live && (await this.privacy()).face_matching };
+  }
+
+  async keepService(id, user) {
+    const list = await this.get("services", []);
+    const s = list.find((x) => x.id === id);
+    if (!s) return json({ error: "No such service" }, 404);
+    s.status = "kept"; s.decided_by = clean(user, 60); s.decided_at = new Date().toISOString();
+    await this.ctx.storage.put("services", list);
+    return json(s);
+  }
+
+  async renameService(id, request) {
+    const body = await request.json().catch(() => ({}));
+    const list = await this.get("services", []);
+    const live = await this.get("service_live", null);
+    const name = clean(body.name, 80);
+    if (!name) return json({ error: "Type a name" }, 400);
+    if (live && live.id === id) { live.name = name; await this.ctx.storage.put("service_live", live); return json(live); }
+    const s = list.find((x) => x.id === id);
+    if (!s) return json({ error: "No such service" }, 404);
+    s.name = name;
+    await this.ctx.storage.put("services", list);
+    return json(s);
+  }
+
+  /** "Delete": the service's record and its minute-by-minute counts are removed for good. */
+  async deleteService(id, user) {
+    const list = await this.get("services", []);
+    const s = list.find((x) => x.id === id);
+    if (!s) return json({ error: "No such service" }, 404);
+    this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", Date.parse(s.started_at), Date.parse(s.ended_at));
+    await this.ctx.storage.put("services", list.filter((x) => x.id !== id));
+    const log = await this.get("deleted_services", []);
+    log.unshift({ name: s.name, started_at: s.started_at, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
+    await this.ctx.storage.put("deleted_services", log.slice(0, 200));
+    return json({ deleted: true });
+  }
+
+  /** An admin ends the service now (e.g. people are still chatting afterwards). */
+  async endServiceNow(id) {
+    const live = await this.get("service_live", null);
+    if (!live || live.id !== id) return json({ error: "That service isn't running" }, 404);
+    await this.finishService(live, Date.now());
+    await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
+    return json({ ended: true });
   }
 
   // ── Face matching across cameras (off unless an admin switches it on) ─────

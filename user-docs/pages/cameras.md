@@ -33,7 +33,7 @@ It's **off** until an administrator switches it on (Cameras page → **Face matc
 1. completed and approved a **data protection impact assessment (DPIA)** for face matching, and
 2. put clear **notices at every entrance** saying cameras use face matching to count attendance, and how to opt out.
 
-Kyro records who switched it on and when.
+Kyro records who switched it on and when. Even when switched on, it only runs **during a service** (Kyro records services by itself, see [Sessions](/pages/sessions)), and everything it used is wiped the moment the service ends.
 
 What Kyro keeps: **no photos of faces**. Each clearly visible face becomes a number code that's compared between cameras for a few seconds and never saved. Kyro doesn't know who anyone is and doesn't compare faces with any list of people.
 

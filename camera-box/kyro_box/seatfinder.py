@@ -38,6 +38,7 @@ CHECK_GAP_S = 15         # checks closer together than this count as one
 SAME_PLACE_IOU = 0.45    # this much overlap = the same place
 CHAIR_EVERY_S = 300      # look for empty chairs this often
 CHAIR_CHECKS = 2         # a chair seen on this many looks = a seat
+CHAIR_FIRST_AFTER_S = 60 # first look for chairs this long after a camera starts
 STANDING_RATIO = 2.6     # taller than this × wider = standing, not sitting → ask
 PUBLISH_EVERY_S = 30     # send the seat list to the website at most this often
 MAX_SEATS = 3000
@@ -65,7 +66,8 @@ class _Camera:
         self.next_id = 1
         self.stage = "top"
         self.stage_known = False
-        self.chairs_at = 0.0
+        # First empty-chair search a minute after the camera starts: counting comes first.
+        self.chairs_at = time.time() - CHAIR_EVERY_S + CHAIR_FIRST_AFTER_S
         self.dirty = False
         self.published_at = 0.0
         self.asked: list[float] = []

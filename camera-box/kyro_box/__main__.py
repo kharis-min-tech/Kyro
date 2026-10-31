@@ -245,8 +245,11 @@ class Box:
                 if self.counter is not None:
                     on = bool(res.get("face_matching"))
                     if on != self.counter.face_matching:
-                        log.info("Face matching across cameras switched %s on the website", "on" if on else "off")
+                        log.info("Face matching across cameras %s", "on (service running)" if on else "off — face codes cleared")
                     self.counter.face_matching = on
+                    if not on:
+                        for st in self.counter.stats.values():
+                            st.faces = None     # nothing face-related kept outside a service
                 self.report_every = float(res.get("report_every_s", 5))
                 self.snapshot_every = float(res.get("snapshot_every_s", 20))
                 self._send_snapshots(cfg["server"], cfg["token"])

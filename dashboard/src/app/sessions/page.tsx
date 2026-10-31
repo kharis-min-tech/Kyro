@@ -9,6 +9,7 @@ import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, DEMO_SESSIONS } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
+import { AutoServices } from "@/components/ui/AutoServices";
 import { edgeVenueApi, useEdgeVenue, type EdgeHistoryPoint } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
@@ -642,6 +643,16 @@ export default function SessionsPage() {
   }
 
   const indoorCameras = cameras.filter((c) => c.location !== "queue");
+
+  // Live on the website on its own: services record themselves (no start / save).
+  if (hydrated && edge) return (
+    <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
+      <Sidebar />
+      <main className="flex-1 min-w-0 pt-14 md:pt-0 p-3 sm:p-6 overflow-auto max-w-3xl">
+        <AutoServices />
+      </main>
+    </div>
+  );
 
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
