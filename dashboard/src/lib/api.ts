@@ -252,9 +252,15 @@ function readDemoZones(cameraId: string): ZoneDef[] {
   } catch { return []; }
 }
 
-function writeDemoZones(cameraId: string, zones: ZoneDef[]): void {
+function writeDemoZones(cameraId: string, zones: ZoneDef[], fromServer = false): void {
   if (typeof window === "undefined") return;
   try { localStorage.setItem(ZONES_KEY(cameraId), JSON.stringify(zones)); } catch {}
+  // Live on the website on its own: the areas are kept on the website, so the
+  // camera computer holds those seats and every phone sees the same areas.
+  if (!fromServer && isEdgeLive()) {
+    edgeFetch(`/api/live/zones/${encodeURIComponent(cameraId)}`, { method: "PUT", body: JSON.stringify(zones) })
+      .catch((e) => console.warn("[zonesApi] couldn't save areas on the website", e));
+  }
   // Storage events fire in OTHER tabs only — dispatch a custom event so
   // components in the SAME tab (e.g. the Seat Map) re-read zones after the
   // Layout Editor saves one, without needing a page refresh.
@@ -278,6 +284,13 @@ function toBboxTuple(b: number[]): [number, number, number, number] {
 
 export const zonesApi = {
   list: async (cameraId: string): Promise<ZoneDef[]> => {
+    if (isEdgeLive()) {
+      try {
+        const zones = await edgeFetch<ZoneDef[]>(`/api/live/zones/${encodeURIComponent(cameraId)}`);
+        writeDemoZones(cameraId, zones, true);
+        return zones;
+      } catch { return readDemoZones(cameraId); }
+    }
     if (inDemoMode()) return readDemoZones(cameraId);
     try {
       return await request<ZoneDef[]>(`/api/v1/zones/${cameraId}`);

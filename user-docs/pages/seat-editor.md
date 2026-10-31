@@ -1,6 +1,10 @@
 # Seat Editor
 
-The Seat Editor is where an administrator draws the seats onto a camera's picture and marks special areas, such as the stage, altar or choir, so the AI knows what it's looking at.
+The Seat Editor is where an administrator can draw the seats onto a camera's picture and mark special areas, such as the stage, altar or choir, so the AI knows what it's looking at.
+
+::: tip You don't have to draw anything
+In Live mode **Kyro finds the seats by itself**. Wherever people sit for a while becomes a seat, and empty chairs, benches and sofas it recognises are added too. Within a few minutes of people sitting down, the room's seats appear on the [Seat Map](/pages/seat-map) as a layout called **Found by Kyro**, and the room's seat count is set from them. When Kyro isn't sure (*"Is this a seat?"*, *"Where is the stage?"*) it asks with an [AI question](/guides/ai-questions). Draw seats here only if you want to correct or replace what Kyro found: a layout you save and **Activate** is used instead.
+:::
 
 <Shot name="seat-editor" alt="Seat Layout Editor with the camera menu, Grid, Manual draw and Mark zones modes, the drawing area and saved layouts" />
 

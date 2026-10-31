@@ -4,6 +4,8 @@ The Rota tells Kyro who is scheduled to be at the front, and when: the choir, wo
 
 <Shot name="rota" alt="Service Rota page with today's rota, upload rota photo, and the Review and confirm form for a manual entry" />
 
+In Live mode the rota is saved on the Kyro website, so everyone sees the same rota and the camera computers **hold those seats** while the people are at the front: their seats show purple (*held*) on the [Seat Map](/pages/seat-map) instead of becoming free. Choosing a room as the seating area holds that room's seats (or just the rows or seats you list).
+
 ## Add the rota from a photo
 
 1. If you have more than one camera, choose the **Camera zone**.

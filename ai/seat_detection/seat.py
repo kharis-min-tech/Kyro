@@ -37,12 +37,12 @@ class OccupancyState(str, Enum):
 
 # Vacancy timeout defaults (seconds)
 _DEFAULT_VACANCY_TIMEOUT      = 120.0    # 2 min — short absence before "Away" timer starts
-_DEFAULT_LONG_ABSENCE_TIMEOUT = 300.0    # 5 min — long absence before seat becomes free
+_DEFAULT_LONG_ABSENCE_TIMEOUT = 360.0    # 6 min — long absence before seat becomes free
 # Rationale: when a person moves to a different seat and stays there, the
 # original seat should free up within a few minutes — otherwise ushers
-# see ghost seats held for the entire service. 2–5 min is the band the
-# operations team specified. The matching value in the dashboard demo
-# simulator lives at SEAT_VACANT_GRACE_MS in dashboard/src/lib/demo.ts.
+# see ghost seats held for the entire service. The church set 6 minutes. The
+# value the live seat engine uses is in occupancy.py (SEAT_LONG_ABSENCE_TIMEOUT);
+# the dashboard demo's is SEAT_VACANT_GRACE_MS in dashboard/src/lib/demo.ts.
 
 
 _UNKNOWN_TO_FREE_S = 10.0       # a seat nobody's been seen in since counting started → free after this

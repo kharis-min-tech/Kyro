@@ -21,6 +21,7 @@ import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { FindCameras } from "@/components/ui/FindCameras";
+import { FaceMatching } from "@/components/ui/FaceMatching";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -1613,6 +1614,8 @@ export default function CamerasPage() {
         )}
 
         {edge && canManage && <SwitchedOffCameras cameras={switchedOff} onChanged={afterEdgeChange} />}
+
+        {edge && role === "admin" && <FaceMatching />}
 
         {/* Plug-and-play detector — covers USB webcam, phone, built-in
             laptop camera. Shown on EVERY deployment (edge or not) and does

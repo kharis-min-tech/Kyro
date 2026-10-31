@@ -17,6 +17,7 @@ import { DEMO_MODE, getNextDemoReviews } from "@/lib/demo";
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 import { useAuth } from "@/hooks/useAuth";
+import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
 
 interface ReviewContextValue {
   reviews: ReviewRequest[];
@@ -90,6 +91,32 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
       return [...prev, r].slice(-20);
     });
   }, []);
+
+  // Live on the website on its own: the camera computers' AI questions, every 3 s.
+  useEffect(() => {
+    if (typeof window === "undefined" || !isEdgeLive()) return;
+    if (role !== "admin" && role !== "operator") return;
+    let alive = true;
+    const seen = new Set<string>();
+    const load = async () => {
+      if (document.hidden) return;
+      try {
+        const list = await edgeFetch<ReviewRequest[]>("/api/live/questions");
+        if (!alive) return;
+        const open = new Set(list.map((q) => q.review_id));
+        for (const q of list) {
+          if (seen.has(q.review_id)) continue;
+          seen.add(q.review_id);
+          window.dispatchEvent(new CustomEvent("kyro_new_review", { detail: q }));
+        }
+        // Answered elsewhere (another phone) or expired: take it off this screen too.
+        setReviews((prev) => prev.filter((r) => open.has(r.review_id)));
+      } catch { /* try again shortly */ }
+    };
+    load();
+    const t = setInterval(load, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [role]);
 
   // Also listen for reviews dispatched from usePipelineStream (real mode)
   useEffect(() => {

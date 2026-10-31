@@ -54,6 +54,8 @@ class PipelineResult:
     # pictures), like Camera Mode: tracking needs several close-together
     # pictures to recognise someone, which a slow computer can't provide.
     people_in_frame: int = 0
+    # Their boxes [x1, y1, x2, y2] in this frame's coordinates (the people counted above).
+    counted_boxes: list = field(default_factory=list)
 
 
 class VisionPipeline:
@@ -208,6 +210,7 @@ class VisionPipeline:
             movement_context={tid: m.value for tid, m in movement_context.items()},
             newly_available_seat_ids=list(self._seat_engine.newly_available_seat_ids),
             people_in_frame=sum(1 for d in detections if d.confidence >= self._cfg.detection.count_confidence),
+            counted_boxes=[d.bbox.tolist() for d in detections if d.confidence >= self._cfg.detection.count_confidence],
         )
 
     def _sync_lost_window(self) -> None:

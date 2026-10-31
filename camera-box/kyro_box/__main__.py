@@ -65,7 +65,7 @@ def cmd_check() -> int:
     import numpy  # noqa: F401
     import ultralytics  # noqa: F401
     from ai.pipeline import VisionPipeline  # noqa: F401
-    from kyro_box import cameras, counting, discovery, streaming, updater  # noqa: F401
+    from kyro_box import cameras, counting, discovery, faces, seatfinder, streaming, updater  # noqa: F401
     print(f"Kyro Camera Box {__version__}: everything needed is installed.")
     return 0
 
@@ -82,6 +82,7 @@ class Box:
         self.snapshot_every = 20.0
         self._last_snapshot: dict[str, float] = {}
         self._jobs_seen: set[str] = set()
+        self.seat_finder = None
         self.exit_code = 0
 
     # Background: tell the website what we see -------------------------------
@@ -104,6 +105,9 @@ class Box:
                 "status": "error" if error or stale else "online", "error": error,
                 "fps": cam.fps, "width": w, "height": h,
                 **({"seats": s.seats} if s is not None and s.seats is not None else {}),
+                **({"questions": [q for q, _ in s.questions]} if s is not None and s.questions else {}),
+                **({"faces": s.faces, "faces_age_s": round(time.time() - s.faces_at, 1)}
+                   if s is not None and s.faces is not None and self.counter and self.counter.face_matching else {}),
             })
         # Just unplugged (or the capture card's cable came out): say so now, not after a timeout.
         for key, (label, _at) in list(self.cameras.unplugged.items()):
@@ -133,6 +137,32 @@ class Box:
                     cloud.snapshot(server, token, cam.key, jpg.tobytes())
                 except cloud.CloudError as e:
                     log.info("Picture upload failed for %s: %s", cam.key, e)
+
+    def _after_questions_sent(self, server: str, token: str, sent: dict) -> None:
+        """The questions went with the report: send each one's picture, then forget them here."""
+        if self.counter is None:
+            return
+        for key, n in sent.items():
+            s = self.counter.stats.get(key)
+            if not s or not n:
+                continue
+            batch, s.questions[:n] = s.questions[:n], []
+            for q, jpg in batch:
+                if jpg:
+                    try:
+                        cloud.question_snapshot(server, token, q["review_id"], jpg)
+                    except cloud.CloudError as e:
+                        log.info("Couldn't send the question's picture: %s", e)
+
+    def _apply_answers(self, answers) -> None:
+        if self.counter is None or not isinstance(answers, list):
+            return
+        for a in answers:
+            key, rid, ans = str(a.get("key", "")), str(a.get("review_id", "")), str(a.get("answer", ""))
+            if a.get("kind") == "seat_question" and self.seat_finder is not None:
+                self.seat_finder.answer(key, rid, ans)
+            elif not self.counter.apply_answer(key, rid, ans):
+                log.info("An answer arrived for a question that had already expired (%s)", rid)
 
     def _sync_seats(self, server: str, token: str, versions) -> None:
         """Seat layouts drawn on the website: fetch one only when it changed."""
@@ -196,13 +226,27 @@ class Box:
                 self.stop.wait(30)
                 continue
             try:
-                res = cloud.report(cfg["server"], cfg["token"], self._camera_report())
+                report = self._camera_report()
+                sent_questions = {c["key"]: len(c.get("questions", [])) for c in report}
+                res = cloud.report(cfg["server"], cfg["token"], report)
+                self._after_questions_sent(cfg["server"], cfg["token"], sent_questions)
+                self._apply_answers(res.get("answers"))
+                if self.counter is not None:
+                    for key in {c.key for c in self.cameras.active()}:
+                        self.counter.set_policies(key, (res.get("rota") or {}).get(key, []), (res.get("seat_zones") or {}).get(key, []))
                 self.cameras.set_allowed(res.get("allowed", []))
                 if self.counter is not None and isinstance(res.get("ignore_zones"), dict):
                     self.counter.ignore_zones = res["ignore_zones"]
                 self.cameras.sync_network(res.get("streams", []))
                 self._start_jobs(cfg["server"], cfg["token"], res.get("jobs", []))
                 self._sync_seats(cfg["server"], cfg["token"], res.get("seat_layouts"))
+                if self.seat_finder is not None:
+                    self.seat_finder.publish(cfg["server"], cfg["token"])
+                if self.counter is not None:
+                    on = bool(res.get("face_matching"))
+                    if on != self.counter.face_matching:
+                        log.info("Face matching across cameras switched %s on the website", "on" if on else "off")
+                    self.counter.face_matching = on
                 self.report_every = float(res.get("report_every_s", 5))
                 self.snapshot_every = float(res.get("snapshot_every_s", 20))
                 self._send_snapshots(cfg["server"], cfg["token"])
@@ -234,6 +278,8 @@ class Box:
         from kyro_box.streaming import Streamer
         threading.Thread(target=Streamer(self.cameras, self.stop).run, name="live-video", daemon=True).start()
         self.counter = Counter()
+        from kyro_box.seatfinder import SeatFinder
+        self.seat_finder = self.counter.seat_finder = SeatFinder(self.counter, self.counter._detector)
         log.info("Kyro Camera Box %s running", __version__)
         started = time.time()
         same_since: dict[str, tuple[bytes, float]] = {}   # camera → (picture fingerprint, when it was first seen)

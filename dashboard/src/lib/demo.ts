@@ -248,8 +248,8 @@ export function resetDemoFeed(cameraId: string) {
 // over" case from immediately showing the original seat as free while the
 // person is still shuffling to settle — ushers were marking seats taken
 // again seconds later. Backend's seat-occupancy pipeline must match this
-// grace period for consistency. Range: 2-5 min — tuned to 3.
-const SEAT_VACANT_GRACE_MS = 3 * 60 * 1000;
+// grace period for consistency. The church set it to 6 minutes.
+const SEAT_VACANT_GRACE_MS = 6 * 60 * 1000;   // the church's grace period (same as the camera computer)
 
 export class DemoFeed {
   private _current: number;

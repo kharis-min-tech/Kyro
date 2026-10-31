@@ -1,0 +1,102 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Loader2, ScanFace, ShieldCheck } from "lucide-react";
+import { edgeFetch } from "@/lib/edgeAuth";
+import { useEdgeVenue } from "@/lib/edgeVenue";
+
+interface Privacy {
+  face_matching: boolean;
+  switched_on_by?: string; switched_on_at?: string;
+  switched_off_by?: string; switched_off_at?: string;
+}
+
+/**
+ * Face matching across cameras: off unless an administrator switches it on,
+ * after confirming the church's data protection impact assessment and the
+ * notices at the entrances (recorded with their name and the time).
+ */
+export function FaceMatching() {
+  const [p, setP] = useState<Privacy | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [dpia, setDpia] = useState(false);
+  const [notices, setNotices] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const { venue } = useEdgeVenue(!!p?.face_matching);
+
+  useEffect(() => { edgeFetch<Privacy>("/api/live/privacy").then(setP).catch(() => setP({ face_matching: false })); }, []);
+
+  async function save(on: boolean) {
+    setBusy(true); setErr(null);
+    try {
+      setP(await edgeFetch<Privacy>("/api/live/privacy", { method: "PUT",
+        body: JSON.stringify({ face_matching: on, dpia_confirmed: dpia, notices_confirmed: notices }) }));
+      setAsking(false); setDpia(false); setNotices(false);
+    } catch (e: any) { setErr(e?.message ?? "Couldn't save"); }
+    setBusy(false);
+  }
+
+  if (!p) return null;
+  const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
+  const twice = (venue as any)?.seen_on_two_cameras ?? 0;
+
+  return (
+    <div className="mb-6">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Face matching across cameras</p>
+      <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
+        <div className="flex items-start gap-3">
+          <ScanFace size={18} className={p.face_matching ? "text-green-400 shrink-0 mt-0.5" : "text-gray-500 shrink-0 mt-0.5"} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-white font-medium">{p.face_matching ? "On" : "Off"}</p>
+            <p className="text-xs text-gray-400 leading-relaxed mt-0.5">
+              Where two cameras see the same people, someone whose face both cameras see clearly is counted once.
+              Kyro keeps no photos of faces and doesn&apos;t know who anyone is: each face becomes a number code that&apos;s compared for
+              a few seconds and never saved.
+            </p>
+            {p.face_matching && (
+              <p className="text-xs text-gray-500 mt-1.5">
+                Switched on by {p.switched_on_by} · {when(p.switched_on_at)} · right now {twice} {twice === 1 ? "person is" : "people are"} seen
+                on two cameras and counted once
+              </p>
+            )}
+            {!p.face_matching && p.switched_off_at && (
+              <p className="text-xs text-gray-500 mt-1.5">Switched off by {p.switched_off_by} · {when(p.switched_off_at)}</p>
+            )}
+          </div>
+          {p.face_matching
+            ? <button onClick={() => save(false)} disabled={busy}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50">
+                {busy ? "…" : "Switch off"}
+              </button>
+            : !asking && <button onClick={() => setAsking(true)}
+                className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500">Switch on…</button>}
+        </div>
+
+        {asking && !p.face_matching && (
+          <div className="rounded-lg p-3 flex flex-col gap-2.5" style={{ background: "var(--bg-hover)" }}>
+            <p className="text-xs text-gray-300 leading-relaxed">
+              Face codes are biometric data under UK GDPR. Before switching on, the church needs both of these in place:
+            </p>
+            <label className="flex items-start gap-2 text-xs text-gray-300">
+              <input type="checkbox" checked={dpia} onChange={(e) => setDpia(e.target.checked)} className="mt-0.5" />
+              A data protection impact assessment (DPIA) for face matching has been completed and approved by the church.
+            </label>
+            <label className="flex items-start gap-2 text-xs text-gray-300">
+              <input type="checkbox" checked={notices} onChange={(e) => setNotices(e.target.checked)} className="mt-0.5" />
+              Clear notices at every entrance say that cameras use face matching to count attendance, with how to opt out.
+            </label>
+            {err && <p className="text-xs text-red-400">{err}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => save(true)} disabled={busy || !dpia || !notices}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+                {busy ? <Loader2 size={12} className="animate-spin" /> : <ShieldCheck size={12} />} Switch on
+              </button>
+              <button onClick={() => { setAsking(false); setErr(null); }} className="px-3 py-1.5 rounded-lg text-xs text-gray-300" style={{ background: "var(--bg-card)" }}>Cancel</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

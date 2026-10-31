@@ -65,6 +65,16 @@ def seats(server: str, token: str, key: str) -> dict:
     return _request("GET", f"{server}/api/devices/seats?camera={quote(key)}", token=token)
 
 
+def question_snapshot(server: str, token: str, review_id: str, jpeg: bytes) -> None:
+    from urllib.parse import quote
+    _request("PUT", f"{server}/api/devices/question-snapshot?id={quote(review_id)}", jpeg, token, "image/jpeg")
+
+
+def auto_seats(server: str, token: str, key: str, seats: list, stage: str) -> dict:
+    """Seats Kyro found by itself on this camera's picture."""
+    return _request("POST", f"{server}/api/devices/auto-seats", json.dumps({"camera": key, "seats": seats, "stage": stage}).encode(), token)
+
+
 def job_result(server: str, token: str, result: dict) -> None:
     """The answer to a request from the website ("Find cameras", "Add this camera")."""
     _request("POST", f"{server}/api/devices/job", json.dumps(result).encode(), token)

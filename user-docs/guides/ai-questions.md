@@ -24,9 +24,18 @@ If time runs out or you tap **×** (*Skip for now*), the question goes into the 
 
 The sidebar shows **AI has N questions →** while any are waiting.
 
+### Questions about seats
+
+Kyro finds each room's seats by itself. It asks an administrator when it isn't sure:
+
+- **Is this a seat?** The picture shows the spot with a box. Answer **Yes, it's a seat** or **No, not a seat**. It asks, for example, when someone stood very upright in that spot (maybe the stage) or when it's away from all the other seats.
+- **Where is the stage in this camera's picture?** Asked once per camera, so row **A** is the front row. Answer **Stage at the top** or **Stage at the bottom**.
+
+Kyro asks one question at a time per camera, and no more than 12 an hour.
+
 ### Who gets which questions
 
-- **Admins:** questions about the room (*"Is this the stage?"*, *"Does this count look right?"*)
+- **Admins:** questions about the room (*"Is this the stage?"*, *"Is this a seat?"*, *"Does this count look right?"*)
 - **Operators and admins:** questions about people (*"Did they leave or take a break?"*, *"Was that an altar call?"*)
 - **Viewers:** no questions
 

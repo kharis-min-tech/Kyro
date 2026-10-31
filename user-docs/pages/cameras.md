@@ -24,6 +24,21 @@ For each camera, an administrator can:
 
 For Wi-Fi security cameras, press **Find cameras** (under **Wi-Fi cameras**). The camera computer at church lists the cameras on its Wi-Fi; click **Add** next to one and type the camera's own username and password. See [Wi-Fi security cameras](/guides/camera-setup#with-wi-fi-security-cameras-best-for-several-cameras) for the full steps.
 
+### Face matching across cameras
+
+Where two cameras see the same part of the hall, the same person could be counted twice. With **face matching** switched on, someone whose face both cameras see clearly at the same time is counted once.
+
+It's **off** until an administrator switches it on (Cameras page → **Face matching across cameras** → **Switch on…**), after ticking that the church has:
+
+1. completed and approved a **data protection impact assessment (DPIA)** for face matching, and
+2. put clear **notices at every entrance** saying cameras use face matching to count attendance, and how to opt out.
+
+Kyro records who switched it on and when.
+
+What Kyro keeps: **no photos of faces**. Each clearly visible face becomes a number code that's compared between cameras for a few seconds and never saved. Kyro doesn't know who anyone is and doesn't compare faces with any list of people.
+
+How well it works (measured on 6,000 standard face-photo pairs): when Kyro says two faces are the same person it was right every time, so it doesn't wrongly merge different people. It only works for faces turned towards a camera and big enough in the picture (about 30 pixels wide or more), so cameras facing the congregation from the front help most; cameras behind people mostly see the backs of heads.
+
 ### Don't count an area (statues, mannequins)
 
 The AI sometimes takes a **statue, sculpture or mannequin** for a person. Kyro already double-checks every person it counts with a second AI that tells people from statues (on the installed version), but for a statue your camera always sees, mark it once:

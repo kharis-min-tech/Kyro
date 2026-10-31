@@ -6,7 +6,7 @@ import { DateTimePicker } from "@/components/ui/DateTimePicker";
 import { useCameras } from "@/hooks/useCameras";
 import { seatsApi } from "@/lib/api";
 import { ROW_CONFIG as DEMO_ROW_CONFIG } from "@/lib/demo";
-import { isEdgeLive } from "@/lib/edgeAuth";
+import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
 import type { Camera as CameraInfo } from "@/types";
 import { parseRotaText, needsSeatingAnswer, type ParsedRotaEntry, type SectionInfo } from "@/lib/rotaParser";
 import { SeatingAreaPicker, type SeatingAnswer } from "@/components/ui/SeatingAreaPicker";
@@ -296,7 +296,9 @@ function ActiveRota({ cameraId, entries, onDeleted }: {
   async function remove(entryId: string) {
     setDeleting(entryId);
     try {
-      if (inDemoMode()) {
+      if (isEdgeLive()) {
+        await edgeFetch(`/api/live/rota/${encodeURIComponent(entryId)}`, { method: "DELETE" });
+      } else if (inDemoMode()) {
         const updated = loadDemoRota().filter((e) => e.entry_id !== entryId);
         saveDemoRota(updated);
       } else {
@@ -411,6 +413,13 @@ export default function RotaPage() {
   const [loadingActive, setLoading] = useState(false);
 
   const loadActive = useCallback(async (camId: string) => {
+    // Live on the website on its own: the rota is kept on the website, so the
+    // camera computers hold those seats and every phone sees the same rota.
+    if (isEdgeLive()) {
+      try { setActive(await edgeFetch<ActiveRotaEntry[]>("/api/live/rota")); } catch { /* keep what's shown */ }
+      setLoading(false);
+      return;
+    }
     if (inDemoMode()) {
       setActive(loadDemoRota());
       setLoading(false);
@@ -491,6 +500,16 @@ export default function RotaPage() {
   async function confirm() {
     if (!parsed || !activeCamId) return;
     if (pendingIdx.length > 0) return;
+    if (isEdgeLive()) {
+      setSaving(true); setSaveErr(null);
+      try {
+        await edgeFetch("/api/live/rota", { method: "POST", body: JSON.stringify({ entries: parsed.filter((e) => e.label.trim()) }) });
+        setSaved(true); setParsed(null);
+        await loadActive(activeCamId);
+      } catch (e: any) { setSaveErr(e.message); }
+      finally { setSaving(false); }
+      return;
+    }
     if (inDemoMode()) {
       // Convert parsed entries to active rota entries and persist them
       const newEntries: ActiveRotaEntry[] = parsed

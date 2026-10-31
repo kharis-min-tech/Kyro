@@ -1,5 +1,6 @@
 "use client";
 
+import { edgeFetch, edgeToken, isEdgeLive } from "@/lib/edgeAuth";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { AlertTriangle, X, Bell, ChevronDown, ChevronUp, Eye, GripVertical } from "lucide-react";
 import { recordDemoAnswer } from "@/lib/demo";
@@ -9,6 +10,21 @@ import type { ReviewRequest } from "@/types";
 import { useTheme } from "@/lib/theme";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+/** Send an answer to the AI: the website's own server when Live without a Kyro server, else the Kyro server. */
+async function sendAnswer(cameraId: string, reviewId: string, answer: string): Promise<void> {
+  if (isEdgeLive()) {
+    await edgeFetch(`/api/live/questions/${encodeURIComponent(reviewId)}/answer`, { method: "POST", body: JSON.stringify({ answer }) });
+    return;
+  }
+  const token = localStorage.getItem("kyro_token") ?? "";
+  if (token.includes("demo_signature")) return;
+  await fetch(`${API_URL}/api/v1/review/${cameraId}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ review_id: reviewId, answer }),
+  });
+}
 
 const UNANSWERED_KEY = "kyro_unanswered_reviews";
 
@@ -170,11 +186,12 @@ function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: stri
 
   const fetchSnap = useCallback(async () => {
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
-      const res = await fetch(`${API_URL}/api/v1/review/${cameraId}/snapshot/${reviewId}`, {
+      const live = isEdgeLive();
+      const token = live ? edgeToken() ?? "" : typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
+      const res = await fetch(live ? `/api/live/questions/${encodeURIComponent(reviewId)}/snapshot` : `${API_URL}/api/v1/review/${cameraId}/snapshot/${reviewId}`, {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
       });
-      if (res.ok) {
+      if (res.ok && res.status !== 204) {
         const blob = await res.blob();
         const url  = URL.createObjectURL(blob);
         setSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return url; });
@@ -235,6 +252,10 @@ const ANSWER_MAP: Record<string, string> = {
   "No — different person":                      "no",
   "Not sure (keep as occupied)":                "ignore",
   "Yes — count looks right":                    "yes",
+  "Yes, it's a seat":                           "yes",
+  "No, not a seat":                             "no",
+  "Stage at the top":                           "top",
+  "Stage at the bottom":                        "bottom",
   "No — higher than shown":                     "no",
   "No — lower than shown":                      "no",
   "Finding seats — hold":                       "ignore",
@@ -286,14 +307,7 @@ function ReviewCard({
     const answerCode = ANSWER_MAP[option] ?? option.toLowerCase().split(" ")[0];
     setAnswering(true);
     try {
-      const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
-      if (!token.includes("demo_signature")) {
-        await fetch(`${API_URL}/api/v1/review/${cameraId}/answer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ review_id: review.review_id, answer: answerCode }),
-        });
-      }
+      await sendAnswer(cameraId, review.review_id, answerCode);
       // Store the answer so the AI doesn't repeat this question (demo + real)
       recordDemoAnswer(review.review_id, review.question, answerCode);
       removeUnanswered(review.review_id);
@@ -333,7 +347,7 @@ function ReviewCard({
         </button>
       </div>
       <div className="px-4 pb-2">
-        {inDemoMode() ? <DemoSnapshot review={review} /> : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
+        {inDemoMode() && !isEdgeLive() ? <DemoSnapshot review={review} /> : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
       </div>
       <div className="px-4 pb-3 flex flex-col gap-1.5">
         {review.options.map((opt) => (
@@ -485,14 +499,7 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
     const answerCode = ANSWER_MAP[option] ?? option.toLowerCase().split(" ")[0];
     setAnswering(review.review_id);
     try {
-      const token = localStorage.getItem("kyro_token") ?? "";
-      if (!token.includes("demo_signature")) {
-        await fetch(`${API_URL}/api/v1/review/${cameraId}/answer`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ review_id: review.review_id, answer: answerCode }),
-        });
-      }
+      await sendAnswer(cameraId, review.review_id, answerCode);
       // Record the answer — AI won't repeat spatial/learned questions
       recordDemoAnswer(review.review_id, review.question, answerCode);
     } catch {}

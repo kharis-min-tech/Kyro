@@ -99,6 +99,7 @@ export default {
         const headers = new Headers(request.headers);
         headers.delete("X-Kyro-Role"); // never trust a role sent by the caller
         headers.delete("X-Kyro-Internal");
+        headers.delete("X-Kyro-User");
         if (url.pathname.startsWith("/api/live/")) {
           // A browser can't add headers to a WebSocket, so live video sends the
           // sign-in token as its second "protocol" instead: ["kyro", token].
@@ -110,6 +111,7 @@ export default {
           const me = await currentUser(new Request(request.url, { headers }), env);
           if (!me) return json({ error: "Please sign in again" }, 401);
           headers.set("X-Kyro-Role", me.role);
+          headers.set("X-Kyro-User", encodeURIComponent(me.display_name || me.username || ""));
         }
         return hub.fetch(new Request(request, { headers }));
       }

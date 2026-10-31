@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+import cv2
 import numpy as np
 import torch
 from ultralytics import YOLO
@@ -167,6 +168,27 @@ class PersonDetector:
             detections = self._filter_overhead(detections, frame.shape[0], frame.shape[1])
 
         return detections
+
+    SEATING_CLASSES = (13, 56, 57)   # COCO: bench, chair, couch
+
+    def detect_seating(self, frame: np.ndarray, conf: float = 0.35) -> list[tuple[np.ndarray, float]]:
+        """Chairs, benches and sofas in the picture (for finding seats automatically).
+        Whole picture plus 2×2 tiles, so far-away chairs are found too."""
+        H, W = frame.shape[:2]
+        boxes, scores = [], []
+        views = [(0, 0, W, H)] + [(x, y, x + W // 2 + W // 8, y + H // 2 + H // 8)
+                                   for x in (0, W // 2 - W // 8) for y in (0, H // 2 - H // 8)]
+        for x1, y1, x2, y2 in views:
+            r = self._model.predict(source=frame[y1:y2, x1:x2], conf=conf, iou=0.5, classes=list(self.SEATING_CLASSES),
+                                    imgsz=self._cfg.imgsz, max_det=self._cfg.max_det, device=self._device, verbose=False)[0]
+            if r.boxes is None or not len(r.boxes):
+                continue
+            b = r.boxes.xyxy.cpu().numpy().astype(np.float32) + np.array([x1, y1, x1, y1], np.float32)
+            boxes.extend(b.tolist()); scores.extend(r.boxes.conf.cpu().numpy().tolist())
+        if not boxes:
+            return []
+        keep = cv2.dnn.NMSBoxes([[b[0], b[1], b[2] - b[0], b[3] - b[1]] for b in boxes], scores, conf, 0.45)
+        return [(np.array(boxes[i], np.float32), float(scores[i])) for i in np.array(keep).reshape(-1)]
 
     def _predict(self, img: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """One model pass → (N×4 xyxy boxes, N scores)."""

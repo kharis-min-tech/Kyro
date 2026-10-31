@@ -20,7 +20,7 @@ The stage is at the top, and each row is lettered from the front (A, B, C…).
 |---|---|
 | <Icon name="dot" color="#ff4d6d" /> Red | Occupied |
 | <Icon name="dot" color="#2a2f45" /> Dark | Free |
-| <Icon name="dot" color="#ffd60a" /> Yellow | Away briefly: the person has stepped out and is expected back. After **3 minutes** the seat shows as free |
+| <Icon name="dot" color="#ffd60a" /> Yellow | Away briefly: the person has stepped out and is expected back. After **6 minutes** the seat shows as free |
 | <Icon name="dot" color="#9b5de5" /> Purple | Reserved, or held while the person is on stage, in the choir or at the altar |
 | Faded, dashed | In an *ignore* area, so it isn't counted |
 
