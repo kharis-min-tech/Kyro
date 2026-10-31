@@ -28,6 +28,7 @@ export function NewCameraPrompt() {
     if (!admin) return;
     let alive = true;
     const load = async () => {
+      if (document.hidden) return;        // a tab nobody's looking at doesn't ask
       try {
         const all = await edgeVenueApi.cameras(true);
         if (alive) setWaiting(all.filter((c) => c.pending && c.present));
@@ -35,7 +36,8 @@ export function NewCameraPrompt() {
     };
     load();
     const id = setInterval(load, 4000);
-    return () => { alive = false; clearInterval(id); };
+    document.addEventListener("visibilitychange", load);
+    return () => { alive = false; clearInterval(id); document.removeEventListener("visibilitychange", load); };
   }, [admin]);
 
   if (!admin || pathname === "/" || pathname?.startsWith("/login")) return null;

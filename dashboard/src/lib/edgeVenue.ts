@@ -99,6 +99,8 @@ export function todayLocal(): { date: string; tz: string } {
 /**
  * Polls /api/live/venue every `everyMs` while `enabled`. Failures are
  * non-fatal: the last good value is kept and `error` carries a short message.
+ * Pauses while the tab is hidden (a forgotten tab would otherwise ask the
+ * server every 2 s all day), and catches up the moment it's looked at again.
  */
 export function useEdgeVenue(enabled: boolean, everyMs = 2000) {
   const [venue, setVenue] = useState<VenueTotal | null>(null);
@@ -107,6 +109,7 @@ export function useEdgeVenue(enabled: boolean, everyMs = 2000) {
     if (!enabled) return;
     let alive = true;
     const load = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const v = await edgeVenueApi.venue();
         if (alive) { setVenue(v); setError(null); }
@@ -116,7 +119,13 @@ export function useEdgeVenue(enabled: boolean, everyMs = 2000) {
     };
     load();
     const id = setInterval(load, everyMs);
-    return () => { alive = false; clearInterval(id); };
+    document.addEventListener("visibilitychange", load);
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false; clearInterval(id);
+      document.removeEventListener("visibilitychange", load);
+      window.removeEventListener("focus", load);
+    };
   }, [enabled, everyMs]);
   return { venue, error };
 }

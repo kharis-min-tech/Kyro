@@ -1546,6 +1546,7 @@ export default function CamerasPage() {
     if (!edge || !canManage) return;
     let alive = true;
     const load = async () => {
+      if (document.hidden) return;
       try { const d = await edgeVenueApi.devices(); if (alive) { setDevices(d); setDevicesErr(null); } }
       catch (e: any) { if (alive) setDevicesErr(e?.message ?? "Couldn't reach the server"); }
       try { const all = await edgeVenueApi.cameras(true); if (alive) setOff(all.filter((c) => c.hidden)); }
