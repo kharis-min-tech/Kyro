@@ -129,8 +129,9 @@ export interface CameraReport {
 export type Zone = [number, number, number, number];
 
 /** Sends this browser's counts. Returns the cameras switched off on the website,
- *  and each camera's "don't count this area" rectangles (0–1 fractions). */
-export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]> }> {
+ *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
+ *  the AI must be before someone is counted (the admin's Counting sensitivity). */
+export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -145,9 +146,11 @@ export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: s
   }
   if (!res.ok) throw new Error(`The website didn't accept the counts (${res.status})`);
   const body = await res.json().catch(() => ({}));
+  const conf = Number(body.count_confidence);
   return {
     disabled: Array.isArray(body.disabled) ? body.disabled : [],
     zones: body.ignore_zones && typeof body.ignore_zones === "object" ? body.ignore_zones : {},
+    countConfidence: Number.isFinite(conf) && conf >= 0.1 && conf <= 0.6 ? conf : undefined,
   };
 }
 

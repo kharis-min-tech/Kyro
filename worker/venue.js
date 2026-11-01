@@ -55,6 +55,7 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // flickers on and off and the total jumps about. Over-subtraction from a code
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
+const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
@@ -200,6 +201,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/rota" && request.method === "GET") return json(await this.get("rota", []));
       if (p.startsWith("/api/live/zones/") && request.method === "GET") return json((await this.get("seat_zones", {}))[decodeURIComponent(p.split("/").pop())] ?? []);
       if (p === "/api/live/privacy" && request.method === "GET") return json(await this.privacy());
+      if (p === "/api/live/counting" && request.method === "GET") return json(await this.counting());
       if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
@@ -240,6 +242,7 @@ export class VenueHub extends DurableObject {
       if (lay && request.method === "POST" && lay[3]) return this.activateLayout(decodeURIComponent(lay[1]), Number(lay[2]));
       if (lay && request.method === "DELETE" && lay[2] && !lay[3]) return this.deleteLayout(decodeURIComponent(lay[1]), Number(lay[2]));
       if (p === "/api/live/privacy" && request.method === "PUT") return this.setPrivacy(request, user);
+      if (p === "/api/live/counting" && request.method === "PUT") return this.setCounting(request);
       if (p === "/api/live/find-cameras" && request.method === "POST") return this.findCameras();
       if (p === "/api/live/find-cameras" && request.method === "GET") return json(await this.foundCameras());
       if (p === "/api/live/find-cameras/add" && request.method === "POST") return this.addFound(request);
@@ -440,7 +443,8 @@ export class VenueHub extends DurableObject {
       if (a) seat_layouts[c.key] = `${a.id}.${a.version ?? 0}`;
     }
     return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor,
-      face_matching: faceOn, report_every_s: 2, snapshot_every_s: 20 });
+      face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
+      report_every_s: 2, snapshot_every_s: 20 });
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -1039,6 +1043,23 @@ export class VenueHub extends DurableObject {
 
   async privacy() {
     return await this.get("privacy", { face_matching: false });
+  }
+
+  // ── How sure the AI must be before someone is counted ────────────────────
+  // Lower = counts people it's less certain about (a soft or far-away picture,
+  // e.g. through a wireless transmitter). Higher = only the obvious ones.
+
+  async counting() {
+    return await this.get("counting", { count_confidence: DEFAULT_COUNT_CONFIDENCE });
+  }
+
+  async setCounting(request) {
+    const body = await request.json().catch(() => ({}));
+    const v = Number(body.count_confidence);
+    if (!Number.isFinite(v) || v < 0.1 || v > 0.6) return json({ error: "Pick one of the sensitivity settings" }, 400);
+    const counting = { count_confidence: Math.round(v * 100) / 100 };
+    await this.ctx.storage.put("counting", counting);
+    return json(counting);
   }
 
   async setPrivacy(request, user) {

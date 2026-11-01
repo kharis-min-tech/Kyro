@@ -243,6 +243,9 @@ class Box:
                 if self.seat_finder is not None:
                     self.seat_finder.publish(cfg["server"], cfg["token"])
                 if self.counter is not None:
+                    # "Counting sensitivity" on the website: how sure the AI must be
+                    # before someone is counted. Applies to every camera at once.
+                    self.counter.set_count_confidence(res.get("count_confidence"))
                     on = bool(res.get("face_matching"))
                     if on != self.counter.face_matching:
                         log.info("Face matching across cameras %s", "on (service running)" if on else "off — face codes cleared")

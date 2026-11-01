@@ -279,6 +279,17 @@ class Counter:
         s.faces = faces.pack(self._faces.codes(frame, full[:self.FACES_PER_PASS]))
         s.faces_at = time.time()
 
+    def set_count_confidence(self, value) -> None:
+        """How sure the AI must be before someone is counted (set on the website)."""
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return
+        if not 0.1 <= v <= 0.6 or abs(v - self._config.detection.count_confidence) < 1e-6:
+            return
+        log.info("Counting sensitivity changed to %.2f", v)
+        self._config.detection.count_confidence = v
+
     def restart_steadying(self, key: str) -> None:
         """The picture dropped out (no signal / frozen): when it's back, count fresh —
         never mix in readings from before the gap."""
