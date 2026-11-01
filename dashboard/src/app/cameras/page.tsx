@@ -23,6 +23,7 @@ import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { FindCameras } from "@/components/ui/FindCameras";
 import { FaceMatching } from "@/components/ui/FaceMatching";
 import { CountOnThisComputer } from "@/components/ui/CountOnThisComputer";
+import { CountingSensitivity } from "@/components/ui/CountingSensitivity";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -1584,6 +1585,8 @@ export default function CamerasPage() {
           <CountOnThisComputer alreadyCounting={cameras.some((c) => (c as { kind?: string }).kind === "web")} />
         )}
 
+        {edge && role === "admin" && <CountingSensitivity />}
+
         {edge && canManage && (
           <CameraComputersSection devices={devices} error={devicesErr} onChanged={afterEdgeChange} />
         )}
@@ -1650,3 +1653,4 @@ export default function CamerasPage() {
     </div>
   );
 }
+
