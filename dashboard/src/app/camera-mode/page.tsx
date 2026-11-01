@@ -24,11 +24,17 @@ interface Cam {
   deviceId: string; key: string; label: string;
   stream: MediaStream | null; video: HTMLVideoElement | null; grabCanvas: HTMLCanvasElement;
   steady: SteadyCount; count: number; peak: number; people: Person[];
+  // Everything the AI noticed, before the "sure enough to count" cutoff — so a
+  // camera that's finding nobody can be told apart from one that's finding
+  // somebody too unclearly to count (poor light, a compressed transmitter
+  // picture, too far away). Kept separate from `people` so the official count
+  // and the sent report never include anything under COUNT_CONFIDENCE.
+  rawPeople: Person[];
   countedAt: number; secondsPerCount: number; error: string | null; lastPicture: number;
 }
 
 /** What the page shows for each camera (copied from the live objects a few times a second). */
-interface CamView { key: string; label: string; count: number; people: Person[]; countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean }
+interface CamView { key: string; label: string; count: number; people: Person[]; rawPeople: Person[]; countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean }
 
 function loadOff(): string[] { try { return JSON.parse(localStorage.getItem(OFF_KEY) ?? "[]"); } catch { return []; } }
 
@@ -74,7 +80,7 @@ export default function CameraModePage() {
 
   const refreshViews = useCallback(() => {
     setViews([...cams.current.values()].map((c) => ({
-      key: c.key, label: c.label, count: c.count, people: c.people, countedAt: c.countedAt,
+      key: c.key, label: c.label, count: c.count, people: c.people, rawPeople: c.rawPeople, countedAt: c.countedAt,
       secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
@@ -91,7 +97,7 @@ export default function CameraModePage() {
         c = {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
-          steady: new SteadyCount(5), count: 0, peak: 0, people: [], countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
+          steady: new SteadyCount(5), count: 0, peak: 0, people: [], rawPeople: [], countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
         };
         cams.current.set(key, c);
       }
@@ -135,13 +141,20 @@ export default function CameraModePage() {
         const t0 = performance.now();
         try {
           const people = await countPeople(engine.current, px);
+          // `people` is everything the model noticed at all (score ≥ 0.1) —
+          // keep it so a silent "0 people" can be told apart from "the AI
+          // can see someone there but isn't sure enough to count them" (the
+          // usual cause on a soft or compressed picture, e.g. a wireless
+          // transmitter + capture card). Only the ≥ COUNT_CONFIDENCE ones are
+          // ever counted, drawn as "sure", or sent to the website.
+          c.rawPeople = people;
           c.people = outsideZones(people.filter((p) => p.score >= COUNT_CONFIDENCE), zonesRef.current[c.key], px.width, px.height);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();
           c.secondsPerCount = (performance.now() - t0) / 1000;
           c.error = null;
-          drawBoxes(overlayEls.current.get(c.key), px.width, px.height, c.people, zonesRef.current[c.key]);
+          drawBoxes(overlayEls.current.get(c.key), px.width, px.height, c.people, zonesRef.current[c.key], c.rawPeople);
         } catch (e) {
           c.error = `Counting problem: ${e instanceof Error ? e.message : e}`.slice(0, 120);
         }
@@ -384,6 +397,16 @@ export default function CameraModePage() {
                           <p className="text-xs truncate" style={{ color: v.error ? "#f59e0b" : "#6b7280" }}>
                             {v.error ?? (v.countedAt ? `Counts every ${v.secondsPerCount.toFixed(1)} s` : v.streaming ? "Starting…" : "")}
                           </p>
+                          {!v.error && v.count === 0 && v.rawPeople.length > 0 && (() => {
+                            const best = Math.round(Math.max(...v.rawPeople.map((p) => p.score)) * 100);
+                            return (
+                              <p className="text-xs mt-0.5 leading-snug" style={{ color: "#f59e0b" }}>
+                                Sees something there ({best}% sure, dashed outline) — not confident enough to count. Try moving
+                                the camera closer, improving the lighting, or a clearer feed (a wireless transmitter/capture
+                                card often softens the picture enough to cause this).
+                              </p>
+                            );
+                          })()}
                         </div>
                         <label className="flex items-center gap-1.5 text-xs shrink-0 cursor-pointer" style={{ color: "#9ca3af" }}>
                           <input type="checkbox" checked={!isOff} onChange={() => toggleCam(v.key)} /> Count
@@ -412,8 +435,11 @@ export default function CameraModePage() {
   );
 }
 
-/** Outline each person counted, on a see-through layer over the video. */
-function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, people: Person[], zones?: Zone[]) {
+/** Outline each person counted, on a see-through layer over the video. Also
+ *  shows, dim and dashed, anything the AI noticed but wasn't sure enough of
+ *  to count — so "nothing outlined at all" only ever means "truly sees
+ *  nobody", not "sees somebody but isn't confident". */
+function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, people: Person[], zones?: Zone[], rawPeople?: Person[]) {
   if (!canvas) return;
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const ctx = canvas.getContext("2d");
@@ -425,6 +451,16 @@ function drawBoxes(canvas: HTMLCanvasElement | undefined, w: number, h: number, 
     ctx.fillStyle = "rgba(148,163,184,0.28)"; ctx.fillRect(zx1 * w, zy1 * h, (zx2 - zx1) * w, (zy2 - zy1) * h);
     ctx.setLineDash([8, 6]); ctx.strokeStyle = "#94a3b8"; ctx.strokeRect(zx1 * w, zy1 * h, (zx2 - zx1) * w, (zy2 - zy1) * h); ctx.setLineDash([]);
   }
+  // Unsure guesses that didn't make the count: faint dashed grey, drawn first
+  // so a real, counted box always draws on top of it.
+  const counted = new Set(people);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = "rgba(148,163,184,0.7)";
+  for (const p of rawPeople ?? []) {
+    if (counted.has(p)) continue;
+    const [x1, y1, x2, y2] = p.box;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  }
+  ctx.setLineDash([]);
   for (const p of people) {
     const [x1, y1, x2, y2] = p.box;
     ctx.strokeStyle = p.score >= 0.5 ? "#22c55e" : "#f59e0b";
@@ -488,3 +524,4 @@ function InstallSection({ demo, isAdmin }: { demo: boolean; isAdmin: boolean }) 
     </div>
   );
 }
+
