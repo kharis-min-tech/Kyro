@@ -60,6 +60,11 @@ export default function CameraModePage() {
   const running = useRef(false);
   const offRef = useRef<string[]>([]);
   const zonesRef = useRef<Record<string, Zone[]>>({});   // "don't count this area", per camera
+  // How sure the AI must be before someone is counted. An admin's "Counting
+  // sensitivity" choice on the Cameras page, fetched with every report;
+  // COUNT_CONFIDENCE until the first report lands (or on an older deployment
+  // that doesn't send one).
+  const countConfidenceRef = useRef<number>(COUNT_CONFIDENCE);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const videoEls = useRef<Map<string, HTMLVideoElement>>(new Map());
   const overlayEls = useRef<Map<string, HTMLCanvasElement>>(new Map());
@@ -145,10 +150,11 @@ export default function CameraModePage() {
           // keep it so a silent "0 people" can be told apart from "the AI
           // can see someone there but isn't sure enough to count them" (the
           // usual cause on a soft or compressed picture, e.g. a wireless
-          // transmitter + capture card). Only the ≥ COUNT_CONFIDENCE ones are
-          // ever counted, drawn as "sure", or sent to the website.
+          // transmitter + capture card). Only the ≥ countConfidenceRef ones
+          // are ever counted, drawn as "sure", or sent to the website — that's
+          // COUNT_CONFIDENCE unless an admin raised Counting sensitivity.
           c.rawPeople = people;
-          c.people = outsideZones(people.filter((p) => p.score >= COUNT_CONFIDENCE), zonesRef.current[c.key], px.width, px.height);
+          c.people = outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();
@@ -180,8 +186,9 @@ export default function CameraModePage() {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones } = await sendReport(reports);
+        const { disabled, zones, countConfidence } = await sendReport(reports);
         zonesRef.current = zones;
+        if (countConfidence !== undefined) countConfidenceRef.current = countConfidence;
         setLastSent(Date.now()); setSendError(null);
         // Switched off on the Cameras page → stop counting it here too.
         const newlyOff = disabled.filter((k) => !offRef.current.includes(k));
@@ -403,7 +410,8 @@ export default function CameraModePage() {
                               <p className="text-xs mt-0.5 leading-snug" style={{ color: "#f59e0b" }}>
                                 Sees something there ({best}% sure, dashed outline) — not confident enough to count. Try moving
                                 the camera closer, improving the lighting, or a clearer feed (a wireless transmitter/capture
-                                card often softens the picture enough to cause this).
+                                card often softens the picture enough to cause this). If the picture is genuinely this soft day
+                                to day, an administrator can raise Counting sensitivity on the Cameras page.
                               </p>
                             );
                           })()}
@@ -524,4 +532,3 @@ function InstallSection({ demo, isAdmin }: { demo: boolean; isAdmin: boolean }) 
     </div>
   );
 }
-
