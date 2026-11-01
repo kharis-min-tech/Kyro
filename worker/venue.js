@@ -584,6 +584,8 @@ export class VenueHub extends DurableObject {
         current, peak: l.peak || 0, entries: l.entries || 0, exits: l.exits || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
+        // Counting in a browser has no in/out: it counts each picture, it doesn't follow people.
+        in_out: c.kind !== "web",
       };
     });
     const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);

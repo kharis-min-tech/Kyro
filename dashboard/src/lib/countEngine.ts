@@ -120,8 +120,16 @@ async function startModel(ort: Ort, kind: "accurate" | "light", useGpu: boolean,
   return { run, m, seconds: (performance.now() - t0) / 1000 };
 }
 
-/** Slowest single look the accurate AI may take (a count is about 5 looks). */
-const MAX_ACCURATE_PASS_S = 2.5;
+/**
+ * Slowest single look the accurate AI may take.
+ *
+ * A count is about 5 looks (the whole picture plus 2x2 tiles), so this caps a
+ * count at roughly 3 seconds. It used to be 2.5 s a look — up to 12 seconds for
+ * one number, which looked like the AI had failed. The lighter AI counts in
+ * about 1 second on an ordinary processor and was just as accurate on small
+ * groups in testing, so falling back to it is much better than a slow number.
+ */
+const MAX_ACCURATE_PASS_S = 0.6;
 
 export async function startEngine(onProgress: (pct: number, step: string) => void): Promise<LocalEngine> {
   onProgress(0, "Loading the AI engine…");

@@ -1624,26 +1624,24 @@ export default function CamerasPage() {
 
         {edge && canManage && <SwitchedOffCameras cameras={switchedOff} onChanged={afterEdgeChange} />}
 
-        {edge && role === "admin" && <FaceMatching />}
-
-        {/* Plug-and-play detector — covers USB webcam, phone, built-in
-            laptop camera. Shown on EVERY deployment (edge or not) and does
-            NOT depend on the useCameras() error state so a transient
-            edge-API hiccup can't hide the add form. */}
-        {canManage && (
-          <AddCameraForm onAdded={edge ? afterEdgeChange : refresh} cameraCount={cameras.length} />
+        {/* Only for Kyro with its own server. In Live mode there is one way in,
+            at the top of this page: either this computer, or a camera computer.
+            These forms ask for a stream address, which can never work for a
+            camera plugged into a computer — offering them here just confused. */}
+        {canManage && !edge && (
+          <AddCameraForm onAdded={refresh} cameraCount={cameras.length} />
         )}
         {/* Edge-specific IP-camera form kept for multi-device setups where
             the operator needs to choose which camera computer runs the
             stream. Only shown when at least one camera computer is paired. */}
-        {edge && canManage && !loading && (devices?.length ?? 0) > 0 && (
-          <EdgeAddCameraForm onAdded={afterEdgeChange} cameraCount={cameras.length} devices={devices ?? []} />
-        )}
+
         {!canManage && (
           <p className="text-xs text-gray-500 rounded-xl px-4 py-3" style={{ border: "1px solid var(--border-subtle)" }}>
             Only administrators and operators can add, change or remove cameras.
           </p>
         )}
+
+        {edge && role === "admin" && <FaceMatching />}
 
         <div className="mt-4">
           <HelpPanel />

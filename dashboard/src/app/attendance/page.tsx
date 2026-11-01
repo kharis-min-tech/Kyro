@@ -1096,6 +1096,11 @@ export default function AttendancePage() {
   // history writes every couple of minutes, so the very latest number
   // comes from live polling instead of waiting for the next snapshot).
   const activeMetricHistory = metricHistory[metric] ?? [];
+  // In/out needs a camera that follows people between pictures. A camera
+  // counting in a browser can't, so say so rather than draw a flat zero.
+  const runningZones = (venueTotal?.zones ?? []).filter((z) => z.is_running);
+  const noInOut = edge && (metric === "entries" || metric === "exits")
+    && runningZones.length > 0 && runningZones.every((z) => z.in_out === false);
   const metricNow = activeMetricHistory[activeMetricHistory.length - 1] ?? 0;
   const chartHistory = isToday && (edge || !inDemoMode())
     ? [...(historicalData?.history ?? []), metricNow]
@@ -1391,6 +1396,16 @@ export default function AttendancePage() {
                 </div>
                 )}
               </div>
+              {noInOut && (
+                <div className="flex items-start gap-2 rounded-lg px-3 py-2 mb-2"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                  <span className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
+                    <strong>In and out isn&apos;t available from a camera counting in a browser.</strong> It counts the people in each
+                    picture rather than following them, so it can&apos;t tell who arrived or left. <strong>People Count</strong> and
+                    <strong> Occupancy</strong> work normally. For in and out, pair a camera computer on the Cameras page.
+                  </span>
+                </div>
+              )}
               <TotalChart
                 history={chartHistory}
                 current={displayTotal}

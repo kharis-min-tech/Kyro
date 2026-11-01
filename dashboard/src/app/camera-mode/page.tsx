@@ -102,7 +102,8 @@ export default function CameraModePage() {
         c = {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
-          steady: new SteadyCount(5), count: 0, peak: 0, people: [], rawPeople: [], countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
+          // Middle of the last 3 counts, same as the camera computer.
+          steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [], countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
         };
         cams.current.set(key, c);
       }
@@ -328,6 +329,18 @@ export default function CameraModePage() {
                       {demo ? "Demo mode: the count stays on this computer. Sign in with Live to send it to your dashboard." : sendError ? `Not sending: ${sendError} — retrying` : lastSent ? `Sent to your Kyro dashboard ${Math.max(0, Math.round((Date.now() - lastSent) / 1000))} s ago` : "Connecting to Kyro…"}
                     </p>
                     {engineInfo && <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>{engineInfo}</p>}
+                    {/* How long a count takes here — so a slow computer is obvious rather than looking broken. */}
+                    {(() => {
+                      const secs = views.filter((v) => v.secondsPerCount > 0).map((v) => v.secondsPerCount);
+                      if (!secs.length) return null;
+                      const worst = Math.max(...secs);
+                      return (
+                        <p className="text-xs mt-0.5" style={{ color: worst > 4 ? "#f59e0b" : "#6b7280" }}>
+                          A new count about every {worst < 1 ? "second" : `${worst.toFixed(1)} seconds`}
+                          {worst > 4 ? " — slow for this computer; the number will lag behind the room" : ""}
+                        </p>
+                      );
+                    })()}
                   </div>
                   <button onClick={stop} className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold"
                     style={{ background: "var(--bg-hover)", color: "var(--text-primary, #e5e7eb)", border: `1px solid ${BORDER}` }}>

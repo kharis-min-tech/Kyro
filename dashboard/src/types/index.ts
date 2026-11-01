@@ -104,6 +104,9 @@ export interface ZoneLive {
    *  as disconnected). */
   status: string;
   error_reason: string | null;
+  /** false for a camera counting in a browser: it counts each picture rather
+   *  than following people, so it has no in/out. */
+  in_out?: boolean;
 }
 
 export interface VenueTotal {
