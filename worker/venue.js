@@ -203,12 +203,13 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/privacy" && request.method === "GET") return json(await this.privacy());
       if (p === "/api/live/counting" && request.method === "GET") return json(await this.counting());
       if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
+      if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
       if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
       if (svc && svc[2] === "end" && request.method === "POST") return this.endServiceNow(svc[1]);
       if (svc && svc[2] === "rename" && request.method === "POST") return this.renameService(svc[1], request);
-      if (svc && !svc[2] && request.method === "DELETE") return this.deleteService(svc[1], user);
+      if (svc && !svc[2] && request.method === "DELETE") return this.deleteService(svc[1], user, url.searchParams.get("counts") === "1");
       if (["/api/live/rota", "/api/live/zones/"].some((x) => p.startsWith(x))) {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can change this" }, 403);
         const page = p.startsWith("/api/live/rota") ? "rota" : "seating";
@@ -1017,15 +1018,22 @@ export class VenueHub extends DurableObject {
     return json(s);
   }
 
-  /** "Delete": the service's record and its minute-by-minute counts are removed for good. */
-  async deleteService(id, user) {
+  /**
+   * "Delete" removes the service from the list. The minute-by-minute counts
+   * behind it are KEPT, so Analytics and the calendar still show that day —
+   * deleting a service you didn't want recorded must never quietly wipe the
+   * attendance figures. Pass ?counts=1 to remove those too (asked for
+   * separately, with its own confirmation).
+   */
+  async deleteService(id, user, alsoCounts = false) {
     const list = await this.get("services", []);
     const s = list.find((x) => x.id === id);
     if (!s) return json({ error: "No such service" }, 404);
-    this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", Date.parse(s.started_at), Date.parse(s.ended_at));
+    if (alsoCounts) this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", Date.parse(s.started_at), Date.parse(s.ended_at));
     await this.ctx.storage.put("services", list.filter((x) => x.id !== id));
     const log = await this.get("deleted_services", []);
-    log.unshift({ name: s.name, started_at: s.started_at, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
+    log.unshift({ name: s.name, started_at: s.started_at, ended_at: s.ended_at, peak: s.peak,
+      counts_deleted: !!alsoCounts, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
     await this.ctx.storage.put("deleted_services", log.slice(0, 200));
     return json({ deleted: true });
   }

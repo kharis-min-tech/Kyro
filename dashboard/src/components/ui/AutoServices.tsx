@@ -178,6 +178,7 @@ export function ServiceEndedPrompt() {
   const { role, isAuthenticated } = useAuth();
   const [ask, setAsk] = useState<Service | null>(null);
   const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [later, setLater] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -197,8 +198,10 @@ export function ServiceEndedPrompt() {
 
   if (!ask) return null;
   const decide = async (keep: boolean) => {
+    if (!keep && !confirmDelete) { setConfirmDelete(true); return; }   // never destructive on one click
     setBusy(true);
-    try { keep ? await servicesApi.keep(ask.id) : await servicesApi.remove(ask.id); setAsk(null); } catch { /* shown again next check */ }
+    try { keep ? await servicesApi.keep(ask.id) : await servicesApi.remove(ask.id); setAsk(null); setConfirmDelete(false); }
+    catch { /* shown again next check */ }
     setBusy(false);
   };
   return (
@@ -208,9 +211,15 @@ export function ServiceEndedPrompt() {
       <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>
         {ask.name}: {time(ask.started_at)}–{time(ask.ended_at)}, {ask.peak} people at the busiest. Any face matching data was wiped when it ended.
       </p>
+      {confirmDelete && (
+        <p className="text-xs mt-2 rounded-lg px-2.5 py-2" style={{ background: "rgba(239,68,68,0.12)", color: "#fca5a5" }}>
+          Remove this service from the list? The day&apos;s attendance figures stay on Analytics and the calendar — only this
+          service entry goes. Press Delete again to confirm.
+        </p>
+      )}
       <div className="flex gap-2 mt-3">
         <button onClick={() => decide(true)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"><Check size={12} /> Keep</button>
-        <button onClick={() => decide(false)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50"><Trash2 size={12} /> Delete</button>
+        <button onClick={() => decide(false)} disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50"><Trash2 size={12} /> {confirmDelete ? "Delete — confirm" : "Delete"}</button>
         <button onClick={() => setLater(new Set(later).add(ask.id))} className="px-3 py-1.5 rounded-lg text-xs" style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>Decide later</button>
       </div>
     </div>
