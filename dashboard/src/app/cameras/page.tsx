@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
+import { useRouter } from "next/navigation";
 import { FormEvent, useState, useEffect, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
@@ -20,10 +21,7 @@ import {
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
-import { FindCameras } from "@/components/ui/FindCameras";
 import { FaceMatching } from "@/components/ui/FaceMatching";
-import { CountOnThisComputer } from "@/components/ui/CountOnThisComputer";
-import { CountingSensitivity } from "@/components/ui/CountingSensitivity";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -566,6 +564,7 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
 
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
+  const router = useRouter();
   // Default-open the panel every time so the operator sees the mode
   // picker (plug-and-play, IP camera, wireless transmitter, advanced)
   // immediately. Previously it was collapsed whenever any camera already
@@ -728,6 +727,10 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       setShowAll(false); setScanned(false);
       setOpen(false);
       onAdded();
+      // A camera plugged into this computer is only a record until something
+      // reads it. In Live mode, go straight to the counting page and start —
+      // otherwise the camera appears in the list but never produces a number.
+      if (isEdgeLive() && url.startsWith("webcam://")) router.push("/camera-mode?start=1");
     } catch (e: any) { setErr(e.message); }
     finally { setAdding(false); }
   }
@@ -1581,20 +1584,6 @@ export default function CamerasPage() {
             itself as 'local-only'. Cameras added here still persist, same as
             any Kyro deployment. */}
 
-        {edge && canManage && (
-          <CountOnThisComputer alreadyCounting={cameras.some((c) => (c as { kind?: string }).kind === "web")} />
-        )}
-
-        {edge && role === "admin" && <CountingSensitivity />}
-
-        {edge && canManage && (
-          <CameraComputersSection devices={devices} error={devicesErr} onChanged={afterEdgeChange} />
-        )}
-
-        {edge && role === "admin" && (devices?.length ?? 0) > 0 && (
-          <FindCameras onAdded={afterEdgeChange} multipleComputers={(devices?.length ?? 0) > 1} />
-        )}
-
         {error && (edge
           ? <p className="text-xs text-amber-400 mb-3">Couldn't refresh the camera list: {error}</p>
           : <ErrorMessage message={error} onRetry={refresh} />
@@ -1628,8 +1617,8 @@ export default function CamerasPage() {
             at the top of this page: either this computer, or a camera computer.
             These forms ask for a stream address, which can never work for a
             camera plugged into a computer — offering them here just confused. */}
-        {canManage && !edge && (
-          <AddCameraForm onAdded={refresh} cameraCount={cameras.length} />
+        {canManage && (
+          <AddCameraForm onAdded={edge ? afterEdgeChange : refresh} cameraCount={cameras.length} />
         )}
         {/* Edge-specific IP-camera form kept for multi-device setups where
             the operator needs to choose which camera computer runs the
