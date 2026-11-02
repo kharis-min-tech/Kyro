@@ -51,6 +51,8 @@ interface CountingValue {
   sendError: string | null;
   lastSent: number;
   engineInfo: string;
+  /** The browser hasn't allowed the camera yet, so one click is unavoidable. */
+  needsPermission: boolean;
   views: CamView[];
   total: number;
   /** Slowest seconds-per-count across the cameras — 0 before the first count. */
@@ -75,6 +77,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const [lastSent, setLastSent] = useState(0);
   const [engineInfo, setEngineInfo] = useState("");
   const [views, setViews] = useState<CamView[]>([]);
+  // True when the only thing stopping us is the browser's camera permission.
+  const [needsPermission, setNeedsPermission] = useState(false);
 
   const demoRef = useRef(false);
   const engine = useRef<Engine | null>(null);
@@ -213,7 +217,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         throw new Error("No camera found. Plug your camera into this computer, then press Start again. (The computer's own built-in camera is never used.)");
       }
       running.current = true;
-      try { localStorage.setItem(ON_KEY, "1"); } catch {}
+      setNeedsPermission(false);
+      try { localStorage.removeItem(ON_KEY); } catch {}
       setPhase("running");
       countLoop();
     } catch (e) {
@@ -234,14 +239,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     setAllowed(may);
     offRef.current = loadOff();
     if (!may) return;
-    let on = false;
-    try { on = localStorage.getItem(ON_KEY) === "1"; } catch {}
-    if (!on) return;
-    // Only resume without asking if the browser already allows the camera.
+    // Count whenever we can, without being asked. The only reasons not to:
+    // someone pressed Stop, or the browser hasn't been allowed the camera yet
+    // (a page can't switch a camera on without a click — that's the browser's
+    // rule, not ours, and the card says so).
+    let stopped = false;
+    try { stopped = localStorage.getItem(ON_KEY) === "0"; } catch {}
+    if (stopped) return;
     (async () => {
       try {
         const p = await navigator.permissions?.query({ name: "camera" as PermissionName });
-        if (!p || p.state === "granted") start();
+        if (p && p.state !== "granted") { setNeedsPermission(true); return; }
+        const cams = await listCameras();
+        if (cams.length) start();
       } catch { /* leave it to the Start button */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -285,6 +295,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(t);
   }, [phase, syncCameras]);
 
+  // Idle but allowed: start the moment a camera is plugged in.
+  useEffect(() => {
+    if (phase !== "idle" || !allowed || needsPermission) return;
+    let stopped = false;
+    try { stopped = localStorage.getItem(ON_KEY) === "0"; } catch {}
+    if (stopped) return;
+    const look = async () => {
+      try { if ((await listCameras()).length) start(); } catch { /* nothing plugged in */ }
+    };
+    navigator.mediaDevices?.addEventListener("devicechange", look);
+    return () => navigator.mediaDevices?.removeEventListener("devicechange", look);
+  }, [phase, allowed, needsPermission, start]);
+
   // Keep the screen awake, and notice cameras being plugged in or out.
   useEffect(() => {
     if (phase !== "running") return;
@@ -312,7 +335,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const secondsPerCount = views.reduce((m, v) => Math.max(m, v.secondsPerCount), 0);
 
   return (
-    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, views, total, secondsPerCount, start, stop }}>
+    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop }}>
       {children}
       {/* The cameras' own video elements: on the page everywhere, visible nowhere. */}
       <div ref={holder} aria-hidden style={{ position: "fixed", width: 1, height: 1, overflow: "hidden", opacity: 0, pointerEvents: "none" }} />

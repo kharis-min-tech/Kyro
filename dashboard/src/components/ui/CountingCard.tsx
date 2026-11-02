@@ -14,7 +14,7 @@ export function CountingCard() {
   const c = useCounting();
   if (!c || !c.allowed) return null;
 
-  const { phase, step, progress, error, sendError, lastSent, engineInfo, views, total, secondsPerCount, start, stop, demo } = c;
+  const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, demo } = c;
   const on = phase === "running";
   const busy = phase === "starting";
   const live = views.filter((v) => v.streaming);
@@ -31,7 +31,7 @@ export function CountingCard() {
             style={{ background: on ? "#22c55e" : "#6b7280" }} />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-              {on ? "Counting" : busy ? "Starting…" : "Not counting"}
+              {on ? "Counting" : busy ? "Starting…" : needsPermission ? "One tap to allow the camera" : "Waiting for a camera"}
             </p>
             {on && (
               <p className="text-2xl font-bold tabular-nums mt-1 flex items-center gap-2" style={{ color: "var(--text-primary)" }}>
@@ -44,7 +44,9 @@ export function CountingCard() {
             <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
               {on
                 ? "You can move around Kyro freely — counting carries on. It only stops if you close this Kyro tab."
-                : "Plug your camera into this computer (or a wireless transmitter's receiver through a capture card) and press Start."}
+                : needsPermission
+                ? "Your browser hasn't let Kyro use the camera yet. That first tap is the browser's rule — after it, counting starts by itself whenever a camera is plugged in."
+                : "Plug your camera into this computer — straight in, or a wireless transmitter's receiver through a capture card. Counting starts by itself."}
             </p>
             {busy && <p className="text-xs mt-1" style={{ color: "var(--text-secondary)" }}>{step} {progress > 0 ? `${progress}%` : ""}</p>}
           </div>
@@ -54,7 +56,7 @@ export function CountingCard() {
               ? { background: "var(--bg-hover)", color: "var(--text-primary)", border: "1px solid var(--border-strong)" }
               : { background: "#4f46e5", color: "#fff" }}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : on ? <Square size={13} /> : <Play size={14} />}
-            {busy ? "Starting" : on ? "Stop" : "Start counting"}
+            {busy ? "Starting" : on ? "Stop" : needsPermission ? "Allow and start" : "Start counting"}
           </button>
         </div>
 
