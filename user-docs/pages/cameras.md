@@ -8,11 +8,22 @@ Only **administrators** can add, change or remove cameras. Everyone else sees th
 
 <Shot name="cameras" alt="Cameras page listing registered cameras with their zone, stream address and seat capacity, and the Add a camera section" />
 
+## Counting on this computer
+
+At the top of the Cameras page, **Counting on this computer** turns the counting on and off.
+
+1. Plug your camera into this computer — straight in, or a wireless transmitter's receiver through an HDMI-to-USB capture card.
+2. Press **Start counting** and allow the browser to use the camera.
+
+It shows the number of people and how often a new count arrives. **Move around Kyro freely — counting carries on.** It only stops if you close the Kyro tab on that computer, so leave one open and stop the computer sleeping during a service. Use Chrome or Edge.
+
+For counting that runs with nothing open at all, and that also gives **in and out** numbers, install the counter on that computer — see [Setting up cameras](/guides/camera-setup).
+
 ## In Live mode: cameras add themselves
 
 In **Live** mode you don't add USB cameras by hand. A camera appears here by itself, within a few seconds, when it's counting:
 
-- with [Camera Mode](/pages/camera-mode) on any computer, or
+- switched on from this page (**Counting on this computer**) on any computer, or
 - plugged into a **camera computer** that has the installed version (see [Setting up cameras](/guides/camera-setup)).
 
 For each camera, an administrator can:

@@ -1,7 +1,6 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { useRouter } from "next/navigation";
 import { FormEvent, useState, useEffect, useRef, useCallback } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
@@ -21,6 +20,8 @@ import {
 import type { Camera as CameraType } from "@/types";
 import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
+import { CountingCard } from "@/components/ui/CountingCard";
+import { useCounting } from "@/lib/CountingContext";
 import { FaceMatching } from "@/components/ui/FaceMatching";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
@@ -564,7 +565,7 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
 
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
-  const router = useRouter();
+  const startCounting = useCounting()?.start;
   // Default-open the panel every time so the operator sees the mode
   // picker (plug-and-play, IP camera, wireless transmitter, advanced)
   // immediately. Previously it was collapsed whenever any camera already
@@ -728,9 +729,8 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
       setOpen(false);
       onAdded();
       // A camera plugged into this computer is only a record until something
-      // reads it. In Live mode, go straight to the counting page and start —
-      // otherwise the camera appears in the list but never produces a number.
-      if (isEdgeLive() && url.startsWith("webcam://")) router.push("/camera-mode?start=1");
+      // reads it, so start counting right here.
+      if (isEdgeLive() && url.startsWith("webcam://")) startCounting?.();
     } catch (e: any) { setErr(e.message); }
     finally { setAdding(false); }
   }
@@ -1583,6 +1583,8 @@ export default function CamerasPage() {
             operators were understandably confused why Live mode would advertise
             itself as 'local-only'. Cameras added here still persist, same as
             any Kyro deployment. */}
+
+        {edge && canManage && <CountingCard />}
 
         {error && (edge
           ? <p className="text-xs text-amber-400 mb-3">Couldn't refresh the camera list: {error}</p>

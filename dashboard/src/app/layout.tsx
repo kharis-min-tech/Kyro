@@ -8,6 +8,7 @@ import { ThemeProvider, THEME_INIT_SCRIPT } from "@/lib/theme";
 import { GlobalReviewOverlay } from "@/components/ui/GlobalReviewOverlay";
 import { GlobalSeatAlertOverlay } from "@/components/ui/GlobalSeatAlertOverlay";
 import { NewCameraPrompt } from "@/components/ui/NewCameraPrompt";
+import { CountingProvider } from "@/lib/CountingContext";
 import { ServiceEndedPrompt } from "@/components/ui/AutoServices";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
@@ -62,6 +63,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className={inter.className}>
         <ThemeProvider>
           <CameraProvider>
+            <CountingProvider>
             <ReviewProvider>
               <SeatAlertProvider>
                 <PushRegistrationRefresher />
@@ -79,6 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <ServiceEndedPrompt />
               </SeatAlertProvider>
             </ReviewProvider>
+            </CountingProvider>
           </CameraProvider>
         </ThemeProvider>
       </body>

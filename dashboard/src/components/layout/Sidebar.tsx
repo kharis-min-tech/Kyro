@@ -13,7 +13,7 @@ import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
   Moon, Sun, Menu, X, Hash, Webhook,
-  CircleHelp, Video,
+  CircleHelp,
 } from "lucide-react";
 import { helpUrlFor } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
@@ -44,7 +44,6 @@ const ALL_NAV = [
   { id: "live-cameras",  href: "/live-cameras",  label: "Live Cameras",  Icon: Cctv         },
   { id: "seating",       href: "/seating",       label: "Seat Map",      Icon: Armchair     },
   { id: "cameras",       href: "/cameras",       label: "Cameras",       Icon: Camera       },
-  { id: "camera-mode",   href: "/camera-mode",   label: "Camera Mode",   Icon: Video        },
   { id: "rota",          href: "/rota",          label: "Rota",          Icon: CalendarDays },
   { id: "sessions",      href: "/sessions",      label: "Sessions",      Icon: ClipboardList},
   { id: "analytics",     href: "/analytics",     label: "Analytics",     Icon: BarChart2    },
@@ -182,11 +181,9 @@ export function Sidebar() {
     };
   }, [username, role]);
 
-  // Camera Mode (count with a camera plugged into this computer) isn't a
-  // permission page: admins and operators who can see Cameras get it.
-  const visibleNav = ALL_NAV.filter((item) => item.id === "camera-mode"
-    ? (role === "admin" || role === "operator") && allowedPages.includes("cameras")
-    : allowedPages.includes(item.id as typeof allowedPages[number]));
+  // Counting on this computer no longer has a page of its own: it runs for the
+  // whole of Kyro and is switched on from the Cameras page.
+  const visibleNav = ALL_NAV.filter((item) => allowedPages.includes(item.id as typeof allowedPages[number]));
 
   // Mobile drawer state — sidebar is hidden by default at phone widths and
   // slides in when the top-bar hamburger is tapped. Auto-closes when the

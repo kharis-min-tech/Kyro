@@ -10,7 +10,7 @@ A simple run-through for using Kyro on a service day. Print it, or keep it open 
 
 ## Before doors open
 
-- [ ] **Start the cameras.** On the camera computer, open [Camera Mode](/pages/camera-mode) and press **Start counting** (or it starts by itself if you ticked that box). Using the installed version? It's already running.
+- [ ] **Start the cameras.** On the camera computer, open [Cameras](/pages/cameras) and press **Start counting** under *Counting on this computer* (it starts by itself if it was counting last time). Using the installed version? It's already running.
 - [ ] Open [Live Cameras](/pages/live-cameras). Every camera shows **Live**.
 - [ ] Admins: check **System Status** on [AI Count](/pages/ai-count). All three rows are green.
 - [ ] Start a **session** for each room, named for the service, for example *Sunday Morning Service*. → [Sessions](/pages/sessions)

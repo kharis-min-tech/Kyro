@@ -22,7 +22,7 @@ Counting only runs while that page stays open on that computer. Keep the tab ope
 
 ## In an emergency: Camera Mode (nothing to install)
 
-Full details, with pictures: [Camera Mode](/pages/camera-mode).
+Full details: [Cameras](/pages/cameras).
 
 1. Plug your camera(s) into any computer at church (Windows, Mac or Chromebook).
 2. On that computer, open **kyro.kharischurch.com** in **Chrome** or **Edge**, sign in, and open **Camera Mode** in the menu.
@@ -44,7 +44,7 @@ you only need to open the page.
 
 This is the everyday way: no web page needs to be open, and it
 also runs when nobody is signed in. The command is also on the
-[Camera Mode](/pages/camera-mode#want-the-installed-version) page, with a
+[Setting up cameras](/guides/camera-setup) page, with a
 **Copy** button.
 
 Cameras plug into a **camera computer** at church: any Windows PC, Mac or

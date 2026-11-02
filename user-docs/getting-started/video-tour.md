@@ -23,8 +23,8 @@ A 3-minute walk through Kyro's main features, with a spoken voice-over. <Icon na
 | 1:04 | Manual Count: enter and save a count | [Manual Count](/pages/manual-count) |
 | 1:19 | Approve the final count | [Manual Count](/pages/manual-count#approve-the-final-count-at-end-of-service) |
 | 1:26 | Live Cameras: every room, seats left, the queue outside | [Live Cameras](/pages/live-cameras) |
-| 1:41 | Camera Mode: count with a camera plugged into any computer | [Camera Mode](/pages/camera-mode) |
-| 2:20 | Copy the one-line install for the installed version | [Camera Mode](/pages/camera-mode#want-the-installed-version) |
+| 1:41 | Count with a camera plugged into any computer | [Cameras](/pages/cameras) |
+| 2:20 | Copy the one-line install for the installed version | [Setting up cameras](/guides/camera-setup) |
 | 2:30 | Seat Map: reserve a seat for a guest | [Seat Map](/pages/seat-map) |
 | 2:44 | Notifications: alerts on your phone | [Getting alerts on your phone](/guides/phone-alerts) |
 | 2:53 | Find the right help page from the menu |  |

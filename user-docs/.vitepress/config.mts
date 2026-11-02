@@ -46,7 +46,6 @@ export default defineConfig({
           { text: "Live Cameras", link: "/pages/live-cameras" },
           { text: "Seat Map", link: "/pages/seat-map" },
           { text: "Cameras", link: "/pages/cameras" },
-          { text: "Camera Mode", link: "/pages/camera-mode" },
           { text: "Rota", link: "/pages/rota" },
           { text: "Sessions", link: "/pages/sessions" },
           { text: "Analytics", link: "/pages/analytics" },
