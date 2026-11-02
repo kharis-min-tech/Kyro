@@ -60,6 +60,26 @@ export function CountingCard() {
           </button>
         </div>
 
+        {on && demo && (
+          <div className="flex items-start gap-2 rounded-lg px-3 py-2.5" style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)" }}>
+            <AlertTriangle size={15} className="shrink-0 mt-0.5" style={{ color: "#fbbf24" }} />
+            <p className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
+              <strong>These counts are NOT being saved.</strong> You&apos;re in Demo mode, so the number stays on this computer and
+              never reaches your Analytics or calendar. Sign out and sign in again choosing <strong>Live</strong> to record it.
+            </p>
+          </div>
+        )}
+
+        {on && !demo && sendError && (
+          <div className="flex items-start gap-2 rounded-lg px-3 py-2.5" style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.4)" }}>
+            <AlertTriangle size={15} className="shrink-0 mt-0.5" style={{ color: "#f87171" }} />
+            <p className="text-xs leading-relaxed" style={{ color: "#fca5a5" }}>
+              <strong>These counts are not reaching Kyro.</strong> {sendError}. Kyro keeps trying, but nothing is being saved
+              until this clears.
+            </p>
+          </div>
+        )}
+
         {error && (
           <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "rgba(239,68,68,0.08)" }}>
             <AlertTriangle size={13} className="text-red-400 shrink-0 mt-0.5" />
