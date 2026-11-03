@@ -16,7 +16,7 @@ interface Privacy {
  * after confirming the church's data protection impact assessment and the
  * notices at the entrances (recorded with their name and the time).
  */
-export function FaceMatching() {
+export function FaceMatching({ hasCameraComputer = true }: { hasCameraComputer?: boolean }) {
   const [p, setP] = useState<Privacy | null>(null);
   const [asking, setAsking] = useState(false);
   const [dpia, setDpia] = useState(false);
@@ -38,6 +38,23 @@ export function FaceMatching() {
   }
 
   if (!p) return null;
+  // Face codes are worked out by the installed counter. Counting in a browser
+  // never produces them, so switching this on there does nothing at all.
+  if (!hasCameraComputer) {
+    return (
+      <div className="mb-6">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Face matching across cameras</p>
+        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-3">
+          <ScanFace size={18} className="text-gray-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-gray-400 leading-relaxed">
+            <strong className="text-gray-300">Needs a camera computer.</strong> Face matching is worked out by the installed
+            counter. Counting in a browser only sends the number of people, so this would do nothing. Install the counter on
+            the church computer to use it.
+          </p>
+        </div>
+      </div>
+    );
+  }
   const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
   const twice = (venue as any)?.seen_on_two_cameras ?? 0;
 

@@ -37,12 +37,21 @@ function loadOrt(): Promise<Ort> {
     }
   }
   ortPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = `${ORT_BASE}ort.webgpu.min.js`;
-    s.crossOrigin = "anonymous";
-    s.onload = () => (g.ort ? resolve(g.ort) : reject(new Error("The AI engine didn't load")));
-    s.onerror = () => { ortPromise = null; reject(new Error("Couldn't download the AI engine — check the internet connection")); };
-    document.head.appendChild(s);
+    let attempt = 0;
+    const tryLoad = () => {
+      const s = document.createElement("script");
+      s.src = `${ORT_BASE}ort.webgpu.min.js`;
+      s.crossOrigin = "anonymous";
+      s.onload = () => (g.ort ? resolve(g.ort) : reject(new Error("The AI engine didn't load")));
+      s.onerror = () => {
+        s.remove();
+        if (++attempt < 3) { setTimeout(tryLoad, 1500 * attempt); return; }   // church Wi-Fi drops
+        ortPromise = null;
+        reject(new Error("Couldn't download the AI engine — check the internet connection, then press Start again"));
+      };
+      document.head.appendChild(s);
+    };
+    tryLoad();
   });
   return ortPromise;
 }
@@ -55,8 +64,17 @@ async function fetchModel(name: string, parts: number, onProgress: (pct: number)
     const url = `/models/${name}.part${i}.bin`;
     let res = cache ? await cache.match(url) : undefined;
     if (!res) {
-      const net = await fetch(url);
-      if (!net.ok) throw new Error(`Couldn't download the AI model (${net.status})`);
+      // Church Wi-Fi drops. One blip used to fail the whole start-up with
+      // "Couldn't download the AI model", so try a few times before giving up.
+      let net: Response | null = null;
+      for (let attempt = 0; attempt < 4 && !net; attempt++) {
+        if (attempt) await new Promise((r) => setTimeout(r, 1500 * attempt));
+        try {
+          const got = await fetch(url, { cache: "force-cache" });
+          if (got.ok) net = got;
+        } catch { /* try again */ }
+      }
+      if (!net) throw new Error("Couldn't download the AI model — check the internet connection, then press Start again");
       if (cache) await cache.put(url, net.clone()).catch(() => {});
       res = net;
     }

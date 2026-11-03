@@ -60,6 +60,13 @@ export function CountingCard() {
           </button>
         </div>
 
+        {on && !demo && (
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+            Counting in a browser sends <strong>the number of people</strong>. AI questions, seat-by-seat colours, in/out and
+            face matching are worked out by the installed counter, so they stay empty in this mode.
+          </p>
+        )}
+
         {on && demo && (
           <div className="flex items-start gap-2 rounded-lg px-3 py-2.5" style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.4)" }}>
             <AlertTriangle size={15} className="shrink-0 mt-0.5" style={{ color: "#fbbf24" }} />
