@@ -56,6 +56,7 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
+const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
@@ -589,8 +590,9 @@ export class VenueHub extends DurableObject {
         current, peak: l.peak || 0, entries: l.entries || 0, exits: l.exits || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
-        // Counting in a browser has no in/out: it counts each picture, it doesn't follow people.
-        in_out: c.kind !== "web",
+        // In/out needs the camera to follow people between pictures: a browser
+        // never does it at all, and a slow camera can't do it reliably.
+        in_out: c.kind !== "web" && (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
       };
     });
     const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);
@@ -601,9 +603,12 @@ export class VenueHub extends DurableObject {
     // Someone can't be double-counted more often than the smaller overlapping camera sees people.
     const counts = running.map((z) => z.current || 0).sort((a, b) => b - a);
     twice = Math.min(twice, counts.slice(1).reduce((a, b) => a + b, 0));
+    const trustInOut = zones.some((z) => z.is_running && z.in_out);
     return {
       seen_on_two_cameras: twice,
-      total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"), total_entries: sum("entries"), total_exits: sum("exits"),
+      in_out_available: trustInOut,
+      total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"),
+      total_entries: trustInOut ? sum("entries") : null, total_exits: trustInOut ? sum("exits") : null,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((Math.max(0, sum("current") - twice) / cap) * 1000) / 10 : 0,
       zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
     };

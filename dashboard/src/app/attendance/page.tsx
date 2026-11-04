@@ -820,8 +820,8 @@ export default function AttendancePage() {
         setMetricHistory((m) => ({
           people:    [...m.people.slice(-80),    vt.total_current],
           occupancy: [...m.occupancy.slice(-80), Math.round(vt.venue_occupancy_pct)],
-          entries:   [...m.entries.slice(-80),   vt.total_entries],
-          exits:     [...m.exits.slice(-80),     vt.total_exits],
+          entries:   [...m.entries.slice(-80),   vt.total_entries ?? 0],
+          exits:     [...m.exits.slice(-80),     vt.total_exits ?? 0],
         }));
       } catch (e) {
         if (edge) setEdgeFeedErr(e instanceof Error ? e.message : "Couldn't reach the server");
@@ -1098,9 +1098,8 @@ export default function AttendancePage() {
   const activeMetricHistory = metricHistory[metric] ?? [];
   // In/out needs a camera that follows people between pictures. A camera
   // counting in a browser can't, so say so rather than draw a flat zero.
-  const runningZones = (venueTotal?.zones ?? []).filter((z) => z.is_running);
   const noInOut = edge && (metric === "entries" || metric === "exits")
-    && runningZones.length > 0 && runningZones.every((z) => z.in_out === false);
+    && venueTotal != null && venueTotal.total_entries === null;
   const metricNow = activeMetricHistory[activeMetricHistory.length - 1] ?? 0;
   const chartHistory = isToday && (edge || !inDemoMode())
     ? [...(historicalData?.history ?? []), metricNow]
@@ -1400,9 +1399,11 @@ export default function AttendancePage() {
                 <div className="flex items-start gap-2 rounded-lg px-3 py-2 mb-2"
                   style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
                   <span className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
-                    <strong>In and out isn&apos;t available from a camera counting in a browser.</strong> It counts the people in each
-                    picture rather than following them, so it can&apos;t tell who arrived or left. <strong>People Count</strong> and
-                    <strong> Occupancy</strong> work normally. For in and out, pair a camera computer on the Cameras page.
+                    <strong>In and out isn&apos;t being measured, so Kyro is showing nothing rather than a guess.</strong> Counting
+                    who arrived or left means following each person between pictures, which needs several pictures a second.
+                    A browser doesn&apos;t do it at all, and a camera counting about once a second can&apos;t do it reliably —
+                    one person flickering in and out of view would look like a stream of arrivals.
+                    <strong> People Count</strong> and <strong>Occupancy</strong> are unaffected.
                   </span>
                 </div>
               )}

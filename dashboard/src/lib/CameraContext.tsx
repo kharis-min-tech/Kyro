@@ -278,8 +278,12 @@ export function CameraProvider({ children }: { children: ReactNode }) {
     const created = await camerasApi.create(fields);
     setCameras((prev) => [...prev, created]);
 
-    // Auto-generate and activate a layout for indoor cameras with capacity
-    if (!isQueue && capacity > 0) {
+    // No invented seats. generateSeatsFromCapacity() lays out a tidy grid from
+    // a number, which has nothing to do with where the seats really are — it
+    // showed "4 seats" for a room whose seats Kyro had never seen. Real seats
+    // come from the installed counter watching where people sit, or from the
+    // Seat Editor. Until then the Seat Map honestly shows the room's count.
+    if (!isQueue && capacity > 0 && !isEdgeLive()) {
       seatsApi.autoGenerateLayout(created.camera_id, created.name, capacity)
         .catch(() => {}); // non-fatal — user can draw manually if this fails
     }

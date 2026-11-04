@@ -112,8 +112,9 @@ export interface ZoneLive {
 export interface VenueTotal {
   total_current: number;
   total_peak: number;
-  total_entries: number;
-  total_exits: number;
+  /** null when no camera can follow people reliably — never show a made-up figure. */
+  total_entries: number | null;
+  total_exits: number | null;
   total_capacity: number;
   venue_occupancy_pct: number;
   zones: ZoneLive[];
