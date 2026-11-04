@@ -208,22 +208,11 @@ export function CameraProvider({ children }: { children: ReactNode }) {
       saveLocalAddedCameras(saved);
       setCameras((prev) => [...prev, newCam]);
 
-      // Auto-generate a seat layout so the Seat Map shows this camera right
-      // away — same behaviour the demo path uses.
-      if (!isQueue && capacity > 0) {
-        try {
-          const LAYOUTS_KEY = `kyro_${localStorage.getItem("kyro_mode") ?? "demo"}_layouts`;
-          const { generateSeatsFromCapacity } = await import("@/lib/seatGenerator");
-          const seats = generateSeatsFromCapacity(capacity);
-          const layouts = JSON.parse(localStorage.getItem(LAYOUTS_KEY) ?? "{}");
-          layouts[newCam.camera_id] = {
-            id: Date.now(), camera_id: newCam.camera_id,
-            name: `${fields.name} — auto`, is_active: true,
-            seat_count: seats.length, created_at: new Date().toISOString(), seats,
-          };
-          localStorage.setItem(LAYOUTS_KEY, JSON.stringify(layouts));
-        } catch {}
-      }
+      // No invented seats. This used to lay out a tidy grid of chairs worked
+      // out from the capacity number, which has nothing to do with where the
+      // seats in the room really are — it is why the Seat Map claimed "12
+      // seats" for a room whose seats Kyro had never seen. Real seats come
+      // from Kyro watching where people sit, or from the Seat Editor.
       return;
     }
 

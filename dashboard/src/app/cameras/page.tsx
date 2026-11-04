@@ -60,22 +60,13 @@ const CAMERA_TYPES = [
     urlPlaceholder: "0",
   },
   {
-    id: "ndi",
-    label: "NDI (wireless)",
-    description: "Wireless HDMI → NDI source on the LAN",
+    id: "rtmp",
+    label: "RTMP (wireless)",
+    description: "Wireless transmitter streaming RTMP",
     icon: Radio,
-    urlTemplate: "ndi://",
-    urlHint: "The NDI source name as it appears on the LAN (e.g. CHURCH-TX1 (Camera))",
-    urlPlaceholder: "ndi://CHURCH-TX1 (Camera)",
-  },
-  {
-    id: "srt",
-    label: "SRT / RTMP",
-    description: "Wireless transmitter streaming SRT or RTMP",
-    icon: Radio,
-    urlTemplate: "srt://",
-    urlHint: "Address + port from your transmitter's SRT/RTMP output (e.g. srt://192.168.1.50:9999)",
-    urlPlaceholder: "srt://192.168.1.50:9999",
+    urlTemplate: "rtmp://",
+    urlHint: "Address from your transmitter's RTMP output (e.g. rtmp://192.168.1.50/live/tx1)",
+    urlPlaceholder: "rtmp://192.168.1.50/live/tx1",
   },
   {
     id: "other",
@@ -860,7 +851,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 </div>
               </button>
 
-              <button type="button" onClick={() => { setTransmitterPath("network"); setMode("ip"); setType(CAMERA_TYPES.find((t) => t.id === "ndi") ?? CAMERA_TYPES[0]); setUrl(""); }}
+              <button type="button" onClick={() => { setTransmitterPath("network"); setMode("ip"); setType(CAMERA_TYPES.find((t) => t.id === "rtmp") ?? CAMERA_TYPES[0]); setUrl(""); }}
                 className="text-left rounded-xl p-4 flex items-start gap-3 transition-colors"
                 style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
                 <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
@@ -870,8 +861,12 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-white">Transmitter sends a network stream</p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    NDI, SRT, RTMP, or RTSP over WiFi/ethernet. You'll paste the stream address from
-                    the transmitter's control app.
+                    RTSP, RTMP or MJPEG over Wi-Fi or ethernet. You&apos;ll paste the stream address from
+                    the transmitter&apos;s control app.
+                  </p>
+                  <p className="text-xs mt-1.5" style={{ color: "#fbbf24" }}>
+                    Needs the camera computer installed — a web browser cannot open a network stream,
+                    whoever makes it. NDI isn&apos;t supported at all; use the USB route for that.
                   </p>
                 </div>
               </button>

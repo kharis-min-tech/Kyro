@@ -1003,7 +1003,13 @@ export class VenueHub extends DurableObject {
     const raw = clean(body.url, 500);
     let u;
     try { u = new URL(raw); } catch { return json({ error: "That doesn't look like a camera address (it usually starts with rtsp:// or http://)" }, 400); }
-    if (!["rtsp:", "rtsps:", "http:", "https:"].includes(u.protocol)) return json({ error: "Camera addresses start with rtsp://, http:// or https://" }, 400);
+    // What the camera computer can actually open: its OpenCV is built with
+    // FFmpeg, which handles these. Not NDI (needs the NDI SDK) and not SRT
+    // (needs libsrt, which the installed wheel doesn't carry) — refusing them
+    // here with a reason beats accepting an address that could never work.
+    if (!["rtsp:", "rtsps:", "http:", "https:", "rtmp:", "rtmps:"].includes(u.protocol)) {
+      return json({ error: `Kyro can't open a ${u.protocol.replace(":", "")} stream. It reads rtsp://, rtmp://, http:// and https:// (MJPEG). For an NDI or SRT transmitter, send the receiver's HDMI into a USB capture card instead — that works with no address at all.` }, 400);
+    }
     return json({ camera_id: await this.createNetworkCamera(device_id, raw, body) });
   }
 
