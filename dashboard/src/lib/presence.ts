@@ -15,7 +15,7 @@
  * said hello.
  */
 import { useEffect, useState } from "react";
-import { isEdgeLive, edgeFetch, edgeTokenPayload } from "@/lib/edgeAuth";
+import { isEdgeLive, edgeFetch, edgeToken, edgeTokenPayload } from "@/lib/edgeAuth";
 
 /** How often each browser says "still here". The server allows 90s. */
 const BEAT_MS = 30_000;
@@ -60,10 +60,16 @@ export function usePresenceHeartbeat() {
     let stopped = false;
     const beat = () => {
       if (stopped || document.visibilityState === "hidden") return;
-      if (!edgeTokenPayload()) return;        // signed out — nothing to report
-      edgeFetch("/api/live/presence", {
+      const token = edgeToken();
+      if (!token || !edgeTokenPayload()) return;   // signed out — nothing to report
+      // Deliberately NOT edgeFetch: that treats any refusal as "your session
+      // ended" and sends the browser to the sign-in page. A background
+      // heartbeat must never be able to sign anyone out.
+      fetch("/api/live/presence", {
         method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ device: deviceId(), kind: deviceKind() }),
+        cache: "no-store",
       }).catch(() => {});                      // never let this bother anyone
     };
     beat();

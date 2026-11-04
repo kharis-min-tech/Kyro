@@ -20,6 +20,7 @@
  */
 
 import { decodeFaces } from "@/lib/faceDetect";
+import { modelBytes } from "@/lib/modelCache";
 import { alignedFaceTensor, FACE_SIZE } from "@/lib/faceAlign";
 
 /** Two codes this alike (or more) are the same person. Chosen on those 600 pairs. */
@@ -58,7 +59,9 @@ function headArea(box: [number, number, number, number], w: number, h: number) {
 
 export async function loadFaceEngine(ort: Ort, onProgress?: (step: string) => void): Promise<FaceEngine> {
   onProgress?.("Downloading the face models (first time only)…");
-  const get = async (name: string) => new Uint8Array(await (await fetch(`/models/${name}`)).arrayBuffer());
+  // Kept in the browser's store like the counting AI, so this is a one-off
+  // download and not 10 MB on every page load.
+  const get = (name: string) => modelBytes(`/models/${name}`);
   const [findBytes, codeBytes] = await Promise.all([get("face-find-v1.bin"), get("face-code-v1.bin")]);
   onProgress?.("Starting face matching…");
   const find = await ort.InferenceSession.create(findBytes, { executionProviders: ["wasm"] });

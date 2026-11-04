@@ -1,0 +1,6 @@
+# The AI files never change — a new model gets a new name — so let the browser
+# and Cloudflare keep them for good. Without this they were sent with
+# "max-age=0, must-revalidate", so every page load checked all 70 MB with the
+# server before using them.
+/models/*
+  Cache-Control: public, max-age=31536000, immutable

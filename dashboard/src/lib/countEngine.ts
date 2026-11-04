@@ -5,6 +5,7 @@
  * can also run on the page itself if the browser has no workers.
  */
 import { detectPeople, type Person, type Pixels, type RunModel } from "@/lib/peopleDetector";
+import { modelResponse, forgetOldModels } from "@/lib/modelCache";
 
 export const ORT_VERSION = "1.30.0";
 const ORT_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist/`;
@@ -58,26 +59,9 @@ export function loadOrt(): Promise<Ort> {
 
 /** Downloads the model once and keeps it in the browser, so later visits start in seconds. */
 async function fetchModel(name: string, parts: number, onProgress: (pct: number) => void): Promise<Uint8Array> {
-  const cache = "caches" in globalThis ? await caches.open("kyro-models").catch(() => null) : null;
   const chunks: Uint8Array[] = [];
   for (let i = 0; i < parts; i++) {
-    const url = `/models/${name}.part${i}.bin`;
-    let res = cache ? await cache.match(url) : undefined;
-    if (!res) {
-      // Church Wi-Fi drops. One blip used to fail the whole start-up with
-      // "Couldn't download the AI model", so try a few times before giving up.
-      let net: Response | null = null;
-      for (let attempt = 0; attempt < 4 && !net; attempt++) {
-        if (attempt) await new Promise((r) => setTimeout(r, 1500 * attempt));
-        try {
-          const got = await fetch(url, { cache: "force-cache" });
-          if (got.ok) net = got;
-        } catch { /* try again */ }
-      }
-      if (!net) throw new Error("Couldn't download the AI model — check the internet connection, then press Start again");
-      if (cache) await cache.put(url, net.clone()).catch(() => {});
-      res = net;
-    }
+    const res = await modelResponse(`/models/${name}.part${i}.bin`);
     const total = Number(res.headers.get("content-length")) || 0;
     const reader = res.body!.getReader();
     const got: Uint8Array[] = [];
@@ -98,8 +82,11 @@ async function fetchModel(name: string, parts: number, onProgress: (pct: number)
   const model = new Uint8Array(size);
   let o = 0;
   for (const c of chunks) { model.set(c, o); o += c.length; }
-  // Old model versions are no longer needed.
-  if (cache) for (const req of await cache.keys()) if (!req.url.includes(name)) cache.delete(req).catch(() => {});
+  // Files from an older version of Kyro can go. This must never throw away a
+  // file the current Kyro uses: starting the light AI then upgrading to the
+  // accurate one used to delete each other, so every page load downloaded
+  // 60 MB again and Kyro sat there "loading" every time.
+  forgetOldModels().catch(() => {});
   return model;
 }
 
