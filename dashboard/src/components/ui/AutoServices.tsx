@@ -16,7 +16,8 @@ interface Services { live: Service | null; services: Service[]; face_matching_no
 export const servicesApi = {
   list: () => edgeFetch<Services>("/api/live/services"),
   keep: (id: string) => edgeFetch<Service>(`/api/live/services/${encodeURIComponent(id)}/keep`, { method: "POST" }),
-  remove: (id: string) => edgeFetch<{ deleted: boolean }>(`/api/live/services/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  remove: (id: string, alsoCounts = false) =>
+    edgeFetch<{ deleted: boolean }>(`/api/live/services/${encodeURIComponent(id)}${alsoCounts ? "?counts=1" : ""}`, { method: "DELETE" }),
   end: (id: string) => edgeFetch<{ ended: boolean }>(`/api/live/services/${encodeURIComponent(id)}/end`, { method: "POST" }),
   rename: (id: string, name: string) => edgeFetch<Service>(`/api/live/services/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) }),
 };
@@ -36,6 +37,7 @@ export function AutoServices() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [alsoCounts, setAlsoCounts] = useState(false);
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const { venue } = useEdgeVenue(true, 5000);
 
@@ -154,18 +156,38 @@ export function AutoServices() {
                 <button onClick={() => act(s.id, () => servicesApi.keep(s.id))} disabled={busy === s.id}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50"><Check size={12} /> Keep</button>
               )}
-              {admin && (confirmDelete === s.id ? (
-                <span className="flex items-center gap-1.5">
-                  <span className="text-xs text-red-300">Delete for good?</span>
-                  <button onClick={() => act(s.id, () => servicesApi.remove(s.id))} disabled={busy === s.id}
-                    className="px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">
-                    {busy === s.id ? <Loader2 size={12} className="animate-spin" /> : "Delete"}</button>
-                  <button onClick={() => setConfirmDelete(null)} className="text-xs text-gray-400">Cancel</button>
-                </span>
-              ) : (
-                <button onClick={() => setConfirmDelete(s.id)} className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs text-red-300" style={{ background: "var(--bg-hover)" }}><Trash2 size={12} /> Delete</button>
-              ))}
+              {admin && confirmDelete !== s.id && (
+                <button onClick={() => { setConfirmDelete(s.id); setAlsoCounts(false); }}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs text-red-300" style={{ background: "var(--bg-hover)" }}><Trash2 size={12} /> Delete</button>
+              )}
             </div>
+            {admin && confirmDelete === s.id && (
+              <div className="rounded-xl px-3 py-2.5 flex flex-col gap-2"
+                style={{ background: "rgba(185,28,28,0.1)", border: "1px solid rgba(185,28,28,0.4)" }}>
+                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Delete &quot;{s.name}&quot;?</p>
+                <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+                  This removes the service from the list. <strong>The day&apos;s attendance figures stay</strong> on Analytics and
+                  the calendar unless you tick below.
+                </p>
+                <label className="flex items-start gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
+                  <input type="checkbox" checked={alsoCounts} onChange={(e) => setAlsoCounts(e.target.checked)} className="mt-0.5" />
+                  <span>
+                    Also delete that day&apos;s counts ({time(s.started_at)}–{time(s.ended_at)}). The attendance figures,
+                    arrivals and departures for that stretch go from Analytics and the calendar too. You can bring them back
+                    from <strong>Recently deleted</strong> on Analytics for 30 days.
+                  </span>
+                </label>
+                <div className="flex gap-2">
+                  <button onClick={() => act(s.id, () => servicesApi.remove(s.id, alsoCounts))} disabled={busy === s.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">
+                    {busy === s.id ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                    {alsoCounts ? "Delete service and counts" : "Delete service only"}
+                  </button>
+                  <button onClick={() => setConfirmDelete(null)}
+                    className="px-3 py-1.5 rounded-lg text-xs" style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>Cancel</button>
+                </div>
+              </div>
+            )}
           </div>
         ))}
       </div>

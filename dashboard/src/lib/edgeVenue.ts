@@ -85,6 +85,8 @@ export const edgeVenueApi = {
   deleteDay: (date: string, tz: string) =>
     edgeFetch<{ deleted: boolean; date: string; attendance: number }>(`/api/live/day/${enc(date)}?tz=${enc(tz)}`, { method: "DELETE" }),
   deletedDays: () => edgeFetch<DeletedDay[]>("/api/live/deleted-days"),
+  restoreDay: (date: string) =>
+    edgeFetch<{ restored: boolean; date: string; attendance: number }>(`/api/live/day/${enc(date)}/restore`, { method: "POST" }),
   seatStates: (cameraId: string) =>
     edgeFetch<{ layout: { id: number; name: string } | null; seats: import("@/types").SeatState[]; updated_at: string | null }>(`/api/live/seat-states/${enc(cameraId)}`),
   reserveSeats: (cameraId: string, seatIds: string[], reserved: boolean, reservedFor?: string | null) =>

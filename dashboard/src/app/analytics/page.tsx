@@ -13,7 +13,7 @@ import { useCameras } from "@/hooks/useCameras";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
-import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2 } from "lucide-react";
+import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2, RotateCcw } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { AttendancePoint, AnalyticsSummary, HourlyBucket } from "@/types";
 
@@ -162,30 +162,58 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
 }
 
 // ─── Arrival chart ────────────────────────────────────────────────────────────
-function ArrivalChart({ data }: { data: HourlyBucket[] }) {
+function ArrivalChart({ data, movementDays }: { data: HourlyBucket[]; movementDays?: number }) {
   if (!data.length) return null;
-  const max  = Math.max(...data.map((d) => d.count), 1);
-  const peak = data.reduce((a, b) => a.count > b.count ? a : b);
+  const anyMovement = data.some((d) => d.count > 0 || (d.exits ?? 0) > 0);
+  const max  = Math.max(...data.map((d) => Math.max(d.count, d.exits ?? 0)), 1);
+  const peak = data.reduce((a, b) => (a.count > b.count ? a : b));
   return (
     <div className="rounded-2xl p-5" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center justify-between mb-4">
-        <div><p className="text-sm font-semibold text-white">Arrival pattern</p>
-          <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Average arrivals by hour</p></div>
-        <div className="text-xs" style={{ color: "#6b7280" }}>Peak: <span className="text-white font-semibold">{peak.hour}:00</span></div>
+      <div className="flex items-start justify-between mb-4 gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-white">Arrivals and departures</p>
+          <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>By hour, averaged over the days Kyro could follow people</p>
+          <div className="flex items-center gap-3 mt-1.5">
+            <span className="flex items-center gap-1 text-[10px]" style={{ color: "#6b7280" }}>
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "#818cf8" }} /> Arrived
+            </span>
+            <span className="flex items-center gap-1 text-[10px]" style={{ color: "#6b7280" }}>
+              <span className="inline-block w-2.5 h-2.5 rounded-sm" style={{ background: "#f59e0b" }} /> Left
+            </span>
+          </div>
+        </div>
+        <div className="text-xs shrink-0" style={{ color: "#6b7280" }}>Busiest: <span className="text-white font-semibold">{peak.hour}:00</span></div>
       </div>
-      <div className="flex items-end gap-px" style={{ height: 80 }}>
-        {data.map((b) => {
-          const h = Math.max((b.count/max)*100, b.count > 0 ? 4 : 0);
-          return (
-            <div key={b.hour} className="flex-1 h-full flex flex-col items-center justify-end" title={`${b.hour}:00 — ${b.count} arrivals`}>
-              <div className="w-full rounded-sm" style={{ height:`${h}%`, background: b.count===max?"#818cf8":b.count>max*0.2?"#4338ca":"var(--border-subtle)" }}/>
-            </div>
-          );
-        })}
-      </div>
-      <div className="flex justify-between mt-2">
-        {[0,4,8,12,16,20].map((h) => <span key={h} className="text-[9px]" style={{ color:"#4b5563" }}>{h}h</span>)}
-      </div>
+      {!anyMovement ? (
+        <p className="text-xs leading-relaxed py-4" style={{ color: "#6b7280" }}>
+          No movement Kyro can stand behind yet. Before the tracking fix it read the AI losing sight of someone as them leaving
+          and arriving again, so those days are left out rather than shown as fact. The attendance figures for them are unaffected.
+        </p>
+      ) : (
+        <>
+          <div className="flex items-end gap-px" style={{ height: 80 }}>
+            {data.map((b) => {
+              const inH = Math.max((b.count / max) * 100, b.count > 0 ? 4 : 0);
+              const outH = Math.max(((b.exits ?? 0) / max) * 100, (b.exits ?? 0) > 0 ? 4 : 0);
+              return (
+                <div key={b.hour} className="flex-1 h-full flex items-end justify-center gap-px"
+                  title={`${b.hour}:00 — ${b.count} arrived, ${b.exits ?? 0} left`}>
+                  <div className="w-1/2 rounded-sm" style={{ height: `${inH}%`, background: b.count ? "#818cf8" : "var(--border-subtle)" }} />
+                  <div className="w-1/2 rounded-sm" style={{ height: `${outH}%`, background: (b.exits ?? 0) ? "#f59e0b" : "var(--border-subtle)" }} />
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex justify-between mt-2">
+            {[0,4,8,12,16,20].map((h) => <span key={h} className="text-[9px]" style={{ color:"#4b5563" }}>{h}h</span>)}
+          </div>
+          {movementDays !== undefined && (
+            <p className="text-[10px] mt-2" style={{ color: "#4b5563" }}>
+              From {movementDays} {movementDays === 1 ? "day" : "days"} Kyro could follow people. Earlier days are left out.
+            </p>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -307,15 +335,27 @@ function RecentSessions({ data, onSelect, selectedTs, canDelete, onDeleted }: {
 }
 
 /** What was deleted, so it is never invisible. Cleared automatically after 30 days. */
-function DeletedServices({ reload }: { reload: number }) {
+function DeletedServices({ reload, onRestored }: { reload: number; onRestored: () => void }) {
   const [days, setDays] = useState<DeletedDay[] | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   useEffect(() => { edgeVenueApi.deletedDays().then(setDays).catch(() => setDays([])); }, [reload]);
+
+  async function restore(date: string) {
+    setBusy(date); setErr(null);
+    try { await edgeVenueApi.restoreDay(date); onRestored(); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't bring that day back"); }
+    setBusy(null);
+  }
+
   if (!days || days.length === 0) return null;
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
       <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <p className="text-sm font-semibold text-white">Recently deleted</p>
-        <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Removed for good after 30 days</p>
+        <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>
+          Still here — bring one back any time within 30 days, after which it goes for good
+        </p>
       </div>
       <div className="flex flex-col">
         {days.map((d, i) => (
@@ -330,8 +370,13 @@ function DeletedServices({ reload }: { reload: number }) {
                 {new Date(Date.parse(d.deleted_at) + 30 * 86400000).toLocaleDateString([], { day: "numeric", month: "short" })}
               </p>
             </div>
+            <button onClick={() => restore(d.date)} disabled={busy === d.date}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+              <RotateCcw size={12} /> {busy === d.date ? "Bringing back…" : "Bring back"}
+            </button>
           </div>
         ))}
+        {err && <p className="text-xs text-red-400 px-5 py-2">{err}</p>}
       </div>
     </div>
   );
@@ -553,13 +598,15 @@ export default function AnalyticsPage() {
             )}
             <TrendChart data={filtered}/>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <ArrivalChart data={arrival}/>
+              <ArrivalChart data={arrival} movementDays={(summary as { movement_days?: number } | null)?.movement_days}/>
               <WeeklyBreakdown data={filtered}/>
             </div>
             <RecentSessions data={filtered} onSelect={setSelectedDay} selectedTs={selectedDay?.timestamp}
               canDelete={edge && role === "admin"}
               onDeleted={() => { setDeletedTick((n) => n + 1); loadData(); }} />
-            {edge && role === "admin" && <DeletedServices reload={deletedTick} />}
+            {edge && role === "admin" && (
+              <DeletedServices reload={deletedTick} onRestored={() => { setDeletedTick((n) => n + 1); loadData(); }} />
+            )}
           </>}
         </div>
       </main>

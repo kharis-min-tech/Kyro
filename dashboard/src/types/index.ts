@@ -177,8 +177,12 @@ export interface HeatmapData {
 
 export interface HourlyBucket {
   hour: number;
+  /** People who arrived in this hour. */
   count: number;
   avg_count: number;
+  /** People who left in this hour. Absent on an older deployment. */
+  exits?: number;
+  avg_exits?: number;
 }
 
 export interface AnalyticsSummary {

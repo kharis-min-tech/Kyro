@@ -56,7 +56,17 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
-const DELETED_KEPT_DAYS = 30;     // how long a record of what was deleted is kept
+const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
+/**
+ * In/out recorded before this moment can't be trusted and is never charted.
+ *
+ * Until the tracking fix went live (commit 89292f9, 4 Nov 2026 18:33 UTC) a
+ * person merely flickering out of the AI's view was read as leaving and
+ * arriving again — one person sitting still produced ten arrivals. The rows are
+ * kept, because the people counts in them are fine; only their arrivals and
+ * departures are withheld.
+ */
+const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-04T18:33:54Z");
 const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
@@ -130,6 +140,9 @@ export class VenueHub extends DurableObject {
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
       );
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
+      // Deleting a day marks its rows instead of removing them, so it can be
+      // undone. They are only really gone after DELETED_KEPT_DAYS.
+      try { ctx.storage.sql.exec("ALTER TABLE history ADD COLUMN deleted_at INTEGER"); } catch { /* already there */ }
     });
   }
 
@@ -249,6 +262,8 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/privacy" && request.method === "PUT") return this.setPrivacy(request, user);
       const day = p.match(/^\/api\/live\/day\/(\d{4}-\d{2}-\d{2})$/);
       if (day && request.method === "DELETE") return this.deleteDay(day[1], url.searchParams.get("tz") || "UTC", user);
+      const undo = p.match(/^\/api\/live\/day\/(\d{4}-\d{2}-\d{2})\/restore$/);
+      if (undo && request.method === "POST") return this.restoreDay(undo[1], user);
       if (p === "/api/live/counting" && request.method === "PUT") return this.setCounting(request);
       if (p === "/api/live/find-cameras" && request.method === "POST") return this.findCameras();
       if (p === "/api/live/find-cameras" && request.method === "GET") return json(await this.foundCameras());
@@ -400,7 +415,9 @@ export class VenueHub extends DurableObject {
       if (now - (this.lastSample.get(camera_id) ?? 0) >= SAMPLE_EVERY_MS) {
         this.lastSample.set(camera_id, now);
         const l = live[camera_id];
-        this.ctx.storage.sql.exec("INSERT INTO history VALUES (?, ?, ?, ?, ?, ?)",
+        // Columns named explicitly: the table gained deleted_at, and an unnamed
+        // INSERT then fails — which would stop every camera being recorded.
+        this.ctx.storage.sql.exec("INSERT INTO history (ts, camera_id, current, entries, exits, capacity) VALUES (?, ?, ?, ?, ?, ?)",
           now, camera_id, l.current, l.entries, l.exits, cams[camera_id].zone_capacity || 0);
       }
     }
@@ -630,16 +647,22 @@ export class VenueHub extends DurableObject {
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000;
     const end = Date.parse(`${date}T00:00:00Z`) + 38 * 3600_000;
     const rows = camera
-      ? this.ctx.storage.sql.exec("SELECT * FROM history WHERE camera_id = ? AND ts >= ? AND ts < ? ORDER BY ts", camera, start, end).toArray()
-      : this.ctx.storage.sql.exec("SELECT * FROM history WHERE ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
+      ? this.ctx.storage.sql.exec("SELECT * FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? AND ts < ? ORDER BY ts", camera, start, end).toArray()
+      : this.ctx.storage.sql.exec("SELECT * FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
     const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" });
     return rows
       .filter((r) => fmt.format(new Date(r.ts)) === date)
-      .map((r) => ({
-        camera_id: r.camera_id, timestamp: new Date(r.ts).toISOString(), attendance: r.current,
-        total_entries: r.entries, total_exits: r.exits,
-        occupancy_pct: r.capacity ? Math.round((r.current / r.capacity) * 1000) / 10 : 0,
-      }));
+      .map((r) => {
+        const trusted = r.ts >= IN_OUT_TRUSTED_FROM;
+        return {
+          camera_id: r.camera_id, timestamp: new Date(r.ts).toISOString(), attendance: r.current,
+          // Kept in the database, withheld here: before the fix these were
+          // counting flicker rather than people (see IN_OUT_TRUSTED_FROM).
+          total_entries: trusted ? r.entries : null, total_exits: trusted ? r.exits : null,
+          in_out_known: trusted,
+          occupancy_pct: r.capacity ? Math.round((r.current / r.capacity) * 1000) / 10 : 0,
+        };
+      });
   }
 
   /**
@@ -682,21 +705,39 @@ export class VenueHub extends DurableObject {
     const log = await this.get("deleted_days", []);
     const cutoff = Date.now() - DELETED_KEPT_DAYS * 86400_000;
     const keep = log.filter((d) => Date.parse(d.deleted_at) > cutoff);
-    if (keep.length !== log.length) await this.ctx.storage.put("deleted_days", keep);
+    if (keep.length !== log.length) {
+      // Past bringing back: now the rows really go.
+      this.ctx.storage.sql.exec("DELETE FROM history WHERE deleted_at IS NOT NULL AND deleted_at < ?", cutoff);
+      await this.ctx.storage.put("deleted_days", keep);
+    }
     return keep;
   }
 
-  /** Removes every count recorded on one local day. The counts themselves go for good. */
+  /** Brings a deleted day back, if it hasn't yet been cleared for good. */
+  async restoreDay(date, user) {
+    const log = await this.deletedDays();
+    const entry = log.find((d) => d.date === date);
+    if (!entry) return json({ error: "That day isn't in the recently deleted list — it may have been cleared for good" }, 404);
+    this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", entry.from, entry.to);
+    await this.ctx.storage.put("deleted_days", log.filter((d) => d !== entry));
+    const back = await this.get("restored_days", []);
+    back.unshift({ date, restored_by: clean(user, 60) || "an administrator", restored_at: new Date().toISOString() });
+    await this.ctx.storage.put("restored_days", back.slice(0, 100));
+    this.lastSample.clear();
+    return json({ restored: true, date, attendance: entry.attendance });
+  }
+
+  /** Marks every count recorded on one local day as deleted. Undoable for 30 days. */
   async deleteDay(date, tz, user) {
     const fmt = this.dateFmt(tz);
     // A local day can start up to 14 h either side of the UTC date.
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
-    const rows = this.ctx.storage.sql.exec("SELECT ts, current FROM history WHERE ts >= ? AND ts < ?", start, end).toArray();
+    const rows = this.ctx.storage.sql.exec("SELECT ts, current FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ?", start, end).toArray();
     const mine = rows.filter((r) => fmt.format(new Date(r.ts)) === date);
     if (!mine.length) return json({ error: "Nothing recorded on that day" }, 404);
     const from = Math.min(...mine.map((r) => r.ts)), to = Math.max(...mine.map((r) => r.ts));
     const peak = Math.max(...mine.map((r) => r.current || 0));
-    this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", from, to);
+    this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), from, to);
     // The cameras' running totals for that day go too, or Analytics shows the day
     // again straight away from the live figures. Counting carries on; if a camera
     // is still running, the day simply starts recording afresh from now.
@@ -715,7 +756,7 @@ export class VenueHub extends DurableObject {
     if (left.length !== services.length) await this.ctx.storage.put("services", left);
     const log = await this.deletedDays();
     log.unshift({ date, attendance: peak, rows: mine.length, services_removed: services.length - left.length,
-      deleted_by: clean(user, 60) || "an administrator", deleted_at: new Date().toISOString() });
+      from, to, deleted_by: clean(user, 60) || "an administrator", deleted_at: new Date().toISOString() });
     await this.ctx.storage.put("deleted_days", log.slice(0, 200));
     return json({ deleted: true, date, attendance: peak });
   }
@@ -728,7 +769,7 @@ export class VenueHub extends DurableObject {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
     const fmt = this.dateFmt(tz);
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
-    const rows = this.ctx.storage.sql.exec("SELECT camera_id, ts, current FROM history WHERE ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
+    const rows = this.ctx.storage.sql.exec("SELECT camera_id, ts, current FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
     const cams = await this.get("cameras", {});
     const counts = x => cams[x] && !cams[x].hidden && cams[x].location !== "queue";
     const STALE = 3 * 60_000;      // a camera that stopped reporting no longer counts
@@ -771,8 +812,8 @@ export class VenueHub extends DurableObject {
     const camera = url.searchParams.get("camera");
     const since = Date.now() - days * 86400_000;
     const rows = camera
-      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
-      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE ts >= ? ORDER BY ts", since).toArray();
+      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
+      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts", since).toArray();
     // History is saved once a minute; add each camera's count right now so today is up to date.
     const live = await this.get("live", {});
     const cams = await this.get("cameras", {});
@@ -789,6 +830,11 @@ export class VenueHub extends DurableObject {
     const STALE = 3 * 60_000;  // a camera that stopped reporting no longer counts towards the total
     const byDay = new Map();   // date → { peak, capacity, at }
     const arrivals = new Array(24).fill(0);
+    const departures = new Array(24).fill(0);
+    // Movement is read from the venue total rising and falling. Before the
+    // tracking fix the count flickered, so those rises and falls were not
+    // people coming and going — those days are left out rather than charted.
+    let movementDays = 0, lastMovementDay = "";
     let day = "", last = new Map(), prevTotal = 0;
     for (const r of rows) {
       const d = fmt.format(new Date(r.ts));
@@ -799,7 +845,12 @@ export class VenueHub extends DurableObject {
         if (r.ts - v.ts > STALE) { last.delete(k); continue; }
         total += v.current; cap += v.capacity;
       }
-      if (total > prevTotal) arrivals[Number(hourFmt.format(new Date(r.ts))) % 24] += total - prevTotal;
+      if (r.ts >= IN_OUT_TRUSTED_FROM) {
+        const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
+        if (total > prevTotal) arrivals[hour] += total - prevTotal;
+        else if (total < prevTotal) departures[hour] += prevTotal - total;
+        if (d !== lastMovementDay) { lastMovementDay = d; movementDays++; }
+      }
       prevTotal = total;
       const cur = byDay.get(d);
       if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts });
@@ -810,8 +861,14 @@ export class VenueHub extends DurableObject {
       occupancy_pct: v.capacity ? Math.round((v.peak / v.capacity) * 1000) / 10 : 0,
     }));
     const n = history.length;
-    const arrival = arrivals.map((count, hour) => ({ hour, count, avg_count: n ? Math.round((count / n) * 10) / 10 : 0 }));
+    const m = movementDays || 1;
+    const arrival = arrivals.map((count, hour) => ({
+      hour, count, avg_count: Math.round((count / m) * 10) / 10,
+      exits: departures[hour], avg_exits: Math.round((departures[hour] / m) * 10) / 10,
+    }));
     const summary = {
+      // How many of these days have movement Kyro can stand behind.
+      movement_days: movementDays, movement_known_from: new Date(IN_OUT_TRUSTED_FROM).toISOString(),
       camera_id: camera || "all", total_sessions: n,
       all_time_peak: n ? Math.max(...history.map((h) => h.attendance)) : 0,
       avg_attendance: n ? Math.round(history.reduce((a, h) => a + h.attendance, 0) / n) : 0,
@@ -1029,7 +1086,7 @@ export class VenueHub extends DurableObject {
 
   async finishService(live, endedMs) {
     const started = Date.parse(live.started_at);
-    const rows = this.ctx.storage.sql.exec("SELECT ts, camera_id, current, entries, exits FROM history WHERE ts >= ? AND ts <= ? ORDER BY ts", started, endedMs).toArray();
+    const rows = this.ctx.storage.sql.exec("SELECT ts, camera_id, current, entries, exits FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts <= ? ORDER BY ts", started, endedMs).toArray();
     // Average of the venue total over the service's minutes.
     const byMin = new Map();
     for (const r of rows) { const m = Math.floor(r.ts / 60000); const o = byMin.get(m) ?? new Map(); o.set(r.camera_id, r.current || 0); byMin.set(m, o); }
@@ -1086,7 +1143,7 @@ export class VenueHub extends DurableObject {
     const list = await this.get("services", []);
     const s = list.find((x) => x.id === id);
     if (!s) return json({ error: "No such service" }, 404);
-    if (alsoCounts) this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", Date.parse(s.started_at), Date.parse(s.ended_at));
+    if (alsoCounts) this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), Date.parse(s.started_at), Date.parse(s.ended_at));
     await this.ctx.storage.put("services", list.filter((x) => x.id !== id));
     const log = await this.get("deleted_services", []);
     log.unshift({ name: s.name, started_at: s.started_at, ended_at: s.ended_at, peak: s.peak,
