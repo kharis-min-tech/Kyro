@@ -149,23 +149,65 @@ async function startModel(ort: Ort, kind: "accurate" | "light", useGpu: boolean,
  */
 const MAX_ACCURATE_PASS_S = 0.6;
 
-export async function startEngine(onProgress: (pct: number, step: string) => void): Promise<LocalEngine> {
+/**
+ * Gets counting as fast as possible, then improves if the computer can take it.
+ *
+ * It used to download the accurate AI (40 MB), warm it up, decide the computer
+ * was too slow for it, and only then download the lighter one (18 MB) — 58 MB
+ * and about 25 seconds before the first count. Now the light AI starts first
+ * (about half a second once downloaded) so counting begins straight away, and
+ * the accurate one is tried quietly in the background. If it turns out fast
+ * enough it takes over; the engine object is swapped in place, so whatever is
+ * counting just starts using it.
+ *
+ * `prefer` is what this computer settled on last time, so it never pays for
+ * that experiment twice. `onSettled` reports what it chose, to remember.
+ */
+export async function startEngine(
+  onProgress: (pct: number, step: string) => void,
+  prefer?: "accurate" | "light",
+  onSettled?: (kind: "accurate" | "light") => void,
+): Promise<LocalEngine> {
   onProgress(0, "Loading the AI engine…");
   const ort = await loadOrt();
   ort.env.wasm.wasmPaths = ORT_BASE;
   const gpu = await hasRealGpu();
-  if (gpu) {
+
+  // This computer already proved it can run the accurate AI: go straight there.
+  if (prefer === "accurate" && gpu) {
     try {
       const a = await startModel(ort, "accurate", true, onProgress);
-      if (a.seconds <= MAX_ACCURATE_PASS_S) {
-        onProgress(100, "Ready");
-        return { run: a.run, tiles: a.m.tiles, size: a.m.size, kind: "accurate", backend: "graphics chip" };
-      }
-    } catch { /* fall through to the lighter AI */ }
+      onProgress(100, "Ready");
+      onSettled?.("accurate");
+      return { run: a.run, tiles: a.m.tiles, size: a.m.size, kind: "accurate", backend: "graphics chip" };
+    } catch { /* fall back to the light one below */ }
   }
+
   const l = await startModel(ort, "light", gpu, onProgress);
   onProgress(100, "Ready");
-  return { run: l.run, tiles: l.m.tiles, size: l.m.size, kind: "light", backend: gpu ? "graphics chip" : "processor" };
+  const engine: LocalEngine = {
+    run: l.run, tiles: l.m.tiles, size: l.m.size, kind: "light", backend: gpu ? "graphics chip" : "processor",
+  };
+
+  // Counting has begun. Now see, without holding anything up, whether this
+  // computer is quick enough for the accurate AI.
+  if (gpu && prefer !== "light") {
+    (async () => {
+      try {
+        const a = await startModel(ort, "accurate", true, () => {});
+        if (a.seconds <= MAX_ACCURATE_PASS_S) {
+          engine.run = a.run; engine.tiles = a.m.tiles; engine.size = a.m.size;
+          engine.kind = "accurate"; engine.backend = "graphics chip";
+          onSettled?.("accurate");
+        } else {
+          onSettled?.("light");
+        }
+      } catch { onSettled?.("light"); }
+    })();
+  } else if (prefer !== "light") {
+    onSettled?.("light");
+  }
+  return engine;
 }
 
 /** `tiles` overrides the engine's own choice — 1 means the whole picture only,

@@ -13,7 +13,11 @@ ctx.onmessage = async (ev: MessageEvent) => {
   const m = ev.data;
   if (m.type === "load") {
     try {
-      engine = await startEngine((pct, step) => ctx.postMessage({ type: "progress", pct, step }));
+      engine = await startEngine(
+        (pct, step) => ctx.postMessage({ type: "progress", pct, step }),
+        m.prefer,
+        (kind) => ctx.postMessage({ type: "settled", kind }),
+      );
       ctx.postMessage({ type: "ready", kind: engine.kind, backend: engine.backend });
     } catch (e) {
       ctx.postMessage({ type: "load-error", message: e instanceof Error ? e.message : String(e) });

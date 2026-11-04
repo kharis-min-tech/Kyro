@@ -278,13 +278,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         probe.getTracks().forEach((t) => t.stop());
       }
+      // Open the cameras while the AI loads, not after it.
+      const cameras = syncCameras();
       if (!engine.current) {
         engine.current = await loadEngine((p, s) => { setProgress(Math.round(p)); setStep(s); });
         setEngineInfo(engine.current.kind === "accurate"
           ? "Most accurate AI, using this computer's graphics chip"
-          : "Lighter AI — this computer's graphics are too slow for the most accurate one");
+          : "Lighter AI — quick to start; Kyro upgrades by itself if this computer turns out fast enough");
       }
-      await syncCameras();
+      await cameras;
       if (![...cams.current.values()].some((c) => c.stream)) {
         throw new Error("No camera found. Plug your camera into this computer, then press Start again. (The computer's own built-in camera is never used.)");
       }

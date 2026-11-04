@@ -18,8 +18,13 @@ export const CAMERA_MODE_VERSION = "web-1.0";
  *  pictures and buttons stay smooth while it counts. */
 export interface Engine { kind: "accurate" | "light"; backend: string; count(px: ImageData, tiles?: number): Promise<Person[]> }
 
+const ENGINE_KEY = "kyro_engine_kind";
+
 function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<Engine> {
-  return startEngine(onProgress).then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles) => countWith(e, px, tiles) }));
+  let prefer: "accurate" | "light" | undefined;
+  try { const v = localStorage.getItem(ENGINE_KEY); if (v === "accurate" || v === "light") prefer = v; } catch { /* fine without it */ }
+  return startEngine(onProgress, prefer, (kind) => { try { localStorage.setItem(ENGINE_KEY, kind); } catch { /* fine */ } })
+    .then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles) => countWith(e, px, tiles) }));
 }
 
 export function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
@@ -36,6 +41,10 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
     worker.onmessage = (ev: MessageEvent) => {
       const m = ev.data;
       if (m.type === "progress") onProgress(m.pct, m.step);
+      else if (m.type === "settled") {
+        // Which AI this computer can actually run, so the next start skips the trial.
+        try { localStorage.setItem(ENGINE_KEY, m.kind); } catch { /* fine without it */ }
+      }
       else if (m.type === "ready") {
         ready = true;
         resolve({
@@ -61,7 +70,9 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
       if (!ready) { worker.terminate(); engineOnPage(onProgress).then(resolve, reject); }
       else for (const [, w] of waiting) w.fail(new Error(e.message || "The AI stopped"));
     };
-    worker.postMessage({ type: "load" });
+    let prefer: string | null = null;
+    try { prefer = localStorage.getItem(ENGINE_KEY); } catch { /* fine without it */ }
+    worker.postMessage({ type: "load", prefer: prefer === "accurate" || prefer === "light" ? prefer : undefined });
   });
 }
 
