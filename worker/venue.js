@@ -220,6 +220,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
+      if (p === "/api/live/movement" && request.method === "GET") return json(this.movementByDay(url));
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
       if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
@@ -697,6 +698,51 @@ export class VenueHub extends DurableObject {
     if (dirty) await this.ctx.storage.put("alert_marks", marks);
   }
 
+  /**
+   * Arrivals and departures for one day, hour by hour, with the busiest hour.
+   * Read from the venue total rising and falling, the same way as the summary,
+   * and only for times Kyro can stand behind (see IN_OUT_TRUSTED_FROM).
+   * ?date=YYYY-MM-DD&tz=Europe/London
+   */
+  movementByDay(url) {
+    const date = url.searchParams.get("date") || "";
+    const tz = url.searchParams.get("tz") || "UTC";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "date must be YYYY-MM-DD" };
+    const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT camera_id, ts, current FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
+    const fmt = this.dateFmt(tz);
+    let hourFmt;
+    try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
+    catch { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", hour: "numeric", hourCycle: "h23" }); }
+    const STALE = 3 * 60_000;
+    const arrivals = new Array(24).fill(0), departures = new Array(24).fill(0), busiest = new Array(24).fill(0);
+    const last = new Map();
+    let prevTotal = 0, known = false, peak = 0, peakHour = null;
+    for (const r of rows) {
+      if (fmt.format(new Date(r.ts)) !== date) continue;
+      last.set(r.camera_id, { current: r.current || 0, ts: r.ts });
+      let total = 0;
+      for (const [k, v] of last) {
+        if (r.ts - v.ts > STALE) { last.delete(k); continue; }
+        total += v.current;
+      }
+      const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
+      if (total > busiest[hour]) busiest[hour] = total;
+      if (total > peak) { peak = total; peakHour = hour; }
+      if (r.ts >= IN_OUT_TRUSTED_FROM) {
+        known = true;
+        if (total > prevTotal) arrivals[hour] += total - prevTotal;
+        else if (total < prevTotal) departures[hour] += prevTotal - total;
+      }
+      prevTotal = total;
+    }
+    return {
+      date, in_out_known: known, peak, peak_hour: peakHour,
+      hours: arrivals.map((arrived, hour) => ({ hour, arrived, left: departures[hour], most: busiest[hour] })),
+    };
+  }
+
   // ── Deleting a day's counts ──────────────────────────────────────────────
   // What was deleted is kept for DELETED_KEPT_DAYS so it is never invisible,
   // then it goes for good.
@@ -704,11 +750,16 @@ export class VenueHub extends DurableObject {
   async deletedDays() {
     const log = await this.get("deleted_days", []);
     const cutoff = Date.now() - DELETED_KEPT_DAYS * 86400_000;
-    const keep = log.filter((d) => Date.parse(d.deleted_at) > cutoff);
+    const keep = log.filter((d) => Date.parse(d.deleted_at) > cutoff).map((d) => {
+      if (d.recoverable === false || d.from === undefined) return { ...d, recoverable: false };
+      const n = this.ctx.storage.sql.exec(
+        "SELECT COUNT(*) AS n FROM history WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", d.from, d.to).toArray()[0]?.n ?? 0;
+      return { ...d, recoverable: n > 0 };
+    });
     if (keep.length !== log.length) {
       // Past bringing back: now the rows really go.
       this.ctx.storage.sql.exec("DELETE FROM history WHERE deleted_at IS NOT NULL AND deleted_at < ?", cutoff);
-      await this.ctx.storage.put("deleted_days", keep);
+      await this.ctx.storage.put("deleted_days", keep.map(({ recoverable, ...d }) => d));
     }
     return keep;
   }
@@ -718,7 +769,17 @@ export class VenueHub extends DurableObject {
     const log = await this.deletedDays();
     const entry = log.find((d) => d.date === date);
     if (!entry) return json({ error: "That day isn't in the recently deleted list — it may have been cleared for good" }, 404);
-    this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", entry.from, entry.to);
+    // Days deleted before recovery existed have no saved range, and their rows
+    // were really removed rather than marked. Work out the range from the date
+    // so those that CAN come back do, and never claim success when nothing did.
+    const from = entry.from ?? Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000;
+    const to = entry.to ?? from + 52 * 3600_000;
+    const can = this.ctx.storage.sql.exec(
+      "SELECT COUNT(*) AS n FROM history WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", from, to).toArray()[0]?.n ?? 0;
+    if (!can) {
+      return json({ error: "Those counts can't be brought back — they were deleted before Kyro could undo it, and were removed outright at the time." }, 410);
+    }
+    this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", from, to);
     await this.ctx.storage.put("deleted_days", log.filter((d) => d !== entry));
     const back = await this.get("restored_days", []);
     back.unshift({ date, restored_by: clean(user, 60) || "an administrator", restored_at: new Date().toISOString() });
@@ -756,7 +817,7 @@ export class VenueHub extends DurableObject {
     if (left.length !== services.length) await this.ctx.storage.put("services", left);
     const log = await this.deletedDays();
     log.unshift({ date, attendance: peak, rows: mine.length, services_removed: services.length - left.length,
-      from, to, deleted_by: clean(user, 60) || "an administrator", deleted_at: new Date().toISOString() });
+      from, to, tz, recoverable: true, deleted_by: clean(user, 60) || "an administrator", deleted_at: new Date().toISOString() });
     await this.ctx.storage.put("deleted_days", log.slice(0, 200));
     return json({ deleted: true, date, attendance: peak });
   }

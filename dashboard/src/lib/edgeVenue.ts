@@ -64,6 +64,18 @@ export interface FoundCameras { searching: boolean; searched: boolean; results: 
 export interface DeletedDay {
   date: string; attendance: number; rows: number; services_removed: number;
   deleted_by: string; deleted_at: string;
+  /** false when the counts were removed before Kyro could undo it. */
+  recoverable?: boolean;
+}
+
+/** One day's arrivals, departures and how full the room was, hour by hour. */
+export interface DayMovement {
+  date: string;
+  /** false when Kyro couldn't follow people that day — arrivals/departures withheld. */
+  in_out_known: boolean;
+  peak: number;
+  peak_hour: number | null;
+  hours: { hour: number; arrived: number; left: number; most: number }[];
 }
 
 export const edgeVenueApi = {
@@ -85,6 +97,8 @@ export const edgeVenueApi = {
   deleteDay: (date: string, tz: string) =>
     edgeFetch<{ deleted: boolean; date: string; attendance: number }>(`/api/live/day/${enc(date)}?tz=${enc(tz)}`, { method: "DELETE" }),
   deletedDays: () => edgeFetch<DeletedDay[]>("/api/live/deleted-days"),
+  movement: (date: string, tz: string) =>
+    edgeFetch<DayMovement>(`/api/live/movement?date=${enc(date)}&tz=${enc(tz)}`),
   restoreDay: (date: string) =>
     edgeFetch<{ restored: boolean; date: string; attendance: number }>(`/api/live/day/${enc(date)}/restore`, { method: "POST" }),
   seatStates: (cameraId: string) =>

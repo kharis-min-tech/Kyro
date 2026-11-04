@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { analyticsApi } from "@/lib/api";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { CameraSwitcher } from "@/components/layout/CameraSwitcher";
+import { MovementCalendar } from "@/components/ui/MovementCalendar";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, makeDemoAnalytics } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
@@ -162,7 +163,7 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
 }
 
 // ─── Arrival chart ────────────────────────────────────────────────────────────
-function ArrivalChart({ data, movementDays }: { data: HourlyBucket[]; movementDays?: number }) {
+function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]; movementDays?: number; byDayDates?: string[] }) {
   if (!data.length) return null;
   const anyMovement = data.some((d) => d.count > 0 || (d.exits ?? 0) > 0);
   const max  = Math.max(...data.map((d) => Math.max(d.count, d.exits ?? 0)), 1);
@@ -171,7 +172,10 @@ function ArrivalChart({ data, movementDays }: { data: HourlyBucket[]; movementDa
     <div className="rounded-2xl p-5" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
       <div className="flex items-start justify-between mb-4 gap-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white">Arrivals and departures</p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-semibold text-white">Arrivals and departures</p>
+            {byDayDates && byDayDates.length > 0 && <MovementCalendar dates={byDayDates} />}
+          </div>
           <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>By hour, averaged over the days Kyro could follow people</p>
           <div className="flex items-center gap-3 mt-1.5">
             <span className="flex items-center gap-1 text-[10px]" style={{ color: "#6b7280" }}>
@@ -370,10 +374,14 @@ function DeletedServices({ reload, onRestored }: { reload: number; onRestored: (
                 {new Date(Date.parse(d.deleted_at) + 30 * 86400000).toLocaleDateString([], { day: "numeric", month: "short" })}
               </p>
             </div>
-            <button onClick={() => restore(d.date)} disabled={busy === d.date}
-              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
-              <RotateCcw size={12} /> {busy === d.date ? "Bringing back…" : "Bring back"}
-            </button>
+            {d.recoverable === false ? (
+              <span className="shrink-0 text-xs" style={{ color: "#6b7280" }} title="Deleted before Kyro could undo it">Can&apos;t be undone</span>
+            ) : (
+              <button onClick={() => restore(d.date)} disabled={busy === d.date}
+                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+                <RotateCcw size={12} /> {busy === d.date ? "Bringing back…" : "Bring back"}
+              </button>
+            )}
           </div>
         ))}
         {err && <p className="text-xs text-red-400 px-5 py-2">{err}</p>}
@@ -598,7 +606,8 @@ export default function AnalyticsPage() {
             )}
             <TrendChart data={filtered}/>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-              <ArrivalChart data={arrival} movementDays={(summary as { movement_days?: number } | null)?.movement_days}/>
+              <ArrivalChart data={arrival} movementDays={(summary as { movement_days?: number } | null)?.movement_days}
+                byDayDates={[...history].reverse().map((h) => h.timestamp.slice(0, 10))}/>
               <WeeklyBreakdown data={filtered}/>
             </div>
             <RecentSessions data={filtered} onSelect={setSelectedDay} selectedTs={selectedDay?.timestamp}
