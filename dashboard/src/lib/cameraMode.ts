@@ -16,10 +16,10 @@ export const CAMERA_MODE_VERSION = "web-1.0";
 
 /** The AI, as seen from the page. It runs in a background worker so the camera
  *  pictures and buttons stay smooth while it counts. */
-export interface Engine { kind: "accurate" | "light"; backend: string; count(px: ImageData): Promise<Person[]> }
+export interface Engine { kind: "accurate" | "light"; backend: string; count(px: ImageData, tiles?: number): Promise<Person[]> }
 
 function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<Engine> {
-  return startEngine(onProgress).then((e) => ({ kind: e.kind, backend: e.backend, count: (px) => countWith(e, px) }));
+  return startEngine(onProgress).then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles) => countWith(e, px, tiles) }));
 }
 
 export function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
@@ -77,8 +77,10 @@ export function grab(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
   return ctx.getImageData(0, 0, w, h);
 }
 
-export function countPeople(engine: Engine, px: ImageData): Promise<Person[]> {
-  return engine.count(px);
+/** `tiles` = 1 counts the whole picture in one look (five times faster, and
+ *  loses nothing unless someone is too small to see without tiling). */
+export function countPeople(engine: Engine, px: ImageData, tiles?: number): Promise<Person[]> {
+  return engine.count(px, tiles);
 }
 
 /** Opens one camera at the highest detail it offers (more pixels per person = far people found). */

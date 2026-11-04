@@ -20,7 +20,7 @@ ctx.onmessage = async (ev: MessageEvent) => {
     }
   } else if (m.type === "count" && engine) {
     try {
-      const people = await countWith(engine, m.px);
+      const people = await countWith(engine, m.px, m.tiles);
       ctx.postMessage({ type: "result", id: m.id, people });
     } catch (e) {
       ctx.postMessage({ type: "count-error", id: m.id, message: e instanceof Error ? e.message : String(e) });

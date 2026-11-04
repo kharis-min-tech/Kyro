@@ -168,6 +168,8 @@ export async function startEngine(onProgress: (pct: number, step: string) => voi
   return { run: l.run, tiles: l.m.tiles, size: l.m.size, kind: "light", backend: gpu ? "graphics chip" : "processor" };
 }
 
-export function countWith(engine: LocalEngine, px: Pixels): Promise<Person[]> {
-  return detectPeople(px, engine.run, { tiles: engine.tiles, size: engine.size });
+/** `tiles` overrides the engine's own choice — 1 means the whole picture only,
+ *  which is five times faster and loses nothing when nobody is far away. */
+export function countWith(engine: LocalEngine, px: Pixels, tiles?: number): Promise<Person[]> {
+  return detectPeople(px, engine.run, { tiles: tiles ?? engine.tiles, size: engine.size });
 }

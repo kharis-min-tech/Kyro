@@ -33,6 +33,12 @@ interface Cam {
   stream: MediaStream | null; video: HTMLVideoElement | null; grabCanvas: HTMLCanvasElement;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
   countedAt: number; secondsPerCount: number; error: string | null; lastPicture: number;
+  // Splitting the picture into tiles costs five AI runs instead of one. It only
+  // finds people too small to see in the whole picture — useless on a webcam
+  // with someone close up, where it made each count five times slower. So try
+  // the whole picture alone, and check now and then whether tiles would add
+  // anyone; if they would, keep using them for this camera.
+  needsTiles: boolean; sinceTileCheck: number;
 }
 
 export interface CamView {
@@ -113,6 +119,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
+          needsTiles: true, sinceTileCheck: 0,
         };
         cams.current.set(key, c);
       }
@@ -164,7 +171,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         if (!px) continue;
         const t0 = performance.now();
         try {
-          const people = await countPeople(engine.current, px);
+          // Check every 10th count whether tiles are earning their keep.
+          const checking = ++c.sinceTileCheck >= 10;
+          if (checking) c.sinceTileCheck = 0;
+          const useTiles = c.needsTiles || checking;
+          let people = await countPeople(engine.current, px, useTiles ? undefined : 1);
+          if (checking) {
+            const whole = await countPeople(engine.current, px, 1);
+            const sure = (list: Person[]) => list.filter((p) => p.score >= countConfidenceRef.current).length;
+            c.needsTiles = sure(people) > sure(whole);
+            if (!c.needsTiles) people = whole;
+          }
           // Everything the AI noticed, before the "sure enough to count" cutoff,
           // so "nobody there" can be told apart from "seen but not sure".
           c.rawPeople = people;
@@ -180,9 +197,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         did = true;
       }
       refreshViews();
-      // A breather between rounds, so the page stays responsive on a computer
-      // without fast graphics (the AI shares the same thread).
-      await new Promise((r) => setTimeout(r, did ? 350 : 500));
+      // A breather so the page stays responsive, in proportion to the work just
+      // done. A flat 350 ms wasted more time than a count takes once tiling is
+      // off (about 200 ms), which showed as the number lagging behind the room.
+      const slowest = Math.max(0, ...[...cams.current.values()].map((c) => c.secondsPerCount * 1000));
+      await new Promise((r) => setTimeout(r, did ? Math.min(350, Math.max(50, slowest * 0.25)) : 500));
     }
   }, [refreshViews]);
 
