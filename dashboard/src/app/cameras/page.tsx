@@ -1210,14 +1210,20 @@ function PairingSteps({ code, expiresAt }: { code: string; expiresAt: string }) 
       <p className="text-xs text-gray-400">Your pairing code</p>
       <p className="font-mono font-bold text-white tracking-widest break-all" style={{ fontSize: "clamp(28px, 9vw, 40px)" }}>{code}</p>
       <p className="text-sm text-gray-300">
-        Install Kyro on the computer the camera plugs into — yours or the church&apos;s, any one works. This line
-        includes the code, so there&apos;s nothing to type. Then plug in your cameras: they appear here by themselves.{" "}
+        Run this on the computer the camera plugs into. It installs Kyro&apos;s <strong>full AI</strong> there so it counts by
+        itself — nothing kept open, and it starts again after a restart. It also switches on the parts a browser can&apos;t do:
+        in and out, seat-by-seat colours, AI questions and face matching. The line already includes your code, so there is
+        nothing to type. Then plug your cameras in: they appear here by themselves.{" "}
         <a href={SETUP_GUIDE} target="_blank" rel="noopener noreferrer"
           className="text-indigo-400 hover:text-indigo-300 underline inline-flex items-center gap-1">
           Step-by-step help <ExternalLink size={11} />
         </a>
       </p>
       <InstallCommand code={code} />
+      <p className="text-xs text-gray-400">
+        On Windows: click Start, type <strong>PowerShell</strong>, open it, paste the line and press Enter. It takes
+        10–20 minutes, mostly downloading the AI. Wait for <strong>&quot;All done!&quot;</strong>.
+      </p>
       <p className="text-xs text-gray-500">
         This code works once and expires at {new Date(expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.
       </p>
@@ -1253,14 +1259,14 @@ function CameraComputersSection({ devices, error, onChanged }: {
   const pairButton = (
     <button onClick={getCode} disabled={busy}
       className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 self-start">
-      <KeyRound size={14} /> {busy ? "Getting a code…" : pairing ? "Get a new code" : "Pair a camera computer"}
+      <KeyRound size={14} /> {busy ? "Getting a code…" : pairing ? "Get a new code" : "Get the line to install"}
     </button>
   );
 
   return (
     <div className="mb-6">
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
-        Camera computers{devices && devices.length > 0 ? ` (${devices.length})` : ""}
+        {devices && devices.length > 0 ? `Camera computers (${devices.length})` : "To install"}
       </p>
       <div className="flex flex-col gap-3">
         {error && !devices && <p className="text-xs text-amber-400">Couldn't load camera computers: {error}</p>}
@@ -1585,6 +1591,10 @@ export default function CamerasPage() {
             any Kyro deployment. */}
 
         {edge && canManage && <CountingCard />}
+
+        {edge && canManage && (
+          <CameraComputersSection devices={devices} error={devicesErr} onChanged={afterEdgeChange} />
+        )}
 
         {error && (edge
           ? <p className="text-xs text-amber-400 mb-3">Couldn't refresh the camera list: {error}</p>
