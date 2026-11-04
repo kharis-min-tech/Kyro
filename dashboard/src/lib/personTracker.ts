@@ -19,6 +19,14 @@
  */
 
 export interface Box { box: [number, number, number, number] }
+/** How alike two face codes are, 0–1 (see faceEngine). */
+function alike(a: Float32Array, b: Float32Array): number {
+  let s = 0;
+  for (let i = 0; i < a.length && i < b.length; i++) s += a[i] * b[i];
+  return s;
+}
+/** Two codes this alike are the same person — measured on 600 standard face pairs. */
+const SAME_FACE = 0.4;
 
 // A score that rises when the person is seen and falls when they are not, so a
 // box that only flickers in and out never reaches it. Simply totalling sightings
@@ -44,6 +52,7 @@ interface Track {
   missing: number;
   lastSeen: number;            // when they were last actually seen
   counted: boolean;            // already counted as someone who arrived
+  face: Float32Array | null;   // their face code, when one could be read
 }
 
 /** Centre-to-centre distance, in multiples of the wider box's width. */
@@ -69,7 +78,12 @@ export class PersonTracker {
   exits = 0;
 
   /** Give it this count's people; returns how many are here now (confirmed only). */
-  update(people: Box[], now: number = Date.now()): number {
+  /**
+   * @param faces one face code per person, same order, null where no clear face.
+   *              With them, someone who went out of sight and came back is
+   *              recognised rather than counted as arriving again.
+   */
+  update(people: Box[], now: number = Date.now(), faces?: (Float32Array | null)[]): number {
     const boxes = people.map((p) => p.box);
     const takenTrack = new Set<number>();
     const takenBox = new Set<number>();
@@ -86,6 +100,7 @@ export class PersonTracker {
       takenTrack.add(t); takenBox.add(b);
       const tr = this.tracks[t];
       tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
+      if (faces?.[b]) tr.face = faces[b];
       tr.score = Math.min(SCORE_TO_CONFIRM + 2, tr.score + 1);
       if (!tr.counted && tr.score >= SCORE_TO_CONFIRM) { tr.counted = true; this.entries++; }
     }
@@ -103,22 +118,37 @@ export class PersonTracker {
       if (takenBox.has(bi)) return;
       // Before calling this a new arrival, see whether someone we lost recently
       // has simply come back — turned round, or stepped out and returned.
-      let revive = -1, best = RETURN_WITHIN_WIDTHS;
-      this.tracks.forEach((t, ti) => {
-        if (takenTrack.has(ti) || t.missing === 0) return;
-        const d = apart(t.box, b);
-        const sizes = (t.box[3] - t.box[1]) / Math.max(1, b[3] - b[1]);
-        if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
-      });
+      let revive = -1;
+      // A face is far better evidence than a position: someone can walk right
+      // across the room and still be the same person.
+      const mine = faces?.[bi] ?? null;
+      if (mine) {
+        let bestFace = SAME_FACE;
+        this.tracks.forEach((t, ti) => {
+          if (takenTrack.has(ti) || t.missing === 0 || !t.face) return;
+          const s = alike(t.face, mine);
+          if (s >= bestFace) { bestFace = s; revive = ti; }
+        });
+      }
+      if (revive < 0) {
+        let best = RETURN_WITHIN_WIDTHS;
+        this.tracks.forEach((t, ti) => {
+          if (takenTrack.has(ti) || t.missing === 0) return;
+          const d = apart(t.box, b);
+          const sizes = (t.box[3] - t.box[1]) / Math.max(1, b[3] - b[1]);
+          if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
+        });
+      }
       if (revive >= 0) {
         const t = this.tracks[revive];
         takenTrack.add(revive);
         t.box = b; t.missing = 0; t.lastSeen = now;
+        if (mine) t.face = mine;
         t.score = Math.min(SCORE_TO_CONFIRM + 2, t.score + 1);
         if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; this.entries++; }
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, score: 1, missing: 0, lastSeen: now, counted: false });
+      this.tracks.push({ id: this.nextId++, box: b, score: 1, missing: 0, lastSeen: now, counted: false, face: faces?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person

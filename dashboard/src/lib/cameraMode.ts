@@ -128,6 +128,8 @@ export interface CameraReport {
   fps: number; width: number; height: number;
   /** People who arrived and left, from following them between counts. */
   entries: number; exits: number;
+  /** Face codes, only while face matching is switched on. Never a picture. */
+  faces?: string[]; faces_age_s?: number;
 }
 
 export type Zone = [number, number, number, number];
@@ -135,7 +137,7 @@ export type Zone = [number, number, number, number];
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
-export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number }> {
+export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -155,6 +157,7 @@ export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: s
     disabled: Array.isArray(body.disabled) ? body.disabled : [],
     zones: body.ignore_zones && typeof body.ignore_zones === "object" ? body.ignore_zones : {},
     countConfidence: Number.isFinite(conf) && conf >= 0.1 && conf <= 0.6 ? conf : undefined,
+    faceMatching: !!body.face_matching,
   };
 }
 

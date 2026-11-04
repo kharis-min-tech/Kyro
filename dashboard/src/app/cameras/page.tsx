@@ -1678,7 +1678,7 @@ export default function CamerasPage() {
         )}
 
         {edge && role === "admin" && (
-          <FaceMatching hasCameraComputer={(devices ?? []).some((d) => d.id.startsWith("box-"))} />
+          <FaceMatching />
         )}
 
         <div className="mt-4">

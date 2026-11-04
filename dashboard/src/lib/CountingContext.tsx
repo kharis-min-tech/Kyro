@@ -22,12 +22,32 @@ import {
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
 import { PersonTracker } from "@/lib/personTracker";
+import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
+import { loadOrt } from "@/lib/countEngine";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 
 const ON_KEY = "kyro_counting_on";          // keep counting after a reload
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
+const FACES_EVERY_MS = 4_000;     // reading faces is costly; counting comes first
+
+/** A face code in the form the website expects: 128 half-size numbers, base64. */
+function packFace(v: Float32Array): string {
+  const buf = new ArrayBuffer(v.length * 2), view = new DataView(buf);
+  for (let i = 0; i < v.length; i++) {
+    // float32 → float16
+    const f = new Float32Array([v[i]]);
+    const bits = new Uint32Array(f.buffer)[0];
+    const sign = (bits >>> 16) & 0x8000;
+    const exp = ((bits >>> 23) & 0xff) - 127 + 15;
+    const mant = (bits >>> 13) & 0x3ff;
+    view.setUint16(i * 2, exp <= 0 ? sign : exp >= 31 ? sign | 0x7c00 : sign | (exp << 10) | mant, true);
+  }
+  let s = "";
+  for (const b of new Uint8Array(buf)) s += String.fromCharCode(b);
+  return btoa(s);
+}
 
 interface Cam {
   deviceId: string; key: string; label: string;
@@ -41,6 +61,8 @@ interface Cam {
   // anyone; if they would, keep using them for this camera.
   needsTiles: boolean; sinceTileCheck: number;
   tracker: PersonTracker;      // follows people between counts → arrived / left
+  faces: string[] | null;      // face codes to send, when face matching is on
+  facesAt: number;
 }
 
 export interface CamView {
@@ -97,6 +119,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const offRef = useRef<string[]>([]);
   const zonesRef = useRef<Record<string, Zone[]>>({});
   const countConfidenceRef = useRef<number>(COUNT_CONFIDENCE);
+  // Face matching: off until an administrator switches it on and a service is
+  // running (the website decides and tells us with each report).
+  const faceOnRef = useRef(false);
+  const faceEngine = useRef<FaceEngine | null>(null);
+  const faceLoading = useRef(false);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
 
@@ -121,7 +148,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
-          needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(),
+          needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
       }
@@ -188,7 +215,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // so "nobody there" can be told apart from "seen but not sure".
           c.rawPeople = people;
           c.people = outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height);
-          c.tracker.update(c.people);
+          const codes = await faceCodes(c, px);
+          c.tracker.update(c.people, Date.now(), codes ?? undefined);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();
@@ -207,6 +235,26 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       await new Promise((r) => setTimeout(r, did ? Math.min(350, Math.max(50, slowest * 0.25)) : 500));
     }
   }, [refreshViews]);
+
+  /** Face codes for this camera's people, every few seconds while switched on. */
+  const faceCodes = useCallback(async (c: Cam, px: ImageData): Promise<(Float32Array | null)[] | null> => {
+    if (!faceOnRef.current) { c.faces = null; return null; }
+    if (Date.now() - c.facesAt < FACES_EVERY_MS) return null;
+    if (!faceEngine.current) {
+      if (faceLoading.current) return null;
+      faceLoading.current = true;
+      try {
+        const ort = await loadOrt();
+        faceEngine.current = await loadFaceEngine(ort);
+      } catch { /* carry on counting without it */ }
+      finally { faceLoading.current = false; }
+      if (!faceEngine.current) return null;
+    }
+    c.facesAt = Date.now();
+    const codes = await faceEngine.current.codesFor(px, c.people.map((p) => p.box));
+    c.faces = codes.filter(Boolean).map((v) => packFace(v as Float32Array));
+    return codes;
+  }, []);
 
   const stop = useCallback(() => {
     running.current = false;
@@ -289,15 +337,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       const reports: CameraReport[] = list.map((c) => ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
         entries: c.tracker.entries, exits: c.tracker.exits,
+        ...(c.faces?.length ? { faces: c.faces, faces_age_s: (Date.now() - c.facesAt) / 1000 } : {}),
         status: c.error || Date.now() - c.countedAt > 60_000 ? "error" : "online",
         error: c.error ?? (c.countedAt ? null : "Starting…"),
         fps: c.secondsPerCount ? +(1 / c.secondsPerCount).toFixed(1) : 0,
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence } = await sendReport(reports);
+        const { disabled, zones, countConfidence, faceMatching } = await sendReport(reports);
         zonesRef.current = zones;
         if (countConfidence !== undefined) countConfidenceRef.current = countConfidence;
+        faceOnRef.current = !!faceMatching;
+        if (!faceMatching) for (const c of cams.current.values()) c.faces = null;   // nothing kept when off
         setLastSent(Date.now()); setSendError(null);
         const newlyOff = disabled.filter((k) => !offRef.current.includes(k));
         if (newlyOff.length) {

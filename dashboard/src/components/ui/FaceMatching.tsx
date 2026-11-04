@@ -16,7 +16,7 @@ interface Privacy {
  * after confirming the church's data protection impact assessment and the
  * notices at the entrances (recorded with their name and the time).
  */
-export function FaceMatching({ hasCameraComputer = true }: { hasCameraComputer?: boolean }) {
+export function FaceMatching() {
   const [p, setP] = useState<Privacy | null>(null);
   const [asking, setAsking] = useState(false);
   const [dpia, setDpia] = useState(false);
@@ -38,38 +38,21 @@ export function FaceMatching({ hasCameraComputer = true }: { hasCameraComputer?:
   }
 
   if (!p) return null;
-  // Face codes are worked out by the installed counter. Counting in a browser
-  // never produces them, so switching this on there does nothing at all.
-  if (!hasCameraComputer) {
-    return (
-      <div className="mb-6">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Face matching across cameras</p>
-        <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex items-start gap-3">
-          <ScanFace size={18} className="text-gray-600 shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-400 leading-relaxed">
-            <strong className="text-gray-300">Needs a camera computer.</strong> Face matching is worked out by the installed
-            counter. Counting in a browser only sends the number of people, so this would do nothing. Install the counter on
-            the church computer to use it.
-          </p>
-        </div>
-      </div>
-    );
-  }
   const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
   const twice = (venue as any)?.seen_on_two_cameras ?? 0;
 
   return (
     <div className="mb-6">
-      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Face matching across cameras</p>
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Face matching</p>
       <div className="bg-gray-900 border border-gray-800 rounded-xl p-4 flex flex-col gap-3">
         <div className="flex items-start gap-3">
           <ScanFace size={18} className={p.face_matching ? "text-green-400 shrink-0 mt-0.5" : "text-gray-500 shrink-0 mt-0.5"} />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-white font-medium">{p.face_matching ? "On" : "Off"}</p>
             <p className="text-xs text-gray-400 leading-relaxed mt-0.5">
-              Where two cameras see the same people, someone whose face both cameras see clearly is counted once.
-              Kyro keeps no photos of faces and doesn&apos;t know who anyone is: each face becomes a number code that&apos;s compared for
-              a few seconds and never saved.
+              Stops the same person being counted twice: once if they step out and come back (so they aren&apos;t a new arrival),
+              and once if two cameras both see them. Kyro keeps no photos of faces and doesn&apos;t know who anyone is — each face
+              becomes a list of numbers, compared for a few seconds and never saved. Adds a 10 MB download the first time.
             </p>
             {p.face_matching && (
               <p className="text-xs text-gray-500 mt-1.5">

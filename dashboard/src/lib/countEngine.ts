@@ -22,7 +22,7 @@ export const MODELS = {
 type Ort = any; // onnxruntime-web, loaded from the CDN at runtime
 
 let ortPromise: Promise<Ort> | null = null;
-function loadOrt(): Promise<Ort> {
+export function loadOrt(): Promise<Ort> {
   if (ortPromise) return ortPromise;
   const g = globalThis as unknown as { ort?: Ort; importScripts?: (url: string) => void; document?: Document };
   if (g.ort) return (ortPromise = Promise.resolve(g.ort));
