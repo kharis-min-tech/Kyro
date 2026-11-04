@@ -6,7 +6,8 @@
  * Shows every registered camera as a live snapshot tile, grouped by zone/floor.
  * Includes:
  *   - Overcrowding detection (warn ≥80%, critical ≥90%)
- *   - Per-room seats available / seats left
+ *   - Per-room space left (capacity set for the camera, minus the count —
+ *     Kyro does not see individual seats unless a seat map was made)
  *   - Venue-wide capacity overview strip
  *   - "Can we fit the queue?" outside queue estimator
  */
@@ -311,10 +312,10 @@ function AlertBanner({ alerts }: { alerts: ZoneAlert[] }) {
             </span>
             {alert.seatsLeft > 0 ? (
               <span className="text-xs text-gray-400 tabular-nums w-24 text-right">
-                {alert.seatsLeft.toLocaleString()} seat{alert.seatsLeft !== 1 ? "s" : ""} left
+                {alert.seatsLeft.toLocaleString()} space{alert.seatsLeft !== 1 ? "s" : ""} left
               </span>
             ) : (
-              <span className="text-xs text-red-400 font-medium w-24 text-right">No seats left</span>
+              <span className="text-xs text-red-400 font-medium w-24 text-right">At capacity</span>
             )}
             <button
               onClick={() => setDismissed((p) => [...p, alert.cameraId])}
@@ -361,13 +362,13 @@ function VenueOverview({
           <span className="text-xs text-gray-500 uppercase tracking-widest">In venue</span>
           <span className="text-3xl font-bold text-white tabular-nums">{current.toLocaleString()}</span>
           {totalSeats > 0 && (
-            <span className="text-xs text-gray-600 tabular-nums">of {totalSeats.toLocaleString()} seats</span>
+            <span className="text-xs text-gray-600 tabular-nums">of the {totalSeats.toLocaleString()} this venue is set to hold</span>
           )}
         </div>
 
         {/* Seats remaining */}
         <div className="flex flex-col gap-0.5 min-w-[100px]">
-          <span className="text-xs text-gray-500 uppercase tracking-widest">Seats left</span>
+          <span className="text-xs text-gray-500 uppercase tracking-widest">Space left</span>
           <span
             className="text-3xl font-bold tabular-nums"
             style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 20 ? "#f59e0b" : "#22c55e" }}
@@ -376,6 +377,12 @@ function VenueOverview({
           </span>
           {totalSeats > 0 && seatsLeft === 0 && (
             <span className="text-xs text-red-400 font-medium">Full</span>
+          )}
+          {/* Said plainly, because "seats left" read as though Kyro could see
+              empty chairs. It cannot: this is the capacity set for each camera
+              minus the number of people counted. */}
+          {totalSeats > 0 && seatsLeft > 0 && (
+            <span className="text-xs" style={{ color: "var(--text-faint)" }}>capacity minus the count</span>
           )}
         </div>
 
@@ -515,7 +522,7 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
             <span className="flex-1 min-w-0">Room</span>
             <span className="w-20 text-right shrink-0">Capacity</span>
             <span className="w-20 text-right shrink-0">People in</span>
-            <span className="w-24 text-right shrink-0">Seats left</span>
+            <span className="w-24 text-right shrink-0">Space left</span>
             <span className="w-32 text-right shrink-0">How full</span>
             <span className="w-20 text-right shrink-0">Status</span>
           </div>
@@ -549,7 +556,7 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                   {zone.current.toLocaleString()}
                 </span>
 
-                {/* Seats left */}
+                {/* Space left */}
                 <span className="w-24 text-right text-sm font-bold tabular-nums shrink-0"
                   style={{ color: left === 0 ? "#ef4444" : left < 10 ? "#f59e0b" : "#22c55e" }}>
                   {left === 0 ? "None left" : left.toLocaleString()}
@@ -759,7 +766,7 @@ function CameraTile({
           </div>
         )}
 
-        {/* Live count + seats left — top-right */}
+        {/* Live count + space left — top-right */}
         <div className="absolute top-2.5 right-2.5 flex flex-col items-end gap-1">
           <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
@@ -773,7 +780,7 @@ function CameraTile({
               <Armchair size={11} style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }} />
               <span className="text-xs font-medium tabular-nums"
                 style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }}>
-                {seatsLeft === 0 ? "No seats" : `${seatsLeft.toLocaleString()} seats left`}
+                {seatsLeft === 0 ? "At capacity" : `${seatsLeft.toLocaleString()} space${seatsLeft === 1 ? "" : "s"} left`}
               </span>
             </div>
           )}
@@ -825,7 +832,7 @@ function CameraTile({
           </div>
         )}
 
-        {/* Bottom row: entries/exits + seats left */}
+        {/* Bottom row: entries/exits + space left */}
         <div className="flex items-center justify-between pt-0.5">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-1.5">
@@ -943,7 +950,7 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
         <div className="grid grid-cols-4" style={{ borderTop: `1px solid ${BORDER}` }}>
           {[
             { label: "In now",   value: current.toLocaleString(),   color: "text-white"  },
-            { label: "Seats left", value: seatsLeft !== null ? seatsLeft.toLocaleString() : "—",
+            { label: "Space left", value: seatsLeft !== null ? seatsLeft.toLocaleString() : "—",
               color: seatsLeft === 0 ? "text-red-400" : seatsLeft !== null && seatsLeft < 10 ? "text-amber-400" : "text-green-400" },
             { label: "Entries",  value: entries.toLocaleString(),   color: "text-green-400" },
             { label: "Exits",    value: exits.toLocaleString(),     color: "text-red-400"   },

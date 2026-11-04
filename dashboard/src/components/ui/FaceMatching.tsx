@@ -24,8 +24,25 @@ export function FaceMatching() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const { venue } = useEdgeVenue(!!p?.face_matching);
+  // Face matching only actually runs while a service is being recorded (face
+  // data belongs to the service and is wiped when it ends). Switched on with
+  // no service running, it looked broken — "On", and nothing happening.
+  const [live, setLive] = useState<{ id: string; name: string } | null | undefined>(undefined);
+  const [starting, setStarting] = useState(false);
+
+  const loadLive = () => edgeFetch<{ live: { id: string; name: string } | null }>("/api/live/services")
+    .then((r) => setLive(r.live))
+    .catch(() => setLive(null));
 
   useEffect(() => { edgeFetch<Privacy>("/api/live/privacy").then(setP).catch(() => setP({ face_matching: false })); }, []);
+  useEffect(() => { loadLive(); const t = setInterval(loadLive, 15_000); return () => clearInterval(t); }, []);
+
+  async function startService() {
+    setStarting(true); setErr(null);
+    try { await edgeFetch("/api/live/service/start", { method: "POST" }); await loadLive(); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't start a service"); }
+    setStarting(false);
+  }
 
   async function save(on: boolean) {
     setBusy(true); setErr(null);
@@ -62,6 +79,25 @@ export function FaceMatching() {
             )}
             {!p.face_matching && p.switched_off_at && (
               <p className="text-xs text-gray-500 mt-1.5">Switched off by {p.switched_off_by} · {when(p.switched_off_at)}</p>
+            )}
+            {p.face_matching && live === null && (
+              <div className="mt-2 rounded-lg px-3 py-2 flex flex-col gap-2"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                <p className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
+                  <span className="font-semibold">Switched on, but not running yet.</span> Face matching only works while a
+                  service is being recorded, because the face codes belong to that service and are wiped when it ends.
+                  A service starts on its own once 5 people have been in the room for 2 minutes — so on your own,
+                  testing, it never starts. Start one by hand to try it.
+                </p>
+                <button onClick={startService} disabled={starting}
+                  className="self-start px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
+                  style={{ background: "#4f46e5" }}>
+                  {starting ? "Starting…" : "Start a service now"}
+                </button>
+              </div>
+            )}
+            {p.face_matching && live && (
+              <p className="text-xs mt-1.5" style={{ color: "#22c55e" }}>Running now, during “{live.name}”</p>
             )}
           </div>
           {p.face_matching

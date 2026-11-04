@@ -77,6 +77,40 @@ const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before a
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
 const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question"];
+/**
+ * Arrivals and departures for one recorded reading.
+ *
+ * Kyro used to work these out from how the number in the room changed between
+ * one minute and the next. That was wrong, and badly so: the AI count wobbles
+ * (one person alone can read as 1, then 2, then 3 as the light or her chair
+ * fools it), and every wobble became a person arriving and another leaving.
+ * One person sitting still for forty minutes produced twenty-odd "in and outs".
+ *
+ * Each camera already counts arrivals and departures properly, following each
+ * person from one count to the next, refusing to believe a flickering box, and
+ * allowing someone 45 seconds out of sight before saying they left. It reports
+ * those as running totals. This reads those totals instead.
+ *
+ *   - Only an increase counts. A total that goes down means counting restarted
+ *     (a reload, a camera unplugged), which is not people leaving.
+ *   - A camera's first reading only sets the starting point. People already in
+ *     the room when counting began did not "arrive" while Kyro was watching,
+ *     and counting them as arrivals is how a reload used to invent a crowd.
+ *
+ * Returns true once there is something real to compare against, which is what
+ * tells the website it may show these figures at all.
+ */
+function countedMovement(counters, row, arrivals, departures, hour) {
+  const e = Math.max(0, Number(row.entries) || 0);
+  const x = Math.max(0, Number(row.exits) || 0);
+  const before = counters.get(row.camera_id);
+  counters.set(row.camera_id, { e, x });
+  if (!before) return false;              // first reading: the starting point only
+  if (e >= before.e) arrivals[hour] += e - before.e;
+  if (x >= before.x) departures[hour] += x - before.x;
+  return true;
+}
+
 function cleanQuestion(q, camera_id) {
   if (!q || !q.review_id) return null;
   return {
@@ -235,6 +269,10 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/privacy" && request.method === "GET") return json(await this.privacy());
       if (p === "/api/live/counting" && request.method === "GET") return json(await this.counting());
       if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
+      if (p === "/api/live/service/start" && request.method === "POST") {
+        if (role !== "admin") return json({ error: "Only administrators can start a service" }, 403);
+        return json(await this.startServiceNow());
+      }
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
       if (p === "/api/live/movement" && request.method === "GET") return json(this.movementByDay(url));
@@ -727,7 +765,7 @@ export class VenueHub extends DurableObject {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "date must be YYYY-MM-DD" };
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
     const rows = this.ctx.storage.sql.exec(
-      "SELECT camera_id, ts, current FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
+      "SELECT camera_id, ts, current, entries, exits FROM history WHERE deleted_at IS NULL AND ts >= ? AND ts < ? ORDER BY ts", start, end).toArray();
     const fmt = this.dateFmt(tz);
     let hourFmt;
     try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
@@ -735,7 +773,11 @@ export class VenueHub extends DurableObject {
     const STALE = 3 * 60_000;
     const arrivals = new Array(24).fill(0), departures = new Array(24).fill(0), busiest = new Array(24).fill(0);
     const last = new Map();
-    let prevTotal = 0, known = false, peak = 0, peakHour = null;
+    // Each camera's running totals of people who arrived and left, as its own
+    // tracker counted them. See the note on countedMovement above for why
+    // arrivals are NOT worked out from changes in the number in the room.
+    const counters = new Map();
+    let known = false, peak = 0, peakHour = null;
     for (const r of rows) {
       if (fmt.format(new Date(r.ts)) !== date) continue;
       last.set(r.camera_id, { current: r.current || 0, ts: r.ts });
@@ -747,12 +789,7 @@ export class VenueHub extends DurableObject {
       const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
       if (total > busiest[hour]) busiest[hour] = total;
       if (total > peak) { peak = total; peakHour = hour; }
-      if (r.ts >= IN_OUT_TRUSTED_FROM) {
-        known = true;
-        if (total > prevTotal) arrivals[hour] += total - prevTotal;
-        else if (total < prevTotal) departures[hour] += prevTotal - total;
-      }
-      prevTotal = total;
+      if (r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
     }
     return {
       date, in_out_known: known, peak, peak_hour: peakHour,
@@ -890,8 +927,8 @@ export class VenueHub extends DurableObject {
     const camera = url.searchParams.get("camera");
     const since = Date.now() - days * 86400_000;
     const rows = camera
-      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
-      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity FROM history WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts", since).toArray();
+      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
+      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits FROM history WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts", since).toArray();
     // History is saved once a minute; add each camera's count right now so today is up to date.
     const live = await this.get("live", {});
     const cams = await this.get("cameras", {});
@@ -913,10 +950,11 @@ export class VenueHub extends DurableObject {
     // tracking fix the count flickered, so those rises and falls were not
     // people coming and going — those days are left out rather than charted.
     let movementDays = 0, lastMovementDay = "";
-    let day = "", last = new Map(), prevTotal = 0;
+    let day = "", last = new Map();
+    const counters = new Map();
     for (const r of rows) {
       const d = fmt.format(new Date(r.ts));
-      if (d !== day) { day = d; last = new Map(); prevTotal = 0; }
+      if (d !== day) { day = d; last = new Map(); counters.clear(); }
       last.set(r.camera_id, { current: r.current || 0, capacity: r.capacity || 0, ts: r.ts });
       let total = 0, cap = 0;
       for (const [k, v] of last) {
@@ -925,11 +963,10 @@ export class VenueHub extends DurableObject {
       }
       if (r.ts >= IN_OUT_TRUSTED_FROM) {
         const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
-        if (total > prevTotal) arrivals[hour] += total - prevTotal;
-        else if (total < prevTotal) departures[hour] += prevTotal - total;
-        if (d !== lastMovementDay) { lastMovementDay = d; movementDays++; }
+        if (countedMovement(counters, r, arrivals, departures, hour) && d !== lastMovementDay) {
+          lastMovementDay = d; movementDays++;
+        }
       }
-      prevTotal = total;
       const cur = byDay.get(d);
       if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts });
     }
@@ -1235,6 +1272,28 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.delete("service_live");
     // Face matching data belongs to the service: wiped as soon as it ends.
     this.faceCodes.clear();
+  }
+
+  /**
+   * Start a service now, because an administrator said so.
+   *
+   * A service normally starts itself once SERVICE_START_PEOPLE people have been
+   * in the room for SERVICE_START_MS. That is right for a Sunday and useless for
+   * testing: on your own, a service can never start — and face matching only
+   * runs during a service, so face matching could never be tried out. Hence
+   * this.
+   */
+  async startServiceNow() {
+    const live = await this.get("service_live", null);
+    if (live) return { live, already: true };
+    const now = Date.now();
+    const fresh = { id: `svc-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`, name: serviceName(now),
+      started_at: new Date(now).toISOString(), peak: 0, peak_at: null, rooms: {}, started_by_hand: true };
+    this.recentTotals = [];
+    await this.ctx.storage.put("service_live", fresh);
+    await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
+    if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 5 * 60_000);
+    return { live: fresh, already: false };
   }
 
   async listServices() {
