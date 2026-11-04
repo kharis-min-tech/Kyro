@@ -56,6 +56,7 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
+const DELETED_KEPT_DAYS = 30;     // how long a record of what was deleted is kept
 const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
@@ -205,6 +206,7 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/counting" && request.method === "GET") return json(await this.counting());
       if (p === "/api/live/services" && request.method === "GET") return json(await this.listServices());
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
+      if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
       if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
@@ -245,6 +247,8 @@ export class VenueHub extends DurableObject {
       if (lay && request.method === "POST" && lay[3]) return this.activateLayout(decodeURIComponent(lay[1]), Number(lay[2]));
       if (lay && request.method === "DELETE" && lay[2] && !lay[3]) return this.deleteLayout(decodeURIComponent(lay[1]), Number(lay[2]));
       if (p === "/api/live/privacy" && request.method === "PUT") return this.setPrivacy(request, user);
+      const day = p.match(/^\/api\/live\/day\/(\d{4}-\d{2}-\d{2})$/);
+      if (day && request.method === "DELETE") return this.deleteDay(day[1], url.searchParams.get("tz") || "UTC", user);
       if (p === "/api/live/counting" && request.method === "PUT") return this.setCounting(request);
       if (p === "/api/live/find-cameras" && request.method === "POST") return this.findCameras();
       if (p === "/api/live/find-cameras" && request.method === "GET") return json(await this.foundCameras());
@@ -668,6 +672,52 @@ export class VenueHub extends DurableObject {
       }
     }
     if (dirty) await this.ctx.storage.put("alert_marks", marks);
+  }
+
+  // ── Deleting a day's counts ──────────────────────────────────────────────
+  // What was deleted is kept for DELETED_KEPT_DAYS so it is never invisible,
+  // then it goes for good.
+
+  async deletedDays() {
+    const log = await this.get("deleted_days", []);
+    const cutoff = Date.now() - DELETED_KEPT_DAYS * 86400_000;
+    const keep = log.filter((d) => Date.parse(d.deleted_at) > cutoff);
+    if (keep.length !== log.length) await this.ctx.storage.put("deleted_days", keep);
+    return keep;
+  }
+
+  /** Removes every count recorded on one local day. The counts themselves go for good. */
+  async deleteDay(date, tz, user) {
+    const fmt = this.dateFmt(tz);
+    // A local day can start up to 14 h either side of the UTC date.
+    const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000, end = start + 52 * 3600_000;
+    const rows = this.ctx.storage.sql.exec("SELECT ts, current FROM history WHERE ts >= ? AND ts < ?", start, end).toArray();
+    const mine = rows.filter((r) => fmt.format(new Date(r.ts)) === date);
+    if (!mine.length) return json({ error: "Nothing recorded on that day" }, 404);
+    const from = Math.min(...mine.map((r) => r.ts)), to = Math.max(...mine.map((r) => r.ts));
+    const peak = Math.max(...mine.map((r) => r.current || 0));
+    this.ctx.storage.sql.exec("DELETE FROM history WHERE ts >= ? AND ts <= ?", from, to);
+    // The cameras' running totals for that day go too, or Analytics shows the day
+    // again straight away from the live figures. Counting carries on; if a camera
+    // is still running, the day simply starts recording afresh from now.
+    const live = await this.get("live", {});
+    let touched = false;
+    for (const [id, l] of Object.entries(live)) {
+      if (fmt.format(new Date(l.updated_at)) !== date) continue;
+      live[id] = { ...l, peak: 0, entries: 0, exits: 0 };
+      touched = true;
+    }
+    if (touched) await this.ctx.storage.put("live", live);
+    this.lastSample.clear();
+    // Any service recorded inside that day goes too — its figures came from these counts.
+    const services = await this.get("services", []);
+    const left = services.filter((s) => fmt.format(new Date(Date.parse(s.started_at))) !== date);
+    if (left.length !== services.length) await this.ctx.storage.put("services", left);
+    const log = await this.deletedDays();
+    log.unshift({ date, attendance: peak, rows: mine.length, services_removed: services.length - left.length,
+      deleted_by: clean(user, 60) || "an administrator", deleted_at: new Date().toISOString() });
+    await this.ctx.storage.put("deleted_days", log.slice(0, 200));
+    return json({ deleted: true, date, attendance: peak });
   }
 
   /** Each room's highest camera count on a day (for the end-of-service send). */

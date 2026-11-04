@@ -60,6 +60,12 @@ export interface EdgeDaily {
 export interface FoundCamera { id: string; device_id: string; device_name: string; ip: string; name: string; model: string; added: boolean }
 export interface FoundCameras { searching: boolean; searched: boolean; results: FoundCamera[] }
 
+/** A day whose counts were deleted. Kept for 30 days, then gone for good. */
+export interface DeletedDay {
+  date: string; attendance: number; rows: number; services_removed: number;
+  deleted_by: string; deleted_at: string;
+}
+
 export const edgeVenueApi = {
   cameras: (all = false) => edgeFetch<EdgeCamera[]>(`/api/live/cameras${all ? "?all=1" : ""}`),
   venue: () => edgeFetch<VenueTotal>("/api/live/venue"),
@@ -76,6 +82,9 @@ export const edgeVenueApi = {
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removeCamera: (id: string, permanent = false) =>
     edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}${permanent ? "?permanent=1" : ""}`, { method: "DELETE" }),
+  deleteDay: (date: string, tz: string) =>
+    edgeFetch<{ deleted: boolean; date: string; attendance: number }>(`/api/live/day/${enc(date)}?tz=${enc(tz)}`, { method: "DELETE" }),
+  deletedDays: () => edgeFetch<DeletedDay[]>("/api/live/deleted-days"),
   seatStates: (cameraId: string) =>
     edgeFetch<{ layout: { id: number; name: string } | null; seats: import("@/types").SeatState[]; updated_at: string | null }>(`/api/live/seat-states/${enc(cameraId)}`),
   reserveSeats: (cameraId: string, seatIds: string[], reserved: boolean, reservedFor?: string | null) =>

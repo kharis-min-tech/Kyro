@@ -8,12 +8,12 @@ import { CameraSwitcher } from "@/components/layout/CameraSwitcher";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE, makeDemoAnalytics } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
-import { edgeVenueApi } from "@/lib/edgeVenue";
+import { edgeVenueApi, type DeletedDay } from "@/lib/edgeVenue";
 import { useCameras } from "@/hooks/useCameras";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
-import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2 } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { AttendancePoint, AnalyticsSummary, HourlyBucket } from "@/types";
 
@@ -222,10 +222,23 @@ function WeeklyBreakdown({ data }: { data: AttendancePoint[] }) {
 }
 
 // ─── Recent sessions table ────────────────────────────────────────────────────
-function RecentSessions({ data, onSelect, selectedTs }: {
+function RecentSessions({ data, onSelect, selectedTs, canDelete, onDeleted }: {
   data: AttendancePoint[]; onSelect: (p: AttendancePoint) => void; selectedTs?: string;
+  canDelete?: boolean; onDeleted?: () => void;
 }) {
   const recent = [...data].reverse().slice(0, 10);
+  const [confirm, setConfirm] = useState<string | null>(null);   // the date being confirmed
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function remove(date: string) {
+    setBusy(true); setErr(null);
+    try {
+      await edgeVenueApi.deleteDay(date, Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+      setConfirm(null); onDeleted?.();
+    } catch (e: any) { setErr(e?.message ?? "Couldn't delete that service"); }
+    setBusy(false);
+  }
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
       <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -238,6 +251,7 @@ function RecentSessions({ data, onSelect, selectedTs }: {
             {["Date","Day","Attendance","Occupancy"].map((h,i) => (
               <th key={h} className={`px-5 py-2.5 font-medium ${i>=2?"text-right":"text-left"}`} style={{ color:"#4b5563" }}>{h}</th>
             ))}
+            {canDelete && <th className="px-3 py-2.5" />}
           </tr>
         </thead>
         <tbody>
@@ -255,11 +269,70 @@ function RecentSessions({ data, onSelect, selectedTs }: {
                 <td className="px-5 py-3" style={{ color:"#6b7280" }}>{DAYS_LONG[dow]}</td>
                 <td className="px-5 py-3 text-right font-semibold text-white tabular-nums">{d.attendance.toLocaleString()}</td>
                 <td className="px-5 py-3 text-right tabular-nums" style={{ color:"#6366f1" }}>{d.occupancy_pct.toFixed(1)}%</td>
+                {canDelete && (
+                  <td className="px-3 py-3 text-right">
+                    <button onClick={(e) => { e.stopPropagation(); setConfirm(d.timestamp.slice(0, 10)); }}
+                      className="text-gray-600 hover:text-red-400 transition-colors"
+                      title="Delete this service" aria-label="Delete this service"><Trash2 size={13} /></button>
+                  </td>
+                )}
               </tr>
             );
           })}
         </tbody>
       </table>
+      {confirm && (
+        <div className="mx-5 mb-4 rounded-xl px-4 py-3 flex flex-col gap-2"
+          style={{ background: "rgba(185,28,28,0.1)", border: "1px solid rgba(185,28,28,0.4)" }}>
+          <p className="text-sm font-semibold text-white">Delete the service on {confirm}?</p>
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            Every count Kyro recorded that day is removed for good, along with any service recorded in it. It will disappear
+            from here, the calendar and the charts. This can&apos;t be undone — it will be listed under <strong>Recently
+            deleted</strong> for 30 days, then gone entirely. If a camera is still counting, today starts recording again
+            from now, so stop counting first if you want the day left empty.
+          </p>
+          {err && <p className="text-xs text-red-400">{err}</p>}
+          <div className="flex gap-2 mt-1">
+            <button onClick={() => remove(confirm)} disabled={busy}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-red-700 hover:bg-red-600 disabled:opacity-50">
+              <Trash2 size={11} /> {busy ? "Deleting…" : "Yes, delete it"}
+            </button>
+            <button onClick={() => { setConfirm(null); setErr(null); }}
+              className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white bg-gray-800">Cancel</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** What was deleted, so it is never invisible. Cleared automatically after 30 days. */
+function DeletedServices({ reload }: { reload: number }) {
+  const [days, setDays] = useState<DeletedDay[] | null>(null);
+  useEffect(() => { edgeVenueApi.deletedDays().then(setDays).catch(() => setDays([])); }, [reload]);
+  if (!days || days.length === 0) return null;
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
+      <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
+        <p className="text-sm font-semibold text-white">Recently deleted</p>
+        <p className="text-xs mt-0.5" style={{ color: "#6b7280" }}>Removed for good after 30 days</p>
+      </div>
+      <div className="flex flex-col">
+        {days.map((d, i) => (
+          <div key={`${d.date}-${i}`} className="px-5 py-3 flex items-center gap-3"
+            style={{ borderBottom: i < days.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+            <Trash2 size={13} className="shrink-0" style={{ color: "#6b7280" }} />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium" style={{ color: "var(--text-primary)" }}>{d.date} · {d.attendance} people</p>
+              <p className="text-xs" style={{ color: "#6b7280" }}>
+                Deleted by {d.deleted_by} on {new Date(d.deleted_at).toLocaleDateString([], { day: "numeric", month: "short" })}
+                {" · gone for good "}
+                {new Date(Date.parse(d.deleted_at) + 30 * 86400000).toLocaleDateString([], { day: "numeric", month: "short" })}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -267,7 +340,7 @@ function RecentSessions({ data, onSelect, selectedTs }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AnalyticsPage() {
   const [cameraId, setCameraId] = useState(DEFAULT_CAMERA);
-  const { canViewAttendance, isAuthenticated } = useAuth();
+  const { canViewAttendance, isAuthenticated, role } = useAuth();
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
   // Read once after mount (never during render) to avoid hydration mismatches.
@@ -282,6 +355,7 @@ export default function AnalyticsPage() {
   const [edgeCamera, setEdgeCamera] = useState("");
   const [edgeError, setEdgeError] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [deletedTick, setDeletedTick] = useState(0);
   const { cameras } = useCameras();
   useEffect(() => {
     if (!hydrated || inDemoMode()) return;
@@ -482,7 +556,10 @@ export default function AnalyticsPage() {
               <ArrivalChart data={arrival}/>
               <WeeklyBreakdown data={filtered}/>
             </div>
-            <RecentSessions data={filtered} onSelect={setSelectedDay} selectedTs={selectedDay?.timestamp}/>
+            <RecentSessions data={filtered} onSelect={setSelectedDay} selectedTs={selectedDay?.timestamp}
+              canDelete={edge && role === "admin"}
+              onDeleted={() => { setDeletedTick((n) => n + 1); loadData(); }} />
+            {edge && role === "admin" && <DeletedServices reload={deletedTick} />}
           </>}
         </div>
       </main>
