@@ -13,6 +13,7 @@ import { ServiceEndedPrompt } from "@/components/ui/AutoServices";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
 import { PageGuard } from "@/components/ui/PageGuard";
+import { PresenceHeartbeat } from "@/components/ui/Presence";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -67,6 +68,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <ReviewProvider>
               <SeatAlertProvider>
                 <PushRegistrationRefresher />
+                {/* Says "this browser is signed in" so admins can see who is on Kyro */}
+                <PresenceHeartbeat />
                 <PageGuard />
                 {/* Backend-unreachable banner (only shown in Live mode) */}
                 <BackendStatusBanner />

@@ -67,6 +67,8 @@ const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought
  * departures are withheld.
  */
 const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-04T18:33:54Z");
+const PRESENCE_STALE_MS = 90_000;
+const MAX_SESSIONS_PER_USER = 20; // same account signed in from more places than this: keep the newest // no heartbeat for this long = that browser has gone
 const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
@@ -135,6 +137,10 @@ export class VenueHub extends DurableObject {
     // Face matching (only while switched on): camera_id → { at, codes: Float32Array[] }.
     // Kept in memory only, for under a minute — never written to storage.
     this.faceCodes = new Map();
+    // Who is signed in right now: username → deviceId → { name, role, device, at }.
+    // Memory only — if this restarts, everyone's next heartbeat rebuilds it
+    // within half a minute, and nothing is worth storing.
+    this.presence = new Map();
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
@@ -199,6 +205,13 @@ export class VenueHub extends DurableObject {
         return this.watch(decodeURIComponent(p.split("/").pop()), request);
       }
       const user = decodeURIComponent(request.headers.get("X-Kyro-User") || "");
+      const username = decodeURIComponent(request.headers.get("X-Kyro-Username") || "");
+      // Anyone signed in says "still here"; only an administrator may see the list.
+      if (p === "/api/live/presence" && request.method === "POST") return this.hereNow(request, username, user, role);
+      if (p === "/api/live/presence" && request.method === "GET") {
+        if (role !== "admin") return json({ error: "Only administrators can see who is signed in" }, 403);
+        return json(this.whoIsHere());
+      }
       // A role is derived from the pages someone was given, so "Analytics only"
       // comes out as operator. Check the actual page too, or that person could
       // change the rota or black out part of the hall with an ignore area.
@@ -971,6 +984,51 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("streams", urls);
     return camera_id;
+  }
+
+  // ── Who is signed in ──────────────────────────────────────────────────────
+  // One person can be in two places at once — a laptop and a phone are two
+  // sessions of the same account. Each browser says it is still here every
+  // half minute; anything not heard from for PRESENCE_STALE_MS has gone.
+
+  async hereNow(request, username, name, role) {
+    if (!username) return json({ ok: true });
+    const body = await request.json().catch(() => ({}));
+    const device = clean(body.device, 40);           // this browser's own id
+    if (!device) return json({ ok: true });
+    const now = Date.now();
+    const mine = this.presence.get(username) ?? new Map();
+    // Tidy this account's own stale browsers as we go, so memory stays small
+    // even if no administrator ever opens the list.
+    for (const [id, d] of mine) if (now - d.at > PRESENCE_STALE_MS) mine.delete(id);
+    mine.set(device, { name: name || username, role, kind: clean(body.kind, 20) || "computer", at: now });
+    // Nobody is signed in from 20 places at once; if ids keep changing, keep
+    // the newest and drop the rest rather than growing without limit.
+    if (mine.size > MAX_SESSIONS_PER_USER) {
+      for (const [id] of [...mine].sort((a, b) => a[1].at - b[1].at).slice(0, mine.size - MAX_SESSIONS_PER_USER)) mine.delete(id);
+    }
+    this.presence.set(username, mine);
+    return json({ ok: true, here: this.whoIsHere().people_here });
+  }
+
+  whoIsHere() {
+    const now = Date.now();
+    const users = [];
+    let sessions = 0;
+    for (const [username, devices] of this.presence) {
+      for (const [id, d] of devices) if (now - d.at > PRESENCE_STALE_MS) devices.delete(id);
+      if (!devices.size) { this.presence.delete(username); continue; }
+      const list = [...devices.values()].sort((a, b) => b.at - a.at);
+      sessions += list.length;
+      users.push({
+        username, name: list[0].name, role: list[0].role,
+        sessions: list.length,
+        devices: list.map((d) => ({ kind: d.kind, seconds_ago: Math.round((now - d.at) / 1000) })),
+        last_seen: new Date(list[0].at).toISOString(),
+      });
+    }
+    users.sort((a, b) => a.name.localeCompare(b.name));
+    return { people_here: users.length, sessions, users };
   }
 
   // ── AI questions ───────────────────────────────────────────────────────────

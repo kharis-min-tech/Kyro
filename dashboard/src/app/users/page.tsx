@@ -5,6 +5,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { usersApi } from "@/lib/api";
 import { isEdgeLive, edgeUsersApi, edgeRefreshSession, edgeTokenPayload } from "@/lib/edgeAuth";
 import { DEMO_MODE, DEMO_USERS } from "@/lib/demo";
+import { WhoIsOnKyro, UserPresence } from "@/components/ui/Presence";
+import type { WhoIsHere } from "@/lib/presence";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
@@ -412,6 +414,9 @@ export default function UsersPage() {
   const [status, setStatus]             = useState<{ ok: boolean; msg: string } | null>(null);
   const [revealingFor, setRevealingFor] = useState<string | null>(null);
   const [editingId, setEditingId]       = useState<number | null>(null);
+  // Who is signed in right now — fetched once by the section above and
+  // reused for the Online/Offline mark on each row.
+  const [here, setHere] = useState<WhoIsHere | null>(null);
   const [edgeMode, setEdgeMode]         = useState(false);
   const [localMode, setLocalMode]       = useState(false);
   useEffect(() => { setEdgeMode(isEdgeLive()); setLocalMode(localStore()); }, []);
@@ -556,6 +561,9 @@ export default function UsersPage() {
           </div>
         )}
 
+        {/* Who is signed in right now (administrators, Live mode) */}
+        <WhoIsOnKyro onLoad={setHere} />
+
         {/* Create form */}
         <form onSubmit={handleCreate} className="rounded-2xl overflow-hidden mb-8" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -636,6 +644,7 @@ export default function UsersPage() {
                           <p className="text-sm font-semibold text-white">{u.display_name || u.username}</p>
                           <p className="text-xs font-mono" style={{ color: "var(--text-muted)" }}>{u.username}</p>
                           <RoleBadge role={u.role} />
+                          <UserPresence here={here} username={u.username} />
                         </div>
                         <div className="flex flex-wrap gap-1.5">
                           {ALL_PAGES.filter((p) => pages.includes(p.id)).map((p) => {

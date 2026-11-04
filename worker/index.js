@@ -101,6 +101,7 @@ export default {
         headers.delete("X-Kyro-Internal");
         headers.delete("X-Kyro-User");
         headers.delete("X-Kyro-Pages");
+        headers.delete("X-Kyro-Username");
         if (url.pathname.startsWith("/api/live/")) {
           // A browser can't add headers to a WebSocket, so live video sends the
           // sign-in token as its second "protocol" instead: ["kyro", token].
@@ -114,6 +115,7 @@ export default {
           headers.set("X-Kyro-Role", me.role);
           headers.set("X-Kyro-User", encodeURIComponent(me.display_name || me.username || ""));
           headers.set("X-Kyro-Pages", (me.pages || []).join(","));
+          headers.set("X-Kyro-Username", encodeURIComponent(me.username || ""));
         }
         return hub.fetch(new Request(request, { headers }));
       }
