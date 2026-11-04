@@ -2,8 +2,14 @@
  * Who is signed in to Kyro right now.
  *
  * Every browser that has someone signed in quietly says "still here" every
- * half minute. The Kyro server keeps those messages in memory only, and
- * forgets any browser it hasn't heard from for a minute and a half.
+ * ten seconds, and says goodbye the moment it is closed, switched away from or
+ * locked — so a device that has gone stops being listed straight away instead
+ * of lingering. The Kyro server keeps all of it in memory only, and forgets any
+ * browser it hasn't heard from for 30 seconds, which covers the cases where no
+ * goodbye could be sent: a crash, a flat battery, Wi-Fi dropping.
+ *
+ * "On Kyro" therefore means a page actually open in front of someone. Put the
+ * phone in your pocket and it drops off within a few seconds.
  *
  * One person can be in two places at once — Ruth on the church computer and
  * on her phone is one account with two sessions — so each browser gives
@@ -17,8 +23,10 @@
 import { useEffect, useState } from "react";
 import { isEdgeLive, edgeFetch, edgeToken, edgeTokenPayload } from "@/lib/edgeAuth";
 
-/** How often each browser says "still here". The server allows 90s. */
-const BEAT_MS = 30_000;
+/** How often each browser says "still here". The server forgets one after 30s. */
+const BEAT_MS = 10_000;
+/** How often the administrator's list re-checks while they are looking at it. */
+const LOOK_MS = 5_000;
 
 /** This browser's own id — made once, then kept. */
 export function deviceId(): string {
@@ -58,42 +66,59 @@ export function usePresenceHeartbeat() {
   useEffect(() => {
     if (!isEdgeLive()) return;
     let stopped = false;
-    const beat = () => {
-      if (stopped || document.visibilityState === "hidden") return;
+
+    const send = (path: string, keepalive = false) => {
       const token = edgeToken();
       if (!token || !edgeTokenPayload()) return;   // signed out — nothing to report
       // Deliberately NOT edgeFetch: that treats any refusal as "your session
       // ended" and sends the browser to the sign-in page. A background
       // heartbeat must never be able to sign anyone out.
-      fetch("/api/live/presence", {
+      fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ device: deviceId(), kind: deviceKind() }),
         cache: "no-store",
-      }).catch(() => {});                      // never let this bother anyone
+        // keepalive lets the goodbye finish after the page itself has gone.
+        ...(keepalive ? { keepalive: true } : {}),
+      }).catch(() => {});                           // never let this bother anyone
     };
+
+    const beat = () => { if (!stopped && document.visibilityState === "visible") send("/api/live/presence"); };
+    // Closing the tab, switching app, locking the phone: say so now, rather
+    // than leaving an administrator looking at a device that has gone.
+    const bye = () => { if (!stopped) send("/api/live/presence/bye", true); };
+
     beat();
     const t = setInterval(beat, BEAT_MS);
-    // Coming back to the tab should show up straight away, not in 30 seconds.
-    document.addEventListener("visibilitychange", beat);
-    return () => { stopped = true; clearInterval(t); document.removeEventListener("visibilitychange", beat); };
+    const onVisible = () => (document.visibilityState === "visible" ? beat() : bye());
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("pagehide", bye);
+    return () => {
+      stopped = true;
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pagehide", bye);
+    };
   }, []);
 }
 
-/** The list of who is signed in, refreshed every 15 seconds. Administrators only. */
+/** The list of who is signed in, refreshed every few seconds. Administrators only. */
 export function useWhoIsHere(enabled = true) {
   const [here, setHere] = useState<WhoIsHere | null>(null);
   useEffect(() => {
     if (!enabled || !isEdgeLive()) return;
     let stopped = false;
     const load = () => {
+      if (stopped || document.visibilityState === "hidden") return;
       edgeFetch<WhoIsHere>("/api/live/presence")
         .then((d) => { if (!stopped) setHere(d); })
         .catch(() => {});
     };
     load();
-    const t = setInterval(load, 15_000);
-    return () => { stopped = true; clearInterval(t); };
+    const t = setInterval(load, LOOK_MS);
+    // Coming back to this page should show the truth at once, not in 5 seconds.
+    document.addEventListener("visibilitychange", load);
+    return () => { stopped = true; clearInterval(t); document.removeEventListener("visibilitychange", load); };
   }, [enabled]);
   return here;
 }

@@ -67,8 +67,11 @@ const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought
  * departures are withheld.
  */
 const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-04T18:33:54Z");
-const PRESENCE_STALE_MS = 90_000;
-const MAX_SESSIONS_PER_USER = 20; // same account signed in from more places than this: keep the newest // no heartbeat for this long = that browser has gone
+// A browser says "still here" every 10 seconds and says goodbye when it is
+// closed or put away, so this only has to cover an ungraceful exit — a crash,
+// a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
+const PRESENCE_STALE_MS = 30_000;
+const MAX_SESSIONS_PER_USER = 20; // same account signed in from more places than this: keep the newest
 const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
@@ -208,6 +211,7 @@ export class VenueHub extends DurableObject {
       const username = decodeURIComponent(request.headers.get("X-Kyro-Username") || "");
       // Anyone signed in says "still here"; only an administrator may see the list.
       if (p === "/api/live/presence" && request.method === "POST") return this.hereNow(request, username, user, role);
+      if (p === "/api/live/presence/bye" && request.method === "POST") return this.goneNow(request, username);
       if (p === "/api/live/presence" && request.method === "GET") {
         if (role !== "admin") return json({ error: "Only administrators can see who is signed in" }, 403);
         return json(this.whoIsHere());
@@ -1009,6 +1013,18 @@ export class VenueHub extends DurableObject {
     }
     this.presence.set(username, mine);
     return json({ ok: true, here: this.whoIsHere().people_here });
+  }
+
+  /** A browser being closed or put away: drop it straight away, don't wait. */
+  async goneNow(request, username) {
+    const body = await request.json().catch(() => ({}));
+    const device = clean(body.device, 40);
+    const mine = username && device ? this.presence.get(username) : null;
+    if (mine) {
+      mine.delete(device);
+      if (!mine.size) this.presence.delete(username);
+    }
+    return json({ ok: true });
   }
 
   whoIsHere() {
