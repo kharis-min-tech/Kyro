@@ -126,6 +126,8 @@ async function registerDevice(): Promise<DeviceCred> {
 export interface CameraReport {
   key: string; label: string; current: number; peak: number; status: "online" | "error"; error?: string | null;
   fps: number; width: number; height: number;
+  /** People who arrived and left, from following them between counts. */
+  entries: number; exits: number;
 }
 
 export type Zone = [number, number, number, number];
@@ -138,7 +140,7 @@ export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: s
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${d.token}` },
-    body: JSON.stringify({ version: CAMERA_MODE_VERSION, cameras: cameras.map((c) => ({ ...c, kind: "web", entries: 0, exits: 0 })) }),
+    body: JSON.stringify({ version: CAMERA_MODE_VERSION, cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
   });
   let res = await post(dev);
   if (res.status === 401) {          // removed on the Cameras page → register again

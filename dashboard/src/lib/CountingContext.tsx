@@ -21,6 +21,7 @@ import {
   sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
+import { PersonTracker } from "@/lib/personTracker";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 
 const ON_KEY = "kyro_counting_on";          // keep counting after a reload
@@ -39,6 +40,7 @@ interface Cam {
   // the whole picture alone, and check now and then whether tiles would add
   // anyone; if they would, keep using them for this camera.
   needsTiles: boolean; sinceTileCheck: number;
+  tracker: PersonTracker;      // follows people between counts → arrived / left
 }
 
 export interface CamView {
@@ -119,7 +121,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
-          needsTiles: true, sinceTileCheck: 0,
+          needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(),
         };
         cams.current.set(key, c);
       }
@@ -186,6 +188,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // so "nobody there" can be told apart from "seen but not sure".
           c.rawPeople = people;
           c.people = outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height);
+          c.tracker.update(c.people);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();
@@ -285,6 +288,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       const list = [...cams.current.values()].filter((c) => c.stream);
       const reports: CameraReport[] = list.map((c) => ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
+        entries: c.tracker.entries, exits: c.tracker.exits,
         status: c.error || Date.now() - c.countedAt > 60_000 ? "error" : "online",
         error: c.error ?? (c.countedAt ? null : "Starting…"),
         fps: c.secondsPerCount ? +(1 / c.secondsPerCount).toFixed(1) : 0,

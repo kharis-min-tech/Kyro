@@ -590,9 +590,10 @@ export class VenueHub extends DurableObject {
         current, peak: l.peak || 0, entries: l.entries || 0, exits: l.exits || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
-        // In/out needs the camera to follow people between pictures: a browser
-        // never does it at all, and a slow camera can't do it reliably.
-        in_out: c.kind !== "web" && (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
+        // In/out means following people between pictures, which needs the camera
+        // to be counting fast enough — otherwise someone merely flickering out of
+        // view looks like a departure.
+        in_out: (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
       };
     });
     const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);
