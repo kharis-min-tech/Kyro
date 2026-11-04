@@ -238,7 +238,8 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/devices" && request.method === "GET") return json(await this.deviceList());
       if (p.startsWith("/api/live/devices/") && request.method === "DELETE") return this.removeDevice(decodeURIComponent(p.split("/").pop()));
       if (p.startsWith("/api/live/cameras/") && request.method === "PATCH") return this.updateCamera(decodeURIComponent(p.split("/").pop()), request);
-      if (p.startsWith("/api/live/cameras/") && request.method === "DELETE") return this.removeCamera(decodeURIComponent(p.split("/").pop()));
+      if (p.startsWith("/api/live/cameras/") && request.method === "DELETE")
+        return this.removeCamera(decodeURIComponent(p.split("/").pop()), url.searchParams.get("permanent") === "1");
       if (p === "/api/live/streams" && request.method === "POST") return this.addStream(request);
       if (lay && request.method === "POST" && !lay[2]) return this.createLayout(decodeURIComponent(lay[1]), request);
       if (lay && request.method === "POST" && lay[3]) return this.activateLayout(decodeURIComponent(lay[1]), Number(lay[2]));
@@ -1355,11 +1356,14 @@ export class VenueHub extends DurableObject {
   }
 
   /** Network cameras are deleted; a USB camera is just switched off (it would reappear while plugged in). */
-  async removeCamera(camera_id) {
+  async removeCamera(camera_id, permanent = false) {
     const cams = await this.get("cameras", {});
     const c = cams[camera_id];
     if (!c) return json({ error: "No such camera" }, 404);
-    if (c.kind === "network") {
+    // Switching off only hides a plugged-in camera, because it would reappear.
+    // Deleting really removes it: if it is still plugged in it comes back as a
+    // new camera and Kyro asks whether to add it, which is what people expect.
+    if (permanent || c.kind === "network") {
       delete cams[camera_id];
       const urls = await this.get("streams", {});
       delete urls[camera_id];

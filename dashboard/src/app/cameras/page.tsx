@@ -1338,7 +1338,15 @@ function CameraComputersSection({ devices, error, onChanged }: {
 function SwitchedOffCameras({ cameras, onChanged }: { cameras: EdgeCamera[]; onChanged: () => void }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [err, setErr]       = useState<string | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
   if (cameras.length === 0) return null;
+
+  async function remove(id: string) {
+    setBusyId(id); setErr(null);
+    try { await edgeVenueApi.removeCamera(id, true); setConfirmId(null); onChanged(); }
+    catch (e: any) { setErr(e?.message ?? "Couldn't delete that camera"); }
+    finally { setBusyId(null); }
+  }
 
   async function switchOn(id: string) {
     setBusyId(id); setErr(null);
@@ -1364,8 +1372,35 @@ function SwitchedOffCameras({ cameras, onChanged }: { cameras: EdgeCamera[]; onC
               className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
               {busyId === c.camera_id ? "Switching on…" : "Switch back on"}
             </button>
+            <button onClick={() => setConfirmId(c.camera_id)} disabled={busyId === c.camera_id}
+              className="shrink-0 text-gray-600 hover:text-red-400 transition-colors disabled:opacity-50"
+              title="Delete camera" aria-label={`Delete ${c.name}`}>
+              <Trash2 size={13} />
+            </button>
           </div>
         ))}
+        {confirmId && (() => {
+          const c = cameras.find((x) => x.camera_id === confirmId);
+          if (!c) return null;
+          return (
+            <div className="rounded-xl px-4 py-3 flex flex-col gap-2"
+              style={{ background: "rgba(185,28,28,0.1)", border: "1px solid rgba(185,28,28,0.4)" }}>
+              <p className="text-sm font-semibold text-white">Delete &quot;{c.name}&quot;?</p>
+              <p className="text-xs text-gray-400">
+                This removes the camera and its settings — its room, seats and any &quot;don&apos;t count&quot; areas. Counts already
+                recorded stay on Analytics. If the camera is still plugged in, Kyro will see it as new and ask whether to add it.
+              </p>
+              <div className="flex gap-2 mt-1">
+                <button onClick={() => remove(c.camera_id)} disabled={busyId === c.camera_id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-red-700 hover:bg-red-600 disabled:opacity-50">
+                  <Trash2 size={11} /> {busyId === c.camera_id ? "Deleting…" : "Yes, delete it"}
+                </button>
+                <button onClick={() => setConfirmId(null)}
+                  className="px-3 py-1.5 rounded-lg text-xs text-gray-400 hover:text-white bg-gray-800">Cancel</button>
+              </div>
+            </div>
+          );
+        })()}
         {err && <p className="text-red-400 text-xs">{err}</p>}
       </div>
     </div>

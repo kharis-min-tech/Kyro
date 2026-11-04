@@ -74,7 +74,8 @@ export const edgeVenueApi = {
     name?: string; zone_name?: string; zone_capacity?: number; zone_order?: number;
     location?: "indoor" | "queue"; hidden?: boolean; ignore_zones?: Zone[];
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
-  removeCamera: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "DELETE" }),
+  removeCamera: (id: string, permanent = false) =>
+    edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}${permanent ? "?permanent=1" : ""}`, { method: "DELETE" }),
   seatStates: (cameraId: string) =>
     edgeFetch<{ layout: { id: number; name: string } | null; seats: import("@/types").SeatState[]; updated_at: string | null }>(`/api/live/seat-states/${enc(cameraId)}`),
   reserveSeats: (cameraId: string, seatIds: string[], reserved: boolean, reservedFor?: string | null) =>
