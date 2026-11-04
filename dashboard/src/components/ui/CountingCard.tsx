@@ -2,6 +2,7 @@
 
 import { AlertTriangle, Loader2, Play, Square, Users } from "lucide-react";
 import { useCounting } from "@/lib/CountingContext";
+import { CameraPreview } from "@/components/ui/CameraPreview";
 
 /**
  * "Counting: on" for the Cameras page.
@@ -14,7 +15,7 @@ export function CountingCard() {
   const c = useCounting();
   if (!c || !c.allowed) return null;
 
-  const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, demo } = c;
+  const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, demo, streamFor } = c;
   const on = phase === "running";
   const busy = phase === "starting";
   const live = views.filter((v) => v.streaming);
@@ -91,6 +92,18 @@ export function CountingCard() {
           <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "rgba(239,68,68,0.08)" }}>
             <AlertTriangle size={13} className="text-red-400 shrink-0 mt-0.5" />
             <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {on && live.length > 0 && (
+          <div className="flex flex-col gap-2">
+            {live.map((v) => (
+              <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} count={v.count} />
+            ))}
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              A green box is someone being counted. If the number looks too high, look at where the extra boxes are — a
+              poster or photo of people, a face on a screen, or the camera seeing this very screen all get counted.
+            </p>
           </div>
         )}
 

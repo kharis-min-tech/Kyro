@@ -59,6 +59,8 @@ interface CountingValue {
   secondsPerCount: number;
   start: () => Promise<void>;
   stop: () => void;
+  /** The camera's live picture, for a preview. Straight from the camera, so no lag. */
+  streamFor: (key: string) => MediaStream | null;
 }
 
 const Ctx = createContext<CountingValue | null>(null);
@@ -331,11 +333,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     };
   }, [phase, syncCameras]);
 
+  const streamFor = useCallback((key: string) => cams.current.get(key)?.stream ?? null, []);
   const total = views.filter((v) => v.streaming).reduce((n, v) => n + v.count, 0);
   const secondsPerCount = views.reduce((m, v) => Math.max(m, v.secondsPerCount), 0);
 
   return (
-    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop }}>
+    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, streamFor }}>
       {children}
       {/* The cameras' own video elements: on the page everywhere, visible nowhere. */}
       <div ref={holder} aria-hidden style={{ position: "fixed", width: 1, height: 1, overflow: "hidden", opacity: 0, pointerEvents: "none" }} />
