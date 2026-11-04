@@ -24,15 +24,34 @@ export interface Box { box: [number, number, number, number] }
 // box that only flickers in and out never reaches it. Simply totalling sightings
 // wasn't enough: a false box appearing every other count still added up.
 const SCORE_TO_CONFIRM = 3;
-const MISSING_TO_LEAVE = 8;    // ~2.5 seconds — survives a brief obstruction
+/**
+ * How long someone must be out of sight before they count as having left.
+ *
+ * This was 8 counts (~2.5 s), which counted the same people in and out over and
+ * over: turn away from the camera, or stand behind someone, and you had "left"
+ * and then "arrived" again. In seconds rather than counts, so it doesn't change
+ * with how fast the computer is.
+ */
+const GRACE_MS = 45_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
+/** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
+const RETURN_WITHIN_WIDTHS = 3;
 
 interface Track {
   id: number;
   box: [number, number, number, number];
   score: number;               // rises when seen, falls when missed
   missing: number;
+  lastSeen: number;            // when they were last actually seen
   counted: boolean;            // already counted as someone who arrived
+}
+
+/** Centre-to-centre distance, in multiples of the wider box's width. */
+function apart(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const ax = (a[0] + a[2]) / 2, ay = (a[1] + a[3]) / 2;
+  const bx = (b[0] + b[2]) / 2, by = (b[1] + b[3]) / 2;
+  const w = Math.max(a[2] - a[0], b[2] - b[0]) || 1;
+  return Math.hypot(ax - bx, ay - by) / w;
 }
 
 function iou(a: [number, number, number, number], b: [number, number, number, number]): number {
@@ -50,7 +69,7 @@ export class PersonTracker {
   exits = 0;
 
   /** Give it this count's people; returns how many are here now (confirmed only). */
-  update(people: Box[]): number {
+  update(people: Box[], now: number = Date.now()): number {
     const boxes = people.map((p) => p.box);
     const takenTrack = new Set<number>();
     const takenBox = new Set<number>();
@@ -66,7 +85,7 @@ export class PersonTracker {
       if (takenTrack.has(t) || takenBox.has(b)) continue;
       takenTrack.add(t); takenBox.add(b);
       const tr = this.tracks[t];
-      tr.box = boxes[b]; tr.missing = 0;
+      tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
       tr.score = Math.min(SCORE_TO_CONFIRM + 2, tr.score + 1);
       if (!tr.counted && tr.score >= SCORE_TO_CONFIRM) { tr.counted = true; this.entries++; }
     }
@@ -82,11 +101,28 @@ export class PersonTracker {
 
     boxes.forEach((b, bi) => {
       if (takenBox.has(bi)) return;
-      this.tracks.push({ id: this.nextId++, box: b, score: 1, missing: 0, counted: false });
+      // Before calling this a new arrival, see whether someone we lost recently
+      // has simply come back — turned round, or stepped out and returned.
+      let revive = -1, best = RETURN_WITHIN_WIDTHS;
+      this.tracks.forEach((t, ti) => {
+        if (takenTrack.has(ti) || t.missing === 0) return;
+        const d = apart(t.box, b);
+        const sizes = (t.box[3] - t.box[1]) / Math.max(1, b[3] - b[1]);
+        if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
+      });
+      if (revive >= 0) {
+        const t = this.tracks[revive];
+        takenTrack.add(revive);
+        t.box = b; t.missing = 0; t.lastSeen = now;
+        t.score = Math.min(SCORE_TO_CONFIRM + 2, t.score + 1);
+        if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; this.entries++; }
+        return;
+      }
+      this.tracks.push({ id: this.nextId++, box: b, score: 1, missing: 0, lastSeen: now, counted: false });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
-      if (t.missing < MISSING_TO_LEAVE) return true;
+      if (now - t.lastSeen < GRACE_MS) return true;
       if (t.counted) this.exits++;     // only people we'd counted as arriving can leave
       return false;
     });
