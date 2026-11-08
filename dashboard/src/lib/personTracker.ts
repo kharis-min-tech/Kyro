@@ -33,6 +33,24 @@ const SAME_FACE = 0.4;
 // wasn't enough: a false box appearing every other count still added up.
 const SCORE_TO_CONFIRM = 3;
 /**
+ * The same, at a doorway.
+ *
+ * Three sightings is right for a room, where a person stays in view for
+ * minutes and the only thing three protects against is a flickering false box.
+ * At a door it is a different bargain: someone crosses in a second or two, so
+ * at two or three counts a second they are seen two or three times in total.
+ * Asking for three meant the quick ones were never confirmed, and a camera
+ * watching a busy entrance reported "0 in, 1 out" while people streamed
+ * through it.
+ *
+ * Two is safe here in a way it would not be on a room, because a doorway count
+ * has a second test a room has none of: the person must also have travelled a
+ * clear distance in one direction before they are counted at all (see
+ * wentIn). A box that flickers in and out doesn't travel anywhere, so it
+ * still counts for nothing.
+ */
+const DOOR_SCORE_TO_CONFIRM = 2;
+/**
  * How long someone must be out of sight before they count as having left.
  *
  * This was 8 counts (~2.5 s), which counted the same people in and out over and
@@ -228,6 +246,9 @@ export class PersonTracker {
    */
   update(people: Box[], now: number = Date.now(), faces?: (Float32Array | null)[]): number {
     const boxes = people.map((p) => p.box);
+    // How many sightings before this is a person: fewer at a doorway, where
+    // they are only in view for a moment (see DOOR_SCORE_TO_CONFIRM).
+    const confirmAt = this.inward ? DOOR_SCORE_TO_CONFIRM : SCORE_TO_CONFIRM;
     const takenTrack = new Set<number>();
     const takenBox = new Set<number>();
 
@@ -249,8 +270,8 @@ export class PersonTracker {
       const tr = this.tracks[t];
       tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
       if (faces?.[b]) tr.face = faces[b];
-      tr.score = Math.min(SCORE_TO_CONFIRM + 2, tr.score + 1);
-      if (!tr.counted && tr.score >= SCORE_TO_CONFIRM) { tr.counted = true; if (!this.inward) this.entries++; }
+      tr.score = Math.min(confirmAt + 2, tr.score + 1);
+      if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) this.entries++; }
     }
 
     // Mark the misses BEFORE adding new tracks, or a brand-new one is counted
@@ -294,8 +315,8 @@ export class PersonTracker {
         takenTrack.add(revive);
         t.box = b; t.missing = 0; t.lastSeen = now;
         if (mine) t.face = mine;
-        t.score = Math.min(SCORE_TO_CONFIRM + 2, t.score + 1);
-        if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; if (!this.inward) this.entries++; }
+        t.score = Math.min(confirmAt + 2, t.score + 1);
+        if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) this.entries++; }
         return;
       }
       this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false, face: faces?.[bi] ?? null });

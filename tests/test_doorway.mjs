@@ -236,31 +236,101 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
 }
 
 
-// 14. Counted promptly, and still only once. The whole point of separating
-//     "we can say which way they went" from "we can forget them": someone
-//     counted out who steps back into view must not be counted again.
+// 14. Someone who steps out of view and comes back BEFORE they have been
+//     counted is still the same person, and leaves once.
 {
   const tr = new PersonTracker();
   tr.watchesDoorway("closer");
   let t = 0;
-  const walkOut = (from) => {
+  const walkOut = () => {
+    see(tr, [box(100, 60, 70, 200)], (t += 300));
+    see(tr, [box(100, 100, 60, 160)], (t += 300));
+    see(tr, [box(100, 130, 45, 115)], (t += 300));
+  };
+  walkOut();
+  see(tr, [], (t += 10000));     // ten seconds — not long enough to call it
+  ok("nothing is counted while they might still be in the doorway", tr.exits === 0, `exits ${tr.exits}`);
+
+  // Back where they were, at the same size: recognised, not a new person.
+  see(tr, [box(100, 128, 46, 118)], (t += 300));
+  see(tr, [box(100, 140, 40, 100)], (t += 300));
+  see(tr, [], (t += 16000));
+  ok("stepping back and going again is one departure, not two", tr.exits === 1, `exits ${tr.exits}`);
+  ok("nor an arrival", tr.entries === 0, `entries ${tr.entries}`);
+}
+
+// 15. The honest limit, written down so nobody promises more than this.
+//
+//     Once someone has been counted out they are, by definition, at least
+//     fifteen seconds out of view — longer than a position stays believable as
+//     identity (RETURN_BY_PLACE_MS). So if they walk back in and out again,
+//     Kyro counts a second departure. It cannot do otherwise: a person
+//     returning to the same patch of doorway and a different person walking
+//     into it look exactly alike to a camera. Case 13 relies on that very
+//     thing — the next person through the same door IS a second departure.
+//
+//     Face matching is the only thing that can tell those two apart, and it is
+//     off unless an administrator switches it on. Keeping the track for five
+//     minutes is what lets a face claim it back.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  const walkOut = () => {
     see(tr, [box(100, 60, 70, 200)], (t += 300));
     see(tr, [box(100, 100, 60, 160)], (t += 300));
     see(tr, [box(100, 130, 45, 115)], (t += 300));
   };
   walkOut();
   see(tr, [], (t += 16000));
-  ok("they are counted out promptly", tr.exits === 1, `exits ${tr.exits}`);
-
-  // Back into view a few seconds later, and out again.
-  see(tr, [box(100, 128, 46, 118)], (t += 300));
-  see(tr, [box(100, 140, 40, 100)], (t += 300));
+  ok("counted out promptly", tr.exits === 1, `exits ${tr.exits}`);
+  walkOut();
   see(tr, [], (t += 16000));
-  ok("coming back and leaving again doesn't count them twice", tr.exits === 1, `exits ${tr.exits}`);
-  ok("nor as an arrival", tr.entries === 0, `entries ${tr.entries}`);
+  ok("a second trip out of the door is a second departure", tr.exits === 2, `exits ${tr.exits}`);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// 16. A slow camera. Her entrance camera reported "0 in, 1 out" with people
+//     streaming through it, because at two or three counts a second a person
+//     crossing a doorway is seen twice in total and three sightings were
+//     needed before Kyro would believe in them.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  // Seen exactly twice, walking away from the camera (getting smaller).
+  see(tr, [box(100, 60, 70, 200)], (t += 400));
+  see(tr, [box(100, 120, 48, 124)], (t += 400));
+  see(tr, [], (t += 16000));
+  ok("two sightings at a doorway are enough to count someone", tr.exits === 1, `exits ${tr.exits}`);
+  ok("and in the right direction", tr.entries === 0, `entries ${tr.entries}`);
+}
+
+// 17. Two sightings is not enough on a ROOM camera, where someone is in view
+//     for minutes and a box seen twice is far more likely to be a flicker.
+{
+  const tr = new PersonTracker();                     // no watchesDoorway → a room
+  let t = 0;
+  see(tr, [box(100, 100, 50, 150)], (t += 400));
+  see(tr, [box(101, 101, 50, 150)], (t += 400));
+  ok("a room still wants three sightings", tr.entries === 0, `entries ${tr.entries}`);
+  see(tr, [box(102, 102, 50, 150)], (t += 400));
+  ok("and counts them on the third", tr.entries === 1, `entries ${tr.entries}`);
+}
+
+// 18. A box that flickers in the doorway and goes nowhere still counts for
+//     nothing — the direction test is what makes two sightings safe here.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  see(tr, [box(100, 100, 50, 150)], (t += 400));
+  see(tr, [box(101, 101, 50, 149)], (t += 400));      // same place, same size
+  see(tr, [], (t += 16000));
+  ok("a flicker that travels nowhere counts for nothing",
+     tr.entries === 0 && tr.exits === 0, `in ${tr.entries} out ${tr.exits}`);
+}
+
 console.log(fails
   ? `\n${fails} failed`
   : "\nAll good. Walking in counts in, walking out counts out, hovering counts neither.");
