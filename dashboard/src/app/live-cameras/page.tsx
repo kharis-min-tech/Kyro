@@ -23,7 +23,6 @@ import { isEdgeLive } from "@/lib/edgeAuth";
 import { useEdgeSnapshot, useEdgeVenue, type EdgeCamera } from "@/lib/edgeVenue";
 import { tileCount } from "@/lib/tileCount";
 import { useCounting } from "@/lib/CountingContext";
-import { pickCamera } from "@/lib/pickCamera";
 
 /** Shared storage so attendance headline + integrations payload can read the
  *  latest browser-camera counts. Written whenever detection emits a count. */
@@ -102,162 +101,73 @@ function occupancyLabel(pct: number | null): "critical" | "warning" | "ok" | "un
  */
 function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: string; cameraId?: string; zoneName?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
-  // The count comes from the one counting engine — the same YOLO11 that
-  // "Counting on this computer" runs, with tracking and arrivals/departures.
-  // The tile used to run a second detector of its own, which is how the same
-  // picture ended up labelled 14 in one corner and 5 in the other.
+  // One owner of the camera: the counting engine. The tile shows the picture
+  // the engine already has open and never opens the camera itself.
+  //
+  // It used to. Two consequences, both seen: pressing Start could fail with
+  // "No camera found", because the tile was holding the camera the engine was
+  // trying to open; and moving to another page released it again, so counting
+  // had to be started afresh every time. A preview is not worth fighting the
+  // thing doing the actual work.
   const counting = useCounting();
   const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
-  // The engine already has this camera open. Borrowing its picture means the
-  // tile isn't a second claim on the same device, and — the point of it —
-  // leaving the page no longer shuts the camera down, because the tile never
-  // owned it. The engine lives in the layout and keeps counting everywhere.
-  const engineStream = det.key ? counting?.streamFor(det.key) ?? null : null;
+  const stream = det.key ? counting?.streamFor(det.key) ?? null : null;
 
   useEffect(() => {
-    if (engineStream) {
-      setErr(null);
-      setStream(engineStream);
-      const v = videoRef.current;
-      if (v && v.srcObject !== engineStream) {
-        v.srcObject = engineStream;
-        v.muted = true;
-        v.playsInline = true;
-        v.play().catch(() => setErr("Tap the tile to start the preview."));
-      }
-      // No cleanup that stops tracks: this stream belongs to the engine.
-      return;
+    const v = videoRef.current;
+    if (!v || !stream) return;
+    if (v.srcObject !== stream) {
+      v.srcObject = stream;
+      v.muted = true;
+      v.playsInline = true;
+      v.play().catch(() => {});
     }
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // Which camera this record means. The saved identifier is only the
-        // first thing to try — see lib/pickCamera.ts for why it goes stale.
-        const list = async () => (await navigator.mediaDevices.enumerateDevices())
-          .filter((d) => d.kind === "videoinput")
-          .map((d) => ({ deviceId: d.deviceId, label: d.label }));
-        let cams = await list();
-        // Until access has been granted the browser withholds the names and
-        // the identifiers, which leaves nothing to match on. Asking once
-        // releases both; the camera is let go again immediately.
-        if (cams.length > 0 && cams.every((c) => !c.label)) {
-          const unlock = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          unlock.getTracks().forEach((t) => t.stop());
-          if (cancelled) return;
-          cams = await list();
-        }
-        if (cams.length === 0) {
-          setErr("No camera is plugged into this computer.");
-          return;
-        }
-        const picked = pickCamera(streamUrl, zoneName, cams);
-        if (picked.how === "none") {
-          setErr("Kyro can't tell which of this computer's cameras this is. Remove it and add it again.");
-          return;
-        }
-
-        let s: MediaStream;
-        try {
-          s = picked.deviceId
-            ? await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: picked.deviceId } }, audio: false })
-            : await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch (e: unknown) {
-          const name = (e as Error)?.name;
-          if (name === "OverconstrainedError" || name === "NotFoundError") {
-            s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } else { throw e; }
-        }
-        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = s;
-        setStream(s);
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          videoRef.current.muted = true;
-          videoRef.current.playsInline = true;
-          videoRef.current.play().catch(() => {
-            setErr("Autoplay blocked. Tap the tile to start the preview.");
-          });
-        }
-      } catch (e: unknown) {
-        const name = (e as Error)?.name;
-        if (name === "NotAllowedError") setErr("Browser blocked camera access — allow it in the address bar and reload.");
-        else setErr(`${name ?? "error"}: ${(e as Error)?.message ?? ""}`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
-      setStream(null);
-    };
-  }, [streamUrl, zoneName, engineStream]);
+    // No cleanup stopping tracks: this stream belongs to the engine.
+  }, [stream]);
 
   useEffect(() => {
     if (!cameraId || det.state !== "counting" || det.count === null) return;
     writeBrowserCount(cameraId, zoneName ?? "Browser camera", det.count);
   }, [cameraId, zoneName, det.count, det.state]);
 
-  const handleTap = () => {
-    const v = videoRef.current;
-    if (!v) return;
-    v.play().then(() => setErr(null)).catch(() => {});
-  };
+  // Only offer to start when pressing it would actually do something.
+  const canStart = !!counting && counting.allowed && counting.phase === "idle";
 
-  // Only offer to start when pressing it would actually do something: the
-  // engine is here, idle, and this person is allowed to count.
-  const canStart = !!counting && counting.allowed && counting.phase === "idle" && det.state === "off";
-
-  const detBadge = (() => {
-    if (!cameraId) return null;
-    switch (det.state) {
-      case "counting": return { bg: "rgba(22,163,74,0.85)", text: `${det.count ?? 0} · counting` };
-      case "starting": return { bg: "rgba(99,102,241,0.85)", text: det.message ?? "Starting…" };
-      case "problem":  return { bg: "rgba(239,68,68,0.85)", text: det.message ?? "Not counting" };
-      case "off":
-      default:         return { bg: "rgba(107,114,128,0.75)", text: det.message ?? "Counting is off" };
-    }
-  })();
-
-  if (err && !streamRef.current) {
+  if (!stream) {
     return (
-      <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-4 text-center" style={{ background: "var(--bg-inset)" }}>
-        <Video size={28} className="text-gray-700" />
-        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>{err}</span>
+      <div className="w-full h-full flex flex-col items-center justify-center gap-2 p-4 text-center"
+        style={{ background: "var(--bg-inset)" }}>
+        <Video size={26} className="text-gray-700" />
+        <span className="text-xs" style={{ color: "var(--text-tertiary)" }}>
+          {counting?.phase === "starting" ? (counting.step || "Starting…") : det.message ?? "Not counting"}
+        </span>
+        {canStart && (
+          <button type="button" onClick={() => counting?.start().catch(() => {})}
+            className="mt-1 px-3 py-1.5 rounded-full flex items-center gap-1.5"
+            style={{ background: "rgba(79,70,229,0.92)", color: "#fff", fontSize: 11, fontWeight: 600 }}>
+            <Play size={11} />
+            {counting?.needsPermission ? "Allow the camera and start" : "Start counting"}
+          </button>
+        )}
       </div>
     );
   }
+
   return (
-    <div className="w-full h-full relative" onClick={handleTap}>
+    <div className="w-full h-full relative">
       <video ref={videoRef} autoPlay playsInline muted
         className="absolute inset-0 w-full h-full object-cover"
         style={{ background: "#000" }} />
-      {/* Counting is off, and this is a camera on this very computer — so the
-          tile can just switch it on. Sending the operator to another page to
-          press a button that could be here is how a working camera sat there
-          showing nothing. */}
-      {canStart ? (
-        <button type="button"
-          onClick={(e) => { e.stopPropagation(); counting?.start().catch(() => {}); }}
-          className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full flex items-center gap-1.5 hover:opacity-90"
-          style={{ background: "rgba(79,70,229,0.92)", color: "#fff", fontSize: 10, fontWeight: 600 }}>
-          <Play size={10} />
-          {counting?.needsPermission ? "Allow the camera and start" : "Start counting"}
-        </button>
-      ) : detBadge && (
-        <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full flex items-center gap-1.5"
-          style={{ background: detBadge.bg, color: "#fff", fontSize: 10, fontWeight: 600 }}
-          title={det.message ?? undefined}>
-          {det.state === "counting" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
-          {detBadge.text}
-        </div>
-      )}
+      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full flex items-center gap-1.5"
+        style={{
+          background: det.state === "counting" ? "rgba(22,163,74,0.85)" : "rgba(99,102,241,0.85)",
+          color: "#fff", fontSize: 10, fontWeight: 600,
+        }}
+        title={det.message ?? undefined}>
+        {det.state === "counting" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+        {det.state === "counting" ? `${det.count ?? 0} · counting` : det.message ?? "Counting…"}
+      </div>
     </div>
   );
 }

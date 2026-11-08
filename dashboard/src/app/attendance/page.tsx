@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
-import { pickCamera } from "@/lib/pickCamera";
 import { tileCount } from "@/lib/tileCount";
 import { useCounting } from "@/lib/CountingContext";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -168,95 +167,27 @@ function TotalChart({ history, current, timestamps }: { history: number[]; curre
 // operator can see at a glance that Kyro has the camera and it's working.
 function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamUrl: string; cameraId: string; zoneName: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [err, setErr] = useState<string | null>(null);
 
-  // One counting engine, shared. Borrowing its already-open camera means the
-  // tile is not a second claim on the device, and leaving the page doesn't
-  // shut the camera down — the engine lives in the layout and keeps going.
+  // One owner of the camera: the counting engine (see the Live page tile for
+  // why). This shows the picture the engine already has; it never opens the
+  // camera itself and never stops it.
   const counting = useCounting();
-  const engineStream = (() => {
-    const k = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName).key;
-    return k ? counting?.streamFor(k) ?? null : null;
-  })();
+  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  const stream = det.key ? counting?.streamFor(det.key) ?? null : null;
 
   useEffect(() => {
-    if (engineStream) {
-      setErr(null);
-      setStream(engineStream);
-      const v = videoRef.current;
-      if (v && v.srcObject !== engineStream) {
-        v.srcObject = engineStream;
-        v.muted = true;
-        v.playsInline = true;
-        v.play().catch(() => setErr("Tap the tile to start preview."));
-      }
-      return;   // the engine owns this stream; never stop its tracks here
+    const v = videoRef.current;
+    if (!v || !stream) return;
+    if (v.srcObject !== stream) {
+      v.srcObject = stream;
+      v.muted = true;
+      v.playsInline = true;
+      v.play().catch(() => {});
     }
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
-      return;
-    }
-    let cancelled = false;
-    (async () => {
-      try {
-        // The saved identifier is only the first thing to try; lib/pickCamera.ts
-        // explains why it goes stale and what finds the camera instead.
-        const list = async () => (await navigator.mediaDevices.enumerateDevices())
-          .filter((d) => d.kind === "videoinput")
-          .map((d) => ({ deviceId: d.deviceId, label: d.label }));
-        let cams = await list();
-        if (cams.length > 0 && cams.every((c) => !c.label)) {
-          const unlock = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          unlock.getTracks().forEach((t) => t.stop());
-          if (cancelled) return;
-          cams = await list();
-        }
-        if (cams.length === 0) { setErr("No camera is plugged into this computer."); return; }
-        const picked = pickCamera(streamUrl, zoneName, cams);
-        if (picked.how === "none") {
-          setErr("Kyro can't tell which of this computer's cameras this is.");
-          return;
-        }
+  }, [stream]);
 
-        let s: MediaStream;
-        try {
-          s = picked.deviceId
-            ? await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: picked.deviceId } }, audio: false })
-            : await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-        } catch (e: unknown) {
-          const name = (e as Error)?.name;
-          if (name === "OverconstrainedError" || name === "NotFoundError") {
-            s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-          } else { throw e; }
-        }
-        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
-        streamRef.current = s;
-        setStream(s);
-        if (videoRef.current) {
-          videoRef.current.srcObject = s;
-          videoRef.current.muted = true;
-          videoRef.current.playsInline = true;
-          videoRef.current.play().catch(() => { setErr("Autoplay blocked. Tap the tile to start preview."); });
-        }
-      } catch (e: unknown) {
-        const name = (e as Error)?.name;
-        setErr(name === "NotAllowedError" ? "Camera access blocked." : `${name ?? "error"}`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
-      setStream(null);
-    };
-  }, [streamUrl, zoneName, engineStream]);
-
-  // The figure comes from the one counting engine, and is written to the
-  // shared key the attendance headline and the webhook payload read. It used
-  // to come from a second detector of the tile's own, which is how those two
-  // places ended up reporting numbers the engine never produced.
-  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  // The figure the attendance headline and the webhook payload read comes from
+  // the one counting engine.
   useEffect(() => {
     if (det.state !== "counting" || det.count === null || typeof window === "undefined") return;
     try {
@@ -269,39 +200,32 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
     } catch {}
   }, [cameraId, zoneName, det.count, det.state]);
 
-  const handleTap = () => { const v = videoRef.current; if (!v) return; v.play().then(() => setErr(null)).catch(() => {}); };
+  if (!stream) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center text-center px-3" style={{ background: "#000" }}>
+        <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>
+          {det.message ?? "Not counting"}
+        </span>
+      </div>
+    );
+  }
 
   return (
-    <div className="absolute inset-0" onClick={handleTap}>
+    <div className="absolute inset-0">
       <video ref={videoRef} autoPlay playsInline muted
         className="absolute inset-0 w-full h-full object-cover"
         style={{ background: "#000" }} />
-      {err && !streamRef.current && (
-        <div className="absolute inset-0 flex items-center justify-center text-center px-3"
-          style={{ background: "rgba(0,0,0,0.65)" }}>
-          <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 11 }}>{err}</span>
-        </div>
-      )}
-      {/* Detector status badge — honest about what's happening. */}
-      {!err && (
-        <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full"
-          style={{
-            background:
-              det.state === "counting" ? "rgba(22,163,74,0.85)" :
-              det.state === "starting" ? "rgba(99,102,241,0.85)" :
-              det.state === "problem"  ? "rgba(239,68,68,0.85)" :
-                                         "rgba(107,114,128,0.75)",
-            color: "#fff", fontSize: 10, fontWeight: 600,
-          }}
-          title={det.message ?? undefined}>
-          {det.state === "counting" ? `${det.count ?? 0} · counting` : det.message}
-        </div>
-      )}
+      <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full"
+        style={{
+          background: det.state === "counting" ? "rgba(22,163,74,0.85)" : "rgba(99,102,241,0.85)",
+          color: "#fff", fontSize: 10, fontWeight: 600,
+        }}
+        title={det.message ?? undefined}>
+        {det.state === "counting" ? `${det.count ?? 0} · counting` : det.message ?? "Counting…"}
+      </div>
     </div>
   );
 }
-
-// ─── Zone camera card (live stream per camera) ────────────────────────────────
 function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);

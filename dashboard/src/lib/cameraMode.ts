@@ -52,8 +52,15 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
           count: (px) => new Promise<Person[]>((ok, fail) => {
             const id = nextId++;
             waiting.set(id, { ok, fail });
-            const data = px.data;
-            worker.postMessage({ type: "count", id, px: { data, width: px.width, height: px.height } }, [data.buffer]);
+            // The picture is COPIED to the worker, not handed over. Handing it
+            // over is faster by one copy, but it empties the caller's picture:
+            // the buffer is detached the moment it is transferred. Kyro looks
+            // at the same picture more than once — every tenth count it checks
+            // whether splitting into tiles is earning its keep, and face codes
+            // are read from it afterwards — and the second look found nothing
+            // there: "An ArrayBuffer is detached and could not be cloned."
+            // A counting engine must not destroy what it was asked to count.
+            worker.postMessage({ type: "count", id, px: { data: px.data, width: px.width, height: px.height } });
           }),
         });
       } else if (m.type === "result" || m.type === "count-error") {
