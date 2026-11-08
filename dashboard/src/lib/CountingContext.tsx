@@ -141,6 +141,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   // running (the website decides and tells us with each report).
   const faceOnRef = useRef(false);
   const faceEngine = useRef<FaceEngine | null>(null);
+  /** Why faces can't be read here, if they can't. Told to the website, so the
+   *  Face matching card can say so instead of sitting there saying "On". */
+  const faceErr = useRef<string | null>(null);
   // The fresh start this browser has already applied, so a new session's zero
   // happens once and not on every report. Remembered across a reload: a
   // refresh must not undo a fresh start, nor re-apply an old one.
@@ -327,7 +330,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       try {
         const ort = await loadOrt();
         faceEngine.current = await loadFaceEngine(ort);
-      } catch { /* carry on counting without it */ }
+        faceErr.current = null;
+      } catch (e) {
+        // Counting carries on without faces — that is the right call for the
+        // count. It is the wrong call to say nothing: somebody switched face
+        // matching on and is looking at a card that says it is running.
+        faceErr.current = `The face AI wouldn't load on the counting computer: ${e instanceof Error ? e.message : e}`.slice(0, 160);
+      }
       finally { faceLoading.current = false; }
       if (!faceEngine.current) return null;
     }
@@ -427,7 +436,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } = await sendReport(reports);
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } = await sendReport(reports, faceErr.current);
         // A new session: start the arrivals and departures again from zero.
         //
         // The instruction comes back from the website, so "Start fresh" can be

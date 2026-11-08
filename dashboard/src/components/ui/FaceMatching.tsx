@@ -57,6 +57,13 @@ export function FaceMatching() {
   if (!p) return null;
   const when = (iso?: string) => (iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "");
   const twice = (venue as any)?.seen_on_two_cameras ?? 0;
+  // Switched on, and actually reading faces, are two different things. The
+  // face AI is a 10 MB download that runs in whichever browser is counting;
+  // if it never loads, counting carries on without it and this card used to
+  // sit there saying "On".
+  const faceCams: number = (venue as any)?.face_cameras ?? 0;
+  const facePeople: number = (venue as any)?.face_people ?? 0;
+  const faceErr: string | null = (venue as any)?.face_error ?? null;
 
   return (
     <div className="mb-6">
@@ -98,6 +105,27 @@ export function FaceMatching() {
             )}
             {p.face_matching && live && (
               <p className="text-xs mt-1.5" style={{ color: "#22c55e" }}>Running now, during “{live.name}”</p>
+            )}
+            {/* Is it actually reading faces? */}
+            {p.face_matching && live && (
+              faceCams > 0 ? (
+                <p className="text-xs mt-1" style={{ color: "#22c55e" }}>
+                  Reading faces on {faceCams} {faceCams === 1 ? "camera" : "cameras"} — {facePeople} {facePeople === 1 ? "face" : "faces"} in the last reading.
+                </p>
+              ) : (
+                <div className="mt-2 rounded-lg px-3 py-2"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                  <p className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
+                    <span className="font-semibold">On, but no faces are being read.</span>{" "}
+                    {faceErr
+                      ? faceErr
+                      : `No camera has sent a face reading in the last 10 seconds. The face AI is a 10 MB download that runs in
+                         whichever browser is counting — if that browser has just been reloaded, give it a minute. If nobody is
+                         close enough to the camera for a face to be found, there is nothing to read, and the counting is
+                         unaffected either way.`}
+                  </p>
+                </div>
+              )
             )}
           </div>
           {p.face_matching

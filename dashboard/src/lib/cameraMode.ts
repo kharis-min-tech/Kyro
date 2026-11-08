@@ -176,12 +176,16 @@ export type Zone = [number, number, number, number];
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
-export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number }> {
+export async function sendReport(
+  cameras: CameraReport[],
+  /** Why this browser couldn't read faces, or null when it can. */
+  facesError: string | null = null,
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${d.token}` },
-    body: JSON.stringify({ version: CAMERA_MODE_VERSION, cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
+    body: JSON.stringify({ version: CAMERA_MODE_VERSION, faces_error: facesError, cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
   });
   let res = await post(dev);
   if (res.status === 401) {          // removed on the Cameras page → register again

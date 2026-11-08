@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-4127b1c26ec7";
+const VENUE_CODE = "venue-536756c390c9";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -579,6 +579,13 @@ export class VenueHub extends DurableObject {
       }
     }
 
+    // The counting browser couldn't load the face AI. Kept so the Face
+    // matching card can say so rather than looking switched on and idle.
+    if (typeof body.faces_error === "string" && body.faces_error) {
+      await this.ctx.storage.put("face_error", { at: now, message: clean(body.faces_error, 160), device: device.id });
+    } else if (body.faces_error === null && await this.get("face_error", null)) {
+      await this.ctx.storage.delete("face_error");
+    }
     const devices = await this.get("devices", {});
     if (devices[device.id]) {
       devices[device.id].last_seen = new Date(now).toISOString();
@@ -845,8 +852,24 @@ export class VenueHub extends DurableObject {
     const trustInOut = inOutZones.some((z) => z.is_running && z.in_out);
     const entries = hasDoor ? sumDoors("entries") : sum("entries");
     const exits = hasDoor ? sumDoors("exits") : sum("exits");
+    // Switched on is not the same as working. The face AI is a 10 MB download
+    // that runs in whichever browser is counting, and if it fails to load that
+    // browser carries on counting without it — quietly, which is right for the
+    // count and wrong for the person who switched face matching on and is
+    // looking at a card that says "On". So: how many cameras have actually
+    // sent a face reading recently, and how many faces were in them.
+    const faceNow = Date.now();
+    const faceFresh = [...this.faceCodes.entries()].filter(([, f]) => faceNow - f.at < FACE_FRESH_MS);
+    const faceTrouble = await this.get("face_error", null);
     return {
       seen_on_two_cameras: twice,
+      // Cameras whose last report carried face readings, and how many faces
+      // those readings held.
+      face_cameras: faceFresh.length,
+      face_people: faceFresh.reduce((n, [, f]) => n + f.codes.length, 0),
+      // What went wrong in the browser doing the counting, if the face AI
+      // couldn't be loaded there.
+      face_error: faceTrouble && faceNow - faceTrouble.at < 5 * 60_000 ? faceTrouble.message : null,
       in_out_available: trustInOut,
       total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"),
       total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
