@@ -785,9 +785,12 @@ export default function AttendancePage() {
         setVenueTotal(vt);
         setVenueFeedAt(Date.now());
         if (edge) setEdgeFeedErr(null);
-        // The chart follows the headline: with a camera on the door, "people"
-        // is how many are in the building, not how many happen to be in shot.
-        const here = (edge ? vt.in_building : null) ?? vt.total_current;
+        // The one agreed figure, worked out in the website so that every page
+        // shows the same thing (see venueTotal). This line used to prefer the
+        // door camera's own net when it had one, which quietly put a different
+        // number in the headline from the one everything else was using — the
+        // exact thing the agreed figure exists to stop.
+        const here = vt.total_current;
         setVenueHistory((h) => [...h.slice(-80), here]);
         setMetricHistory((m) => ({
           people:    [...m.people.slice(-80),    here],

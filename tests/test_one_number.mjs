@@ -72,6 +72,12 @@ const hereNow = (seen, door, room = 0) => Math.max(seen, door ?? room);
 {
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
   ok("the headline no longer substitutes its own figure", /inBuilding: null,/.test(page));
+  // And nothing else quietly swaps it either. This line preferred the door
+  // camera's own net when there was one, which put a different number in the
+  // headline from the one every other page was using.
+  ok("the live poll feeds the agreed figure, not a second one",
+     /const here = vt\.total_current;/.test(page)
+     && !/const here = \(edge \? vt\.in_building/.test(page));
   ok("and explains the one it shows",
      /Everyone counted in, less everyone counted out/.test(page)
      && /it can never be fewer than the people plainly in shot/.test(page));
