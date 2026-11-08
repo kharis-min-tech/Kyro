@@ -166,6 +166,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   /** Why faces can't be read here, if they can't. Told to the website, so the
    *  Face matching card can say so instead of sitting there saying "On". */
   const faceErr = useRef<string | null>(null);
+  /** The service being recorded. When it changes, everybody is forgotten. */
+  const serviceRef = useRef<string | null>(null);
   // The fresh start this browser has already applied, so a new session's zero
   // happens once and not on every report. Remembered across a reload: a
   // refresh must not undo a fresh start, nor re-apply an old one.
@@ -469,8 +471,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current });
+        // A different service, or none: forget everybody seen in the last one.
+        // People are remembered only for as long as one service runs — see
+        // PersonTracker.forgetPeople.
+        if (service !== serviceRef.current) {
+          serviceRef.current = service;
+          for (const c of cams.current.values()) c.tracker.forgetPeople();
+        }
         // A new session: start the arrivals and departures again from zero.
         //
         // The instruction comes back from the website, so "Start fresh" can be

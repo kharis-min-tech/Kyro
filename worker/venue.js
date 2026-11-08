@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-1143ac480c95";
+const VENUE_CODE = "venue-7ff981bc65ee";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -650,6 +650,13 @@ export class VenueHub extends DurableObject {
       // this one yet puts its arrivals and departures back to zero — so "Start
       // fresh" pressed on a phone reaches the computer doing the counting.
       count_from: await this.get("count_from", 0),
+      // Which service is being recorded, if one is. The counting browser
+      // remembers people for as long as one service runs — so the usher
+      // holding the door isn't counted in forty times — and forgets every one
+      // of them when this changes. Between services that memory would measure
+      // the evening congregation against the morning's, and keeping it would
+      // make Kyro a record of people rather than a count of them.
+      service: (await this.get("service_live", null))?.id ?? null,
       report_every_s: 2, snapshot_every_s: 20 });
   }
 

@@ -95,24 +95,25 @@ const LOOK_MARGIN = 0.06;
  */
 const RETURN_BY_LOOK_MS = 90_000;
 /**
- * How long before the same person can be counted the same way again.
+ * How many people are remembered after they have walked out of view.
  *
- * An usher stands at the door all morning, stepping in and out, holding it
- * open, walking someone to a seat and coming back. Every one of those trips
- * looked like a person arriving, and the morning's figure climbed all day on
- * one person doing their job.
+ * An usher stands at the door all morning: holding it open, walking a visitor
+ * to a seat, stepping back out. Every one of those trips looked like a person
+ * arriving, and the morning's figure climbed all day on one person doing their
+ * job. So somebody Kyro has counted in stays counted in — not for a few
+ * minutes, but until the service ends and everybody is forgotten at once.
  *
- * So once Kyro has counted somebody in, it will not count that same person in
- * again for a few minutes — and the same for out. It can only do this for
- * people it recognises: their coat and build, or their face when face matching
- * is on. A stranger is always counted.
+ * Remembered means their coat and build, and their face when face matching is
+ * on. It is held in the browser doing the counting, never written down, never
+ * sent anywhere, and dropped the moment the service is over — the same life as
+ * the face data it sits beside.
  *
- * Three minutes, not an hour, because people really do go out to the car and
- * come back, and that is two arrivals. It is a working compromise and not the
- * real answer — the real answer is a line across the doorway, so that standing
- * beside a door is not a journey through it at all.
+ * The cap is what a very large service might put through one door. Past it the
+ * oldest are forgotten first, which is the right order: the person who walked
+ * in two hours ago and hasn't been seen since is the one least likely to be
+ * about to walk through again.
  */
-const RECOUNT_COOLDOWN_MS = 3 * 60_000;
+const MOST_REMEMBERED = 800;
 
 // A score that rises when the person is seen and falls when they are not, so a
 // box that only flickers in and out never reaches it. Simply totalling sightings
@@ -216,9 +217,9 @@ interface Track {
   firstBox: [number, number, number, number];
   /** Already added to the arrivals or departures, so never added again. */
   tallied: boolean;
-  /** When this person was last counted in, and last counted out. */
-  countedInAt: number;
-  countedOutAt: number;
+  /** Already counted walking in, and already counted walking out. */
+  countedIn: boolean;
+  countedOut: boolean;
 }
 
 /**
@@ -311,8 +312,19 @@ function iou(a: [number, number, number, number], b: [number, number, number, nu
   return union > 0 ? inter / union : 0;
 }
 
+/** Somebody who has walked out of view, and what they were counted as. */
+interface Known {
+  look: Look | null;
+  face: Float32Array | null;
+  countedIn: boolean;
+  countedOut: boolean;
+  at: number;
+}
+
 export class PersonTracker {
   private tracks: Track[] = [];
+  /** People seen earlier in this service. Emptied when it ends. */
+  private known: Known[] = [];
   private nextId = 1;
   entries = 0;
   exits = 0;
@@ -326,7 +338,7 @@ export class PersonTracker {
 
   /** null for a camera watching a room; a direction for one watching a door. */
   watchesDoorway(inward: Inward | null): void {
-    if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; }
+    if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; this.known = []; }
   }
 
   /** Give it this count's people; returns how many are here now (confirmed only). */
@@ -442,7 +454,7 @@ export class PersonTracker {
         return;
       }
       this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false,
-        countedInAt: -Infinity, countedOutAt: -Infinity, face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
+        ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
@@ -456,31 +468,102 @@ export class PersonTracker {
         // counted a second time.
         if (t.counted && !t.tallied && gone >= DOOR_DECIDE_MS) {
           const went = wentIn(t.firstBox, t.box, this.inward);
-          // Counted, unless this is somebody Kyro recognises who it counted
-          // the same way a moment ago — the usher holding the door. See
-          // RECOUNT_COOLDOWN_MS.
+          // Counted, unless this is somebody Kyro already counted this way —
+          // the usher holding the door. See MOST_REMEMBERED.
           if (went === true) {
-            if (now - t.countedInAt >= RECOUNT_COOLDOWN_MS) { this.entries++; t.countedInAt = now; }
+            if (!t.countedIn) { this.entries++; t.countedIn = true; }
           } else if (went === false) {
-            if (now - t.countedOutAt >= RECOUNT_COOLDOWN_MS) { this.exits++; t.countedOutAt = now; }
+            if (!t.countedOut) { this.exits++; t.countedOut = true; }
           }
           // null = they stood by the door and went back the way they came.
           t.tallied = true;
         }
-        return gone < DOOR_GRACE_MS;
+        if (gone < DOOR_GRACE_MS) return true;
+        this.remember(t);            // let the track go, keep the person
+        return false;
       }
 
       if (gone < GRACE_MS) return true;
       if (t.counted) this.exits++;   // a room: only people we'd counted as arriving can leave
+      this.remember(t);
       return false;
     });
 
     return this.tracks.filter((t) => t.counted && t.missing === 0).length;
   }
 
+  /**
+   * Keep what this person looked like, and what they have been counted as,
+   * after their track is let go. See MOST_REMEMBERED.
+   */
+  private remember(t: Track): void {
+    if (!t.look && !t.face) return;                    // nothing to recognise them by
+    if (!t.countedIn && !t.countedOut) return;         // nothing worth remembering either
+    this.known.push({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, at: t.lastSeen });
+    if (this.known.length > MOST_REMEMBERED) this.known.splice(0, this.known.length - MOST_REMEMBERED);
+  }
+
+  /**
+   * Have we seen this person before, and what were they counted as?
+   *
+   * A face settles it when there is one. Otherwise their coat and build, and
+   * only when one person fits clearly better than everyone else — in a hall of
+   * dark coats the honest answer is no, and a stranger is counted.
+   */
+  private recall(face: Float32Array | null, look: Look | null, now: number): { countedIn: boolean; countedOut: boolean } {
+    const no = { countedIn: false, countedOut: false };
+    // Everybody who might be this person: those whose track has been let go,
+    // and those whose track is still here but too old to carry on — a track
+    // isn't tidied away until the end of this count, and the usher coming back
+    // half an hour later would otherwise find an empty memory and be counted
+    // again.
+    const stale = this.tracks.filter((t) => now - t.lastSeen > RETURN_BY_LOOK_MS && (t.countedIn || t.countedOut));
+    const pool: Known[] = [...this.known,
+      ...stale.map((t) => ({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, at: t.lastSeen }))];
+    let at = -1;
+    if (face) {
+      let best = SAME_FACE;
+      pool.forEach((k, i) => {
+        if (!k.face) return;
+        const s = alike(k.face, face);
+        if (s >= best) { best = s; at = i; }
+      });
+    }
+    if (at < 0 && look) {
+      let best = 0, second = 0;
+      pool.forEach((k, i) => {
+        if (!k.look) return;
+        const s = alikeLook(k.look, look);
+        if (s > best) { second = best; best = s; at = i; }
+        else if (s > second) second = s;
+      });
+      if (!(best >= SAME_LOOK && best - second >= LOOK_MARGIN)) at = -1;
+    }
+    if (at < 0) return no;
+    // They are a live person again; they go back into the remembered list when
+    // their track is next let go.
+    if (at < this.known.length) this.known.splice(at, 1);
+    return { countedIn: pool[at].countedIn, countedOut: pool[at].countedOut };
+  }
+
+  /**
+   * The service is over: forget everybody.
+   *
+   * The whole point of remembering was to stop one person being counted again
+   * and again within a service. Between services it would do the opposite —
+   * the evening congregation would be measured against the morning's — and
+   * keeping it would make this a record of people rather than a count of them.
+   */
+  forgetPeople(): void {
+    this.known = [];
+    // Including the people still standing in the doorway: in the next service
+    // they are new again, and their first crossing counts.
+    for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }
+  }
+
   /** New day, or counting restarted. */
   reset(): void {
-    this.tracks = []; this.entries = 0; this.exits = 0;
+    this.tracks = []; this.entries = 0; this.exits = 0; this.known = [];
   }
 
   /**
@@ -495,5 +578,8 @@ export class PersonTracker {
    */
   resetCounts(): void {
     this.entries = 0; this.exits = 0;
+    // A new session counts everybody again, including the people already here.
+    this.known = [];
+    for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }
   }
 }

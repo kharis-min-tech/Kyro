@@ -153,11 +153,19 @@ const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t
   ok("the usher is counted in once, not three times", tr.entries === 1, `in ${tr.entries}`);
   ok("and out once, not twice", tr.exits === 1, `out ${tr.exits}`);
 
-  // Three minutes later they really do go out again, and that counts.
-  see(tr, [box(100, 60, 70, 200)], (t += 200000), [usher]);
+  // Half an hour later, still the same service, still the same usher: still
+  // once. Remembering them for three minutes only moved the problem.
+  see(tr, [box(100, 60, 70, 200)], (t += 1_800_000), [usher]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [usher]);
   see(tr, [], (t += 16000));
-  ok("but a trip a few minutes later is counted", tr.exits === 2, `out ${tr.exits}`);
+  ok("and still once half an hour into the service", tr.exits === 1, `out ${tr.exits}`);
+
+  // The service ends. Everybody is forgotten, and the next one starts clean.
+  tr.forgetPeople();
+  see(tr, [box(100, 60, 70, 200)], (t += 5000), [usher]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher]);
+  see(tr, [], (t += 16000));
+  ok("after the service ends they are somebody new again", tr.exits === 2, `out ${tr.exits}`);
 }
 
 // 6c. Everyone else is still counted. The cooling-off only ever applies to
@@ -173,6 +181,25 @@ const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t
     see(tr, [], (t += 16000));
   }
   ok("three different people coming in are three arrivals", tr.entries === 3, `in ${tr.entries}`);
+}
+
+// 6d. Remembering has a limit, and forgetting has an order: the oldest go
+//     first, because the person who walked in two hours ago and hasn't been
+//     seen since is the one least likely to be about to walk through again.
+{
+  const src = fs.readFileSync(path.join(root, "dashboard/src/lib/personTracker.ts"), "utf8");
+  ok("there is a cap on how many people are remembered", /const MOST_REMEMBERED = \d+;/.test(src));
+  ok("and the oldest are dropped first",
+     /this\.known\.splice\(0, this\.known\.length - MOST_REMEMBERED\)/.test(src));
+  ok("nobody is remembered who was never counted", /if \(!t\.countedIn && !t\.countedOut\) return;/.test(src));
+  ok("a fresh start counts everybody again", /this\.known = \[\];\s*\n\s*for \(const t of this\.tracks\) \{ t\.countedIn = false; t\.countedOut = false; \}/.test(src));
+
+  const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
+  ok("the end of a service reaches the counting browser",
+     /if \(service !== serviceRef\.current\)/.test(ctx) && /c\.tracker\.forgetPeople\(\)/.test(ctx));
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("and the website tells it which service is running",
+     /service: \(await this\.get\("service_live", null\)\)\?\.id \?\? null/.test(worker));
 }
 
 // 7. And the margin is what does that: when several people fit about equally

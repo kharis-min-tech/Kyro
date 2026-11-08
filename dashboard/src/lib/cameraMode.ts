@@ -185,7 +185,7 @@ export async function sendReport(
    * sending no codes used to look exactly like a fault.
    */
   faces: { error?: string | null; ready?: boolean } = {},
-): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number }> {
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -212,6 +212,9 @@ export async function sendReport(
     // When a fresh start was last asked for, so this browser's tallies can
     // begin again from zero for a new session. 0 = never.
     countFrom: Number(body.count_from) || 0,
+    // The service being recorded. People are remembered for as long as one
+    // runs, and forgotten when it ends.
+    service: typeof body.service === "string" ? body.service : null,
   };
 }
 
