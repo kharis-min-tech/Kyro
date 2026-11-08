@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
+import { pickCamera } from "@/lib/pickCamera";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { camerasApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
@@ -169,23 +170,42 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
-
   useEffect(() => {
-    if (!deviceId || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setErr("Needs HTTPS + a browser that supports MediaDevices.");
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
       return;
     }
     let cancelled = false;
     (async () => {
       try {
+        // The saved identifier is only the first thing to try; lib/pickCamera.ts
+        // explains why it goes stale and what finds the camera instead.
+        const list = async () => (await navigator.mediaDevices.enumerateDevices())
+          .filter((d) => d.kind === "videoinput")
+          .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+        let cams = await list();
+        if (cams.length > 0 && cams.every((c) => !c.label)) {
+          const unlock = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          unlock.getTracks().forEach((t) => t.stop());
+          if (cancelled) return;
+          cams = await list();
+        }
+        if (cams.length === 0) { setErr("No camera is plugged into this computer."); return; }
+        const picked = pickCamera(streamUrl, zoneName, cams);
+        if (picked.how === "none") {
+          setErr("Kyro can't tell which of this computer's cameras this is.");
+          return;
+        }
+
         let s: MediaStream;
         try {
-          s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+          s = picked.deviceId
+            ? await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: picked.deviceId } }, audio: false })
+            : await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         } catch (e: unknown) {
           const name = (e as Error)?.name;
           if (name === "OverconstrainedError" || name === "NotFoundError") {
-            s = await navigator.mediaDevices.getUserMedia({ video: { deviceId }, audio: false });
+            s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           } else { throw e; }
         }
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
@@ -207,7 +227,7 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       setStream(null);
     };
-  }, [deviceId]);
+  }, [streamUrl, zoneName]);
 
   // Local person-counting on the same stream. The result is written to a
   // shared localStorage key the attendance headline + webhook payload can

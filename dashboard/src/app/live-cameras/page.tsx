@@ -22,6 +22,7 @@ import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { useEdgeSnapshot, useEdgeVenue, type EdgeCamera } from "@/lib/edgeVenue";
 import { useBrowserPersonCount } from "@/lib/browserPersonCount";
+import { pickCamera } from "@/lib/pickCamera";
 
 /** Shared storage so attendance headline + integrations payload can read the
  *  latest browser-camera counts. Written whenever detection emits a count. */
@@ -104,23 +105,48 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const deviceId = streamUrl.startsWith("webcam://") ? streamUrl.slice("webcam://".length) : "";
-
   useEffect(() => {
-    if (!deviceId || typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      setErr("Browser can't open the camera here (needs HTTPS and MediaDevices).");
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
       return;
     }
     let cancelled = false;
     (async () => {
       try {
+        // Which camera this record means. The saved identifier is only the
+        // first thing to try — see lib/pickCamera.ts for why it goes stale.
+        const list = async () => (await navigator.mediaDevices.enumerateDevices())
+          .filter((d) => d.kind === "videoinput")
+          .map((d) => ({ deviceId: d.deviceId, label: d.label }));
+        let cams = await list();
+        // Until access has been granted the browser withholds the names and
+        // the identifiers, which leaves nothing to match on. Asking once
+        // releases both; the camera is let go again immediately.
+        if (cams.length > 0 && cams.every((c) => !c.label)) {
+          const unlock = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          unlock.getTracks().forEach((t) => t.stop());
+          if (cancelled) return;
+          cams = await list();
+        }
+        if (cams.length === 0) {
+          setErr("No camera is plugged into this computer.");
+          return;
+        }
+        const picked = pickCamera(streamUrl, zoneName, cams);
+        if (picked.how === "none") {
+          setErr("Kyro can't tell which of this computer's cameras this is. Remove it and add it again.");
+          return;
+        }
+
         let s: MediaStream;
         try {
-          s = await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: deviceId } }, audio: false });
+          s = picked.deviceId
+            ? await navigator.mediaDevices.getUserMedia({ video: { deviceId: { exact: picked.deviceId } }, audio: false })
+            : await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
         } catch (e: unknown) {
           const name = (e as Error)?.name;
           if (name === "OverconstrainedError" || name === "NotFoundError") {
-            s = await navigator.mediaDevices.getUserMedia({ video: { deviceId }, audio: false });
+            s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
           } else { throw e; }
         }
         if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
@@ -145,7 +171,7 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       setStream(null);
     };
-  }, [deviceId]);
+  }, [streamUrl, zoneName]);
 
   // In-browser person counting on the same stream the <video> is showing.
   // Status is kept honest: we only treat `count` as meaningful while
