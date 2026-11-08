@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-fde0787ba821";
+const VENUE_CODE = "venue-d1e3fe0c93a5";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -529,7 +529,10 @@ export class VenueHub extends DurableObject {
     // Face matching runs only while a service is being recorded (and only if switched on).
     const faceOn = (await this.privacy()).face_matching && !!(await this.get("service_live", null));
     if (!faceOn) this.faceCodes.clear();
-    let changed = false;
+    // Each camera's arrivals and departures added up over time, rather than
+    // whatever its browser's own tally happens to read right now. See below.
+    const counters = await this.get("counters", {});
+    let changed = false, countersChanged = false;
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
@@ -558,9 +561,24 @@ export class VenueHub extends DurableObject {
       }
       this.seenAt.set(camera_id, now);
       if (cams[camera_id].hidden || cams[camera_id].pending || c.status === "standby") continue;
+      // Running totals that survive the counting browser being reloaded.
+      //
+      // A browser reports its own tally since IT started, so a reload put the
+      // live arrivals back to nothing while the chart — which adds up the
+      // steps between readings — carried on from where it was. That is how the
+      // headline came to read 18 with 1,271 arrivals on the card below it.
+      // Only the step between two readings is people moving; a reading lower
+      // than the last one means that counter started again.
+      const seen = counters[camera_id] ?? { in: 0, out: 0, lastIn: null, lastOut: null };
+      const rIn = num(c.entries, 0, 10000000), rOut = num(c.exits, 0, 10000000);
+      seen.in += seen.lastIn === null || rIn < seen.lastIn ? rIn : rIn - seen.lastIn;
+      seen.out += seen.lastOut === null || rOut < seen.lastOut ? rOut : rOut - seen.lastOut;
+      seen.lastIn = rIn; seen.lastOut = rOut;
+      counters[camera_id] = seen;
+      countersChanged = true;
       live[camera_id] = {
         current: num(c.current, 0, 100000), peak: num(c.peak, 0, 100000),
-        entries: num(c.entries, 0, 10000000), exits: num(c.exits, 0, 10000000),
+        entries: seen.in, exits: seen.out,
         status: ["online", "error", "offline"].includes(c.status) ? c.status : "online",
         error_reason: c.error ? clean(c.error, 120) : null, fps: Number(c.fps) || 0,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
@@ -609,6 +627,7 @@ export class VenueHub extends DurableObject {
     } else if (body.faces_error === null && await this.get("face_error", null)) {
       await this.ctx.storage.delete("face_error");
     }
+    if (countersChanged) await this.ctx.storage.put("counters", counters);
     const devices = await this.get("devices", {});
     if (devices[device.id]) {
       devices[device.id].last_seen = new Date(now).toISOString();
@@ -1723,9 +1742,9 @@ export class VenueHub extends DurableObject {
    * it is already following so the "in the room now" figure doesn't blink.
    */
   async freshStart(now = Date.now()) {
-    const live = await this.get("live", {});
+    const counters = await this.get("counters", {});
     const base = {};
-    for (const [id, l] of Object.entries(live)) base[id] = { entries: l.entries || 0, exits: l.exits || 0 };
+    for (const [id, c] of Object.entries(counters)) base[id] = { entries: c.in || 0, exits: c.out || 0 };
     await this.ctx.storage.put("count_base", base);
     await this.ctx.storage.put("count_from", now);
     return { from: new Date(now).toISOString() };
