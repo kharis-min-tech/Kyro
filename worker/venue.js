@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-fd3afd5b6815";
+const VENUE_CODE = "venue-4127b1c26ec7";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -808,6 +808,11 @@ export class VenueHub extends DurableObject {
         // still: people cross a door in a second or two, and one missed between
         // two counts is a person uncounted.
         in_out: (l.fps || 0) >= (c.location === "entrance" ? MIN_FPS_FOR_DOOR : MIN_FPS_FOR_IN_OUT),
+        // How many counts a second this camera is managing, and how many it
+        // needs, so the page can say why a figure is missing instead of
+        // quietly leaving it out.
+        fps: running ? Math.round((l.fps || 0) * 10) / 10 : 0,
+        fps_needed: c.location === "entrance" ? MIN_FPS_FOR_DOOR : MIN_FPS_FOR_IN_OUT,
       };
     });
     // A camera on the door and a camera on the room are doing two different

@@ -110,6 +110,11 @@ export interface ZoneLive {
   /** false for a camera counting in a browser: it counts each picture rather
    *  than following people, so it has no in/out. */
   in_out?: boolean;
+  /** Where the camera is pointed: a room, a queue, or the entrance. */
+  location?: string;
+  /** Counts a second this camera is managing, and how many it needs for in/out. */
+  fps?: number;
+  fps_needed?: number;
 }
 
 export interface VenueTotal {

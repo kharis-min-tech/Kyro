@@ -251,10 +251,10 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 here before, as small print under "Half had arrived by" and
                 "First arrivals" — which is no place for the number most people
                 open this card to find. */}
-            <StatTile label={unverified ? "Came in, all day (unverified)" : "Came in, all day"} swatch={ARRIVE}
+            <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={summary.totalArrived.toLocaleString()}
               sub={`${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
-            <StatTile label={unverified ? "Went out, all day (unverified)" : "Went out, all day"} swatch={LEAVE}
+            <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={summary.totalLeft.toLocaleString()}
               sub={summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             <StatTile label="Busiest arrival time" swatch={ARRIVE}

@@ -1181,6 +1181,12 @@ export default function AttendancePage() {
   // a camera on a doorway sees people passing through, which is not an
   // attendance figure — they have to add up.
   const inBuilding = edge && isToday ? venueTotal?.in_building ?? null : null;
+  // There IS a camera on the entrance, but its count isn't being used for the
+  // headline. Rather than quietly showing a different figure under the same
+  // title, say which camera and why.
+  const doorZones = (venueTotal?.zones ?? []).filter((z) => z.location === "entrance");
+  const slowDoor = doorZones.find((z) => z.is_running && !z.in_out);
+  const doorExplained = edge && isToday && inBuilding === null && (venueTotal?.in_out_from_door ?? false);
   const displayTotal = headlineTotal({
     base: isToday ? metricNow : (historicalData?.total ?? 0),
     manualToday: manualTotalToday,
@@ -1353,6 +1359,16 @@ export default function AttendancePage() {
                       built from arrivals and departures can drift — anyone
                       missed at the door is missed all day — so it never
                       appears without saying what it is. */}
+                  {metric === "people" && doorExplained && (
+                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
+                      This is what the cameras can <strong style={{ color: "var(--text-secondary)" }}>see right now</strong>, not everyone in the building.
+                      {slowDoor
+                        ? ` Kyro can't add up the entrance count yet: “${slowDoor.camera_name}” is managing ${slowDoor.fps ?? 0} counts a second
+                           and needs ${slowDoor.fps_needed ?? 3} to follow people through a doorway. Closing other programs on the counting
+                           computer, or giving that camera its own USB socket, is what speeds it up.`
+                        : " The entrance camera isn't counting at the moment, so there is nothing to add up."}
+                    </p>
+                  )}
                   {metric === "people" && typeof inBuilding === "number" && (
                     <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
                       Counted at the entrance: <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.came_in_all ?? 0).toLocaleString()} came in</strong>
