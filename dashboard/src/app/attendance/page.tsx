@@ -1242,6 +1242,8 @@ export default function AttendancePage() {
   // each deciding what "how many are here" means is how 1, 9 and 13 ended up
   // on the screen at the same moment.
   const seenNow = (venueTotal as { seen_now?: number } | null)?.seen_now ?? venueTotal?.total_current ?? 0;
+  const countedNet = (venueTotal as { counted_net?: number } | null)?.counted_net ?? 0;
+  const netFromDoor = (venueTotal as { counted_net_from_door?: boolean } | null)?.counted_net_from_door ?? false;
   const inBuilding = edge && isToday ? venueTotal?.in_building ?? null : null;
   // There IS a camera on the entrance, but its count isn't being used for the
   // headline. Rather than quietly showing a different figure under the same
@@ -1430,13 +1432,13 @@ export default function AttendancePage() {
                   )}
                   {metric === "people" && isToday && edge && (
                     <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
-                      The cameras can see <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong> right now
-                      {typeof inBuilding === "number"
-                        ? <>, and the entrance has counted <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.came_in_all ?? 0).toLocaleString()} in</strong> and{" "}
-                           <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.went_out_all ?? 0).toLocaleString()} out</strong>. Kyro shows whichever
-                           is larger, because no camera sees a whole hall and the number must never be less than what is plainly in shot.</>
-                        : <>. No camera is counting people through a doorway well enough to add arrivals up, so this is what can be seen
-                           — a floor, not the whole building.</>}
+                      Everyone counted in, less everyone counted out:{" "}
+                      <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>
+                      {netFromDoor ? " at the entrance" : " by the room cameras"}. The cameras can see{" "}
+                      <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong> right now
+                      {countedNet >= seenNow
+                        ? "."
+                        : ", which is more, so that is the figure — it can never be fewer than the people plainly in shot."}
                     </p>
                   )}
                   {showVsYesterday && isToday && (

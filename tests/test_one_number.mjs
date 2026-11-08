@@ -23,8 +23,10 @@ const ok = (name, cond, detail) => {
 const root = path.resolve(import.meta.dirname, "..");
 const src = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 
-// The rule, lifted out and run.
-const hereNow = (seen, door) => Math.max(seen, door ?? 0);
+// The rule, lifted out and run. `door` is the door's net when a door camera is
+// keeping up; otherwise the room cameras' own in-less-out is used, which is
+// where the arrival figures on the page come from.
+const hereNow = (seen, door, room = 0) => Math.max(seen, door ?? room);
 
 // 1. It can never contradict what is plainly in shot. This is the failure
 //    that started it: nine people visible, headline reading 1.
@@ -39,16 +41,27 @@ const hereNow = (seen, door) => Math.max(seen, door ?? 0);
   ok("a door that has counted 142 in a hall where 19 are visible gives 142", hereNow(19, 142) === 142);
 }
 
-// 3. No door camera, or one too slow to be trusted: what can be seen.
+// 3. No door camera, or one too slow to be trusted: the room cameras' own
+//    in-less-out, which is the sum the arrival card shows — so the headline
+//    and the card are the same arithmetic rather than two answers side by side.
 {
-  ok("without a trusted door count it is what the cameras see", hereNow(27, null) === 27);
-  ok("an empty building is nobody", hereNow(0, null) === 0 && hereNow(0, 0) === 0);
+  ok("without a trusted door it uses the rooms' in less out", hereNow(9, null, 542) === 542);
+  ok("and still never less than what is in shot", hereNow(27, null, 3) === 27);
+  ok("an empty building is nobody", hereNow(0, null, 0) === 0);
+}
+
+// 4. A service still starts and ends on what the cameras can SEE. "Everyone in
+//    less everyone out" does not come back down when a hall empties — one
+//    missed departure and a service would run until midnight.
+{
+  ok("service tracking uses what can be seen", /const people = v\.seen_now \?\? v\.total_current;/.test(src));
 }
 
 // 4. The rule lives in the website, once, and the parts are published with it
 //    so the figure can always be taken apart.
 {
-  ok("the rule is in venueTotal", /const hereNow = Math\.max\(seenNow, doorNet \?\? 0\);/.test(src));
+  ok("the rule is in venueTotal", /const hereNow = Math\.max\(seenNow, countedNet\);/.test(src));
+  ok("and the sum behind it is published", /counted_net: countedNet,/.test(src));
   ok("every page reads the same field", /      total_current: hereNow,/.test(src));
   ok("what the cameras see is published too", /seen_now: seenNow,/.test(src));
   ok("and the door's own figure", /in_building: doorNet,/.test(src));
@@ -59,16 +72,20 @@ const hereNow = (seen, door) => Math.max(seen, door ?? 0);
 {
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
   ok("the headline no longer substitutes its own figure", /inBuilding: null,/.test(page));
-  ok("and explains the one it shows", /Kyro shows whichever\s+is larger/.test(page.replace(/\s+/g, " ")) || /whichever/.test(page));
+  ok("and explains the one it shows",
+     /Everyone counted in, less everyone counted out/.test(page)
+     && /it can never be fewer than the people plainly in shot/.test(page));
 
   const sessions = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
   ok("the Sessions page reads the same field", /venue\?\.total_current/.test(sessions));
 }
 
-// 6. The service recording measures the same thing as the pages do, or the
-//    "busiest" of a service would disagree with what was on screen during it.
+// 6. The parts are always published, so any figure on any page can be taken
+//    apart without asking me what it means.
 {
-  ok("a service's busiest uses the venue total", /const people = v\.total_current;/.test(src));
+  ok("what the cameras see is published", /seen_now: seenNow,/.test(src));
+  ok("the counted sum is published", /counted_net: countedNet,/.test(src));
+  ok("and where that sum came from", /counted_net_from_door: doorNet !== null,/.test(src));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. One question, one number.");

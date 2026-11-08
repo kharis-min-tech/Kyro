@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-cfd98d3917e1";
+const VENUE_CODE = "venue-fde0787ba821";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -938,10 +938,17 @@ export class VenueHub extends DurableObject {
     // and it takes the door's word when the door has seen more than the room.
     // The page shows both parts underneath, so the number is never a mystery.
     const seenNow = Math.max(0, sum("current") - twice);
+    // Everyone counted in, less everyone counted out — from the door when a
+    // door camera is keeping up, and otherwise from the room cameras, which is
+    // where the arrival figures on the page come from. The headline and the
+    // "came in / went out" card are then the same arithmetic on the same
+    // readings, instead of two answers side by side.
     const doorNet = hasDoor && trustInOut
       ? Math.max(0, sumDoors("entries_all") - sumDoors("exits_all"))
       : null;
-    const hereNow = Math.max(seenNow, doorNet ?? 0);
+    const roomNet = Math.max(0, sum("entries") - sum("exits"));
+    const countedNet = doorNet ?? roomNet;
+    const hereNow = Math.max(seenNow, countedNet);
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
@@ -960,6 +967,11 @@ export class VenueHub extends DurableObject {
       total_current: hereNow,
       /** What the cameras can actually see right now — the floor. */
       seen_now: seenNow,
+      /** Everyone counted in less everyone counted out, from whichever
+       *  cameras are being believed. The same sum the arrival card shows. */
+      counted_net: countedNet,
+      /** True when that sum came from a camera on a doorway rather than the room. */
+      counted_net_from_door: doorNet !== null,
       total_peak: sum("peak"),
       total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
       // How many people are in the building, counted at the door: everyone who
@@ -1621,7 +1633,12 @@ export class VenueHub extends DurableObject {
 
   async trackService(now) {
     const v = await this.venueTotal();
-    const people = v.total_current;
+    // What the cameras can SEE, deliberately — not the headline figure. A
+    // service starts when people are in the room and ends when the room is
+    // empty, and "everyone counted in less everyone counted out" doesn't come
+    // back down to nothing when a hall empties: one missed departure and the
+    // service would run until midnight.
+    const people = v.seen_now ?? v.total_current;
     const st = await this.get("service_state", { busy_since: null, quiet_since: null });
     let live = await this.get("service_live", null);
     let dirty = false;
