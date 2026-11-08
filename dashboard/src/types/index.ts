@@ -80,7 +80,10 @@ export interface Camera {
   camera_id: string;
   name: string;
   stream_url: string;
+  /** "indoor" (a room), "entrance" (a doorway) or "queue" (outside). */
   location: string | null;
+  /** For a doorway camera: which way people are walking when they come in. */
+  inward?: "closer" | "away" | "left" | "right";
   zone_name: string | null;
   zone_capacity: number;
   zone_order: number;

@@ -73,6 +73,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-04T18:33:54Z");
 const PRESENCE_STALE_MS = 30_000;
 const MAX_SESSIONS_PER_USER = 20; // same account signed in from more places than this: keep the newest
 const MIN_FPS_FOR_IN_OUT = 2;     // counts a second needed before in/out is trustworthy
+const MIN_FPS_FOR_DOOR = 3;       // a doorway needs more: people cross it in a second or two
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
@@ -558,6 +559,15 @@ export class VenueHub extends DurableObject {
       if (r.length) rotaFor[c.key] = r;
       if (zonesAll[c.camera_id]?.length) zonesFor[c.key] = zonesAll[c.camera_id];
     }
+    // Which of this computer's cameras are watching a doorway, and which way
+    // is "in". A camera on a door cannot tell arrivals from departures by
+    // watching people appear and disappear — everyone does both — so the
+    // counter needs to know to go by the direction they walked instead.
+    const doorways = {};
+    for (const c of Object.values(cams)) {
+      if (c.device_id !== device.id || c.location !== "entrance") continue;
+      doorways[c.key] = ["closer", "away", "left", "right"].includes(c.inward) ? c.inward : "closer";
+    }
     // Seat layouts: only a version number each time; the box fetches a layout when it changes.
     const seat_layouts = {};
     for (const c of Object.values(cams)) {
@@ -565,7 +575,7 @@ export class VenueHub extends DurableObject {
       const a = (await this.layoutsOf(c.camera_id)).find((l) => l.is_active);
       if (a) seat_layouts[c.key] = `${a.id}.${a.version ?? 0}`;
     }
-    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor,
+    return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor, doorways,
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
       report_every_s: 2, snapshot_every_s: 20 });
   }
@@ -692,6 +702,7 @@ export class VenueHub extends DurableObject {
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
         hidden: !!c.hidden, pending: !!c.pending, ignore_zones: c.ignore_zones ?? [], device_name: devices[c.device_id]?.name ?? "",
+        inward: c.inward || "closer",
         // Plugged in right now (its computer mentioned it in the last 30 s)?
         present: Date.now() - (this.seenAt.get(c.camera_id) ?? 0) < 30_000, fps: live[c.camera_id]?.fps ?? 0,
         // Only a camera that is actually reporting has anything to say about
@@ -718,8 +729,10 @@ export class VenueHub extends DurableObject {
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
         // In/out means following people between pictures, which needs the camera
         // to be counting fast enough — otherwise someone merely flickering out of
-        // view looks like a departure.
-        in_out: (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
+        // view looks like a departure. A doorway camera needs to be quicker
+        // still: people cross a door in a second or two, and one missed between
+        // two counts is a person uncounted.
+        in_out: (l.fps || 0) >= (c.location === "entrance" ? MIN_FPS_FOR_DOOR : MIN_FPS_FOR_IN_OUT),
       };
     });
     // A camera on the door and a camera on the room are doing two different
@@ -1776,6 +1789,9 @@ export class VenueHub extends DurableObject {
     if (body.zone_name !== undefined) c.zone_name = clean(body.zone_name, 60) || c.zone_name;
     if (body.zone_capacity !== undefined) c.zone_capacity = num(body.zone_capacity, 0, 100000);
     if (body.zone_order !== undefined) c.zone_order = num(body.zone_order, 0, 1000);
+    if (body.inward !== undefined) {
+      c.inward = ["closer", "away", "left", "right"].includes(body.inward) ? body.inward : "closer";
+    }
     if (body.location !== undefined) {
       // "entrance" is a camera on the door: it counts people coming in and
       // going out, and must never be added to how many are in the room.

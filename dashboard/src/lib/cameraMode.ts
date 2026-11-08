@@ -6,6 +6,7 @@
  */
 import { edgeFetch } from "@/lib/edgeAuth";
 import type { Person } from "@/lib/peopleDetector";
+import type { Inward } from "@/lib/personTracker";
 import { startEngine, countWith } from "@/lib/countEngine";
 export { MODELS } from "@/lib/countEngine";
 
@@ -105,19 +106,29 @@ export function countPeople(engine: Engine, px: ImageData, tiles?: number): Prom
  * Opens one camera at the highest detail it offers — more pixels per person
  * means people further away are still found.
  *
- * `plain` drops the request for detail and takes whatever the camera gives by
- * default. Some cameras accept 1920x1080, open happily, and then send no
- * picture at all: a black tile that never explains itself. Asking for nothing
- * in particular is the way back from that.
+ * `step` asks for less each time. Some cameras accept 1920x1080, open happily,
+ * and then send no picture at all: a black tile that never explains itself.
+ * Stepping down is the way back from that — see SIZES below.
  */
-export function openCamera(deviceId: string, plain = false): Promise<MediaStream> {
+export function openCamera(deviceId: string, step = 0): Promise<MediaStream> {
+  const size = SIZES[Math.min(step, SIZES.length - 1)];
   return navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: plain
-      ? { deviceId: { exact: deviceId } }
-      : { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    video: size
+      ? { deviceId: { exact: deviceId }, width: { ideal: size[0] }, height: { ideal: size[1] } }
+      : { deviceId: { exact: deviceId } },
   });
 }
+
+/**
+ * What to ask a camera for, in order, until it actually sends a picture.
+ *
+ * Two cameras on one USB socket is the common case here — one on the room, one
+ * on the door — and two 1080p cameras need more of that socket than it has.
+ * One of them opens, reports success, and then sends nothing at all. Asking
+ * for less is what gets a picture out of it; 720p is plenty for counting.
+ */
+const SIZES: ([number, number] | null)[] = [[1920, 1080], [1280, 720], [640, 480], null];
 
 const NOT_A_ROOM_CAMERA = /facetime|integrated|built-?in|truevision|iphone|ipad|desk view|virtual|obs/i;
 
@@ -165,7 +176,7 @@ export type Zone = [number, number, number, number];
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
-export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean }> {
+export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward> }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -186,6 +197,8 @@ export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: s
     zones: body.ignore_zones && typeof body.ignore_zones === "object" ? body.ignore_zones : {},
     countConfidence: Number.isFinite(conf) && conf >= 0.1 && conf <= 0.6 ? conf : undefined,
     faceMatching: !!body.face_matching,
+    // Which cameras are watching a doorway, and which way is "in".
+    doorways: body.doorways && typeof body.doorways === "object" ? body.doorways : {},
   };
 }
 

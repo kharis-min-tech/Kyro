@@ -41,6 +41,16 @@ const SCORE_TO_CONFIRM = 3;
  * with how fast the computer is.
  */
 const GRACE_MS = 45_000;
+/**
+ * The same wait, at a doorway.
+ *
+ * Forty-five seconds is right for a room, where someone turning away or
+ * standing behind a pillar must not be counted out and back in. At a door
+ * people pass through in a couple of seconds, so that long a wait means the
+ * morning's arrivals only appear three quarters of a minute after they
+ * happened — and during a rush, barely at all.
+ */
+const DOOR_GRACE_MS = 6_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;
@@ -53,6 +63,54 @@ interface Track {
   lastSeen: number;            // when they were last actually seen
   counted: boolean;            // already counted as someone who arrived
   face: Float32Array | null;   // their face code, when one could be read
+  /** Where they were first seen, for a doorway camera to tell which way they went. */
+  firstBox: [number, number, number, number];
+}
+
+/**
+ * Which way is "in", as seen by a camera watching a doorway.
+ *
+ * "closer" means people coming in walk towards the camera, so their box grows.
+ * "away" is the reverse. "left" and "right" are for a camera looking across a
+ * doorway rather than along it.
+ */
+export type Inward = "closer" | "away" | "left" | "right";
+
+/** Movement smaller than this is someone shifting their weight, not walking. */
+const MOVED_ENOUGH = 0.25;   // of their own width, or a quarter again in size
+
+/**
+ * Which way one person went, or null if they didn't really go anywhere.
+ *
+ * A camera on a door cannot tell arrivals from departures by watching people
+ * appear and disappear: everybody does both, whichever way they are walking.
+ * That is why a door camera reported "12 in, 0 out" with people streaming
+ * past in both directions. The direction of travel is the whole of the
+ * information, so it is what gets counted.
+ */
+export function wentIn(
+  first: [number, number, number, number],
+  last: [number, number, number, number],
+  inward: Inward,
+): boolean | null {
+  const cx = (b: [number, number, number, number]) => (b[0] + b[2]) / 2;
+  const w = (b: [number, number, number, number]) => Math.max(1, b[2] - b[0]);
+  const h = (b: [number, number, number, number]) => Math.max(1, b[3] - b[1]);
+
+  if (inward === "left" || inward === "right") {
+    const moved = cx(last) - cx(first);
+    const enough = Math.max(w(first), w(last)) * MOVED_ENOUGH;
+    if (Math.abs(moved) < enough) return null;
+    const wentLeft = moved < 0;
+    return inward === "left" ? wentLeft : !wentLeft;
+  }
+
+  // Walking towards the camera makes a person taller in the picture. Height is
+  // steadier than width, which changes with how someone is standing.
+  const grew = h(last) / h(first);
+  if (grew > 1 - MOVED_ENOUGH && grew < 1 + MOVED_ENOUGH) return null;
+  const cameCloser = grew > 1;
+  return inward === "closer" ? cameCloser : !cameCloser;
 }
 
 /** Centre-to-centre distance, in multiples of the wider box's width. */
@@ -76,6 +134,18 @@ export class PersonTracker {
   private nextId = 1;
   entries = 0;
   exits = 0;
+  /**
+   * Set for a camera watching a doorway. Everyone passing a door both appears
+   * and disappears, so appearing cannot mean "arrived" — only the direction
+   * they walked can. While this is set, nobody is counted until they have gone
+   * from view and it is clear which way they went.
+   */
+  private inward: Inward | null = null;
+
+  /** null for a camera watching a room; a direction for one watching a door. */
+  watchesDoorway(inward: Inward | null): void {
+    if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; }
+  }
 
   /** Give it this count's people; returns how many are here now (confirmed only). */
   /**
@@ -102,7 +172,7 @@ export class PersonTracker {
       tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
       if (faces?.[b]) tr.face = faces[b];
       tr.score = Math.min(SCORE_TO_CONFIRM + 2, tr.score + 1);
-      if (!tr.counted && tr.score >= SCORE_TO_CONFIRM) { tr.counted = true; this.entries++; }
+      if (!tr.counted && tr.score >= SCORE_TO_CONFIRM) { tr.counted = true; if (!this.inward) this.entries++; }
     }
 
     // Mark the misses BEFORE adding new tracks, or a brand-new one is counted
@@ -145,15 +215,25 @@ export class PersonTracker {
         t.box = b; t.missing = 0; t.lastSeen = now;
         if (mine) t.face = mine;
         t.score = Math.min(SCORE_TO_CONFIRM + 2, t.score + 1);
-        if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; this.entries++; }
+        if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; if (!this.inward) this.entries++; }
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, score: 1, missing: 0, lastSeen: now, counted: false, face: faces?.[bi] ?? null });
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, face: faces?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
-      if (now - t.lastSeen < GRACE_MS) return true;
-      if (t.counted) this.exits++;     // only people we'd counted as arriving can leave
+      if (now - t.lastSeen < (this.inward ? DOOR_GRACE_MS : GRACE_MS)) return true;
+      if (t.counted) {
+        if (this.inward) {
+          // A doorway: they have gone, so now we can say which way.
+          const went = wentIn(t.firstBox, t.box, this.inward);
+          if (went === true) this.entries++;
+          else if (went === false) this.exits++;
+          // null = they stood by the door and went back the way they came.
+        } else {
+          this.exits++;   // a room: only people we'd counted as arriving can leave
+        }
+      }
       return false;
     });
 

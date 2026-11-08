@@ -100,6 +100,7 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
     stream_url:    cam.stream_url,
     zone_capacity: cam.zone_capacity ?? 0,
     location:      cam.location ?? "",
+    inward:        (cam as CameraType & { inward?: string }).inward ?? "closer",
   });
   const [showCmd, setShowCmd]       = useState(false);
   const [saving, setSaving]         = useState(false);
@@ -125,6 +126,7 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
         stream_url:    draft.stream_url.trim(),
         zone_capacity: ["queue", "entrance"].includes(draft.location) ? 0 : (Number(draft.zone_capacity) || 0),
         location:      draft.location || undefined,
+        inward:        draft.location === "entrance" ? draft.inward : undefined,
       });
       setEditing(false);
     } catch (e: any) { setErr(e.message); }
@@ -205,6 +207,23 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
                 </select>
               </div>
             </div>
+            {draft.location === "entrance" && (
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-gray-400">Which way is &ldquo;in&rdquo;?</label>
+                <select value={draft.inward || "closer"} onChange={(e) => setDraft((p) => ({ ...p, inward: (e.target.value || "closer") as NonNullable<CameraType["inward"]> }))}
+                  className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  <option value="closer">People coming in walk towards the camera</option>
+                  <option value="away">People coming in walk away from the camera</option>
+                  <option value="left">People coming in move to the left of the picture</option>
+                  <option value="right">People coming in move to the right of the picture</option>
+                </select>
+                <p className="text-xs text-gray-500">
+                  Everyone at a door both appears and disappears, whichever way they are walking, so Kyro
+                  counts the direction they travelled. Stand in the doorway and walk in: the arrivals
+                  figure should go up, not the departures.
+                </p>
+              </div>
+            )}
             {draft.location !== "queue" && draft.location !== "entrance" && (
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-gray-400">Seat capacity</label>

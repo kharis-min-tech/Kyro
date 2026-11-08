@@ -150,6 +150,16 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
         <div className="p-5 flex flex-col gap-4">
           {/* Headline answers */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
+            {/* The day's two totals, first and plainly labelled. They were
+                here before, as small print under "Half had arrived by" and
+                "First arrivals" — which is no place for the number most people
+                open this card to find. */}
+            <StatTile label="Came in, all day" swatch={ARRIVE}
+              value={summary.totalArrived.toLocaleString()}
+              sub={`${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
+            <StatTile label="Went out, all day" swatch={LEAVE}
+              value={summary.totalLeft.toLocaleString()}
+              sub={summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             <StatTile label="Busiest arrival time" swatch={ARRIVE}
               value={peakArrival ? fmtRange(peakArrival, minutes) : "—"}
               sub={peakArrival ? `${peakArrival.arrived.toLocaleString()} people arrived` : undefined} />
@@ -158,10 +168,7 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
               sub={peakDeparture ? `${peakDeparture.left.toLocaleString()} people left` : undefined} />
             <StatTile label="Half had arrived by"
               value={summary.halfArrivedBy ? fmtTime(summary.halfArrivedBy) : "—"}
-              sub={`${summary.totalArrived.toLocaleString()} arrivals in total`} />
-            <StatTile label="First arrivals"
-              value={summary.firstArrival ? fmtTime(summary.firstArrival) : "—"}
-              sub={`${summary.totalLeft.toLocaleString()} exits in total`} />
+              sub={summary.firstArrival ? `first at ${fmtTime(summary.firstArrival)}` : undefined} />
           </div>
 
           {view === "table" ? (

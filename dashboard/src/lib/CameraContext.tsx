@@ -180,6 +180,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         location:      "location" in f
           ? (f.location === "queue" || f.location === "entrance" ? f.location : "indoor")
           : undefined,
+        inward:        f.inward,
         hidden:        f.hidden,
       });
       return;

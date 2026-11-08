@@ -90,7 +90,7 @@ export const edgeVenueApi = {
   removeDevice: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/devices/${enc(id)}`, { method: "DELETE" }),
   updateCamera: (id: string, body: {
     name?: string; zone_name?: string; zone_capacity?: number; zone_order?: number;
-    location?: "indoor" | "queue" | "entrance"; hidden?: boolean; ignore_zones?: Zone[];
+    location?: "indoor" | "queue" | "entrance"; inward?: "closer" | "away" | "left" | "right"; hidden?: boolean; ignore_zones?: Zone[];
   }) => edgeFetch<{ ok: boolean }>(`/api/live/cameras/${enc(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
   removeCamera: (id: string, permanent = false) =>
     edgeFetch<{ removed: boolean }>(`/api/live/cameras/${enc(id)}${permanent ? "?permanent=1" : ""}`, { method: "DELETE" }),

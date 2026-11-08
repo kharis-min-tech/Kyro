@@ -62,8 +62,8 @@ interface Cam {
   /** When this camera last gave a picture, or first failed to. A camera can be
    *  open and still send nothing — a black tile that never explains itself. */
   noPictureSince: number;
-  /** Already reopened without asking for 1920x1080, so we don't loop on it. */
-  relaxed: boolean;
+  /** How many times this camera has been asked for less, so we don't loop. */
+  tries: number;
   /** When this camera dropped off the list of plugged-in cameras, if it has. */
   goneSince: number;
   // Splitting the picture into tiles costs five AI runs instead of one. It only
@@ -159,7 +159,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
-          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, relaxed: false, goneSince: 0,
+          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
@@ -229,17 +229,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // something.
           if (!c.noPictureSince) { c.noPictureSince = Date.now(); continue; }
           if (Date.now() - c.noPictureSince <= NO_PICTURE_MS) continue;
-          if (!c.relaxed) {
+          if (c.tries < 3) {
             // Kyro asks every camera for 1920x1080, because more pixels means
             // people further away are still found. Some cameras accept that,
-            // open happily, and then send nothing at all. Rather than tell
-            // someone to crawl behind the desk and replug it, ask again for
-            // nothing in particular and take what the camera wants to give.
-            c.relaxed = true;
+            // open happily, and then send nothing at all — two cameras sharing
+            // one USB socket is the usual reason, since two 1080p pictures need
+            // more of it than it has. Rather than tell someone to crawl behind
+            // the desk, ask for less and try again. 720p counts people fine.
+            c.tries++;
             c.noPictureSince = 0;
             try {
               c.stream?.getTracks().forEach((t) => t.stop());
-              c.stream = await openCamera(c.deviceId, true);
+              c.stream = await openCamera(c.deviceId, c.tries);
               c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c.stream = null; c.error = "Unplugged"; refreshViews(); });
               if (c.video) { c.video.srcObject = c.stream; c.video.play().catch(() => {}); }
               c.error = null;
@@ -248,7 +249,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
             }
             continue;
           }
-          c.error = "This camera is open but sending no picture, even at its own settings. Try a different USB socket, or unplug it and plug it back in.";
+          c.error = "This camera is open but sending no picture, at any size. Try its own USB socket on the computer rather than sharing one, or a different cable.";
           continue;
         }
         c.noPictureSince = 0;
@@ -400,7 +401,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching } = await sendReport(reports);
+        const { disabled, zones, countConfidence, faceMatching, doorways } = await sendReport(reports);
+        // A camera on a door counts people by which way they walked, not by
+        // appearing and disappearing — everyone at a door does both.
+        for (const c of cams.current.values()) c.tracker.watchesDoorway(doorways[c.key] ?? null);
         zonesRef.current = zones;
         if (countConfidence !== undefined) countConfidenceRef.current = countConfidence;
         faceOnRef.current = !!faceMatching;
