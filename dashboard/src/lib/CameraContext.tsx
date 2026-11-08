@@ -27,8 +27,23 @@ function mdeKey(name: "overrides" | "added" | "deleted"): string {
  * them into every refresh — otherwise the server would overwrite them with
  * its own camera list the moment the user navigates away.
  */
-function isBrowserCameraUrl(url: string): boolean {
+export function isBrowserCameraUrl(url: string): boolean {
   return typeof url === "string" && url.startsWith("webcam://");
+}
+
+/**
+ * The camera list a page should show: everything the camera computer reports,
+ * plus the cameras plugged into THIS computer.
+ *
+ * A camera plugged in here is known only to this browser — the camera computer
+ * has no way to see it, so it is never in the server's list. Showing the
+ * server's list on its own is how a camera that was just added disappears the
+ * moment you move to another page.
+ */
+export function mergeCameras(server: Camera[], local: Camera[]): Camera[] {
+  const mine = local.filter((c) => isBrowserCameraUrl(c.stream_url));
+  const serverIds = new Set(server.map((c) => c.camera_id));
+  return [...server, ...mine.filter((c) => !serverIds.has(c.camera_id))];
 }
 function loadLocalAddedCameras(): Camera[] {
   try { return JSON.parse(localStorage.getItem(mdeKey("added")) ?? "[]") as Camera[]; }
@@ -97,9 +112,7 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         // phone/laptop) so the server list wouldn't include them, but we
         // still want them to appear in the sidebar, Sessions, Seat Map and
         // Rota the same way any other camera does.
-        const local = loadLocalAddedCameras().filter((c) => isBrowserCameraUrl(c.stream_url));
-        const serverIds = new Set(server.map((c) => c.camera_id));
-        setCameras([...server, ...local.filter((c) => !serverIds.has(c.camera_id))]);
+        setCameras(mergeCameras(server, loadLocalAddedCameras()));
         setError(null);
       } catch (e: any) {
         // Even when the edge API is unreachable, surface the local browser

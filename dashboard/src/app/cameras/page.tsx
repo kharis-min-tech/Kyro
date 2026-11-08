@@ -730,6 +730,15 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
     finally { setAdding(false); }
   }
 
+  // A failed attempt used to leave its red message sitting there while the
+  // operator went off and did something completely different. Try the network
+  // path with no camera computer paired, get "Pair a camera computer first",
+  // then go back and pick a USB camera — and that message was still on screen,
+  // under a camera previewing happily, above an Add camera button that would
+  // have worked. It read as "this is blocked" and stopped the add dead.
+  // A camera plugged into this computer never contacts the server at all.
+  useEffect(() => { setErr(null); }, [mode, transmitterPath, url]);
+
   const canSubmit = !!name.trim() && !!url.trim();
 
   return (
