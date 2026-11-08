@@ -111,7 +111,10 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
   // had to be started afresh every time. A preview is not worth fighting the
   // thing doing the actual work.
   const counting = useCounting();
-  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  // Counted by some computer — this one or another. See tileCount.
+  const { zones: liveZones } = useContext(EdgeLiveContext);
+  const countedElsewhere = !!(cameraId && liveZones?.[cameraId]?.is_running);
+  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName, cameraId, countedElsewhere);
   const stream = det.key ? counting?.streamFor(det.key) ?? null : null;
 
   useEffect(() => {
@@ -186,7 +189,7 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
-  const { edge } = useContext(EdgeLiveContext);
+  const { edge, zones: zonesHere } = useContext(EdgeLiveContext);
   // Is THIS browser the one counting this camera? If so it has the live
   // picture and should show it. On any other device — a phone, or a second
   // computer — it hasn't, and the live picture cannot travel: the video never
@@ -195,7 +198,8 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   // everyone else sees. Without this a phone showed "Not counting" beside a
   // camera that was counting perfectly well.
   const counting = useCounting();
-  const mine = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  const countedElsewhere = !!(cameraId && zonesHere?.[cameraId]?.is_running);
+  const mine = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName, cameraId, countedElsewhere);
   const liveHere = mine.key ? counting?.streamFor(mine.key) ?? null : null;
   // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
   const snap = useEdgeSnapshot(cameraId, edge && !liveHere, 20_000);

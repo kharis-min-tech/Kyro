@@ -174,7 +174,10 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
   // why). This shows the picture the engine already has; it never opens the
   // camera itself and never stops it.
   const counting = useCounting();
-  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  // Counted by some computer — this one or another. See tileCount.
+  const { zones: liveZones } = useContext(EdgeVenueContext);
+  const countedElsewhere = !!(cameraId && liveZones?.[cameraId]?.is_running);
+  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName, cameraId, countedElsewhere);
   const stream = det.key ? counting?.streamFor(det.key) ?? null : null;
 
   useEffect(() => {

@@ -99,5 +99,40 @@ const view = (over = {}) => ({
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
+// ── Renaming a camera must not break its tile ───────────────────────────────
+//
+// The counting engine knows a webcam as "HD USB Camera (046d:0825)". The
+// website knows the same camera as "Entrance - Morning", because somebody
+// renamed it. Matching on the name then fails and the tile said "This camera
+// isn't being counted" over a camera that was being counted perfectly well.
+// The camera_id carries the engine's own key after the colon, which is exact.
+{
+  const views = [
+    { key: "usb-0", label: "HD USB Camera (046d:0825)", count: 8, countedAt: 1, streaming: true, error: null },
+    { key: "usb-1", label: "Integrated Webcam", count: 11, countedAt: 1, streaming: true, error: null },
+  ];
+  const a = tileCount("running", views, "Entrance - Morning", "dev-abc:usb-0");
+  ok("a renamed camera is found by its key", a.count === 8, JSON.stringify(a));
+  const b = tileCount("running", views, "KP2 Room- Main", "dev-abc:usb-1");
+  ok("and so is the second one", b.count === 11, JSON.stringify(b));
+  ok("they don't get each other's figures", a.count !== b.count);
+}
+
+// ── Looking from a phone ────────────────────────────────────────────────────
+//
+// Most people looking at Kyro are on a phone at the back of the hall, not on
+// the computer doing the counting. Telling them "this camera isn't being
+// counted" is false, and it was on every tile on every other device.
+{
+  const a = tileCount("running", [], "Entrance - Morning", "dev-abc:usb-0", true);
+  ok("a camera counted by another computer says nothing", a.message === null, JSON.stringify(a));
+  ok("and is not reported as off", a.state === "remote", a.state);
+  const b = tileCount(null, [], "Entrance - Morning", "dev-abc:usb-0", true);
+  ok("the same when this browser isn't counting at all", b.message === null && b.state === "remote");
+  // But a camera that genuinely nobody is counting still says so.
+  const c = tileCount("running", [], "Entrance - Morning", "dev-abc:usb-0", false);
+  ok("a camera nobody is counting still says so", c.message === "This camera isn't being counted");
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. One engine, one number per camera.");
 process.exit(fails ? 1 : 0);

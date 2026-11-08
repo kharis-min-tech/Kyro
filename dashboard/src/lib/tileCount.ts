@@ -24,7 +24,8 @@ export interface EngineView {
   countedAt: number;
 }
 
-export type TileState = "counting" | "starting" | "off" | "problem";
+/** "remote" = counted, but by another computer — nothing to say and nothing wrong. */
+export type TileState = "counting" | "starting" | "off" | "problem" | "remote";
 
 export interface TileCount {
   /** null whenever the figure would be a guess. */
@@ -40,8 +41,25 @@ function tidy(s: string): string {
   return s.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
-/** The engine's camera that this tile is showing, matched on the name. */
-export function matchView(views: EngineView[], cameraName: string | undefined): EngineView | null {
+/**
+ * The engine's camera that this tile is showing.
+ *
+ * By its key first, which is exact. The website's camera_id is "device:key",
+ * and the key is what the counting engine calls its own cameras — so the two
+ * can be matched with certainty however the camera has been renamed.
+ *
+ * Matching on the name was the only way before, and it fails the moment
+ * somebody renames a camera: the engine knows a webcam as "HD USB Camera
+ * (046d:0825)" and the website knows it as "Entrance - Morning". Both tiles
+ * then said "This camera isn't being counted" while the camera was being
+ * counted perfectly well.
+ */
+export function matchView(views: EngineView[], cameraName: string | undefined, cameraId?: string): EngineView | null {
+  const key = cameraId && cameraId.includes(":") ? cameraId.slice(cameraId.indexOf(":") + 1) : "";
+  if (key) {
+    const byKey = views.find((v) => v.key === key);
+    if (byKey) return byKey;
+  }
   const name = tidy(cameraName ?? "");
   if (name) {
     const hit = views.find((v) => {
@@ -62,15 +80,28 @@ export function tileCount(
   phase: "idle" | "starting" | "running" | null,
   views: EngineView[],
   cameraName: string | undefined,
+  cameraId?: string,
+  /**
+   * The camera is reporting to the website right now — it is being counted,
+   * just not by THIS computer. Most people looking at Kyro are on their phone
+   * at the back of the hall, not on the machine doing the counting, and
+   * telling them counting is off is simply false.
+   */
+  countedElsewhere = false,
 ): TileCount {
-  if (phase === null) return { count: null, state: "off", message: "Counting is off", key: null };
+  const elsewhere: TileCount = { count: null, state: "remote", message: null, key: null };
+  if (phase === null) return countedElsewhere ? elsewhere : { count: null, state: "off", message: "Counting is off", key: null };
   if (phase === "starting") return { count: null, state: "starting", message: "Starting…", key: null };
   if (phase === "idle") {
-    return { count: null, state: "off", message: "Counting is off — turn it on on the Cameras page", key: null };
+    return countedElsewhere ? elsewhere
+      : { count: null, state: "off", message: "Counting is off — turn it on on the Cameras page", key: null };
   }
 
-  const view = matchView(views, cameraName);
-  if (!view) return { count: null, state: "off", message: "This camera isn't being counted", key: null };
+  const view = matchView(views, cameraName, cameraId);
+  if (!view) {
+    return countedElsewhere ? elsewhere
+      : { count: null, state: "off", message: "This camera isn't being counted", key: null };
+  }
   if (view.error) return { count: null, state: "problem", message: view.error, key: view.key };
   if (!view.streaming) return { count: null, state: "problem", message: "Camera not open", key: view.key };
   if (!view.countedAt) return { count: null, state: "starting", message: "Counting…", key: view.key };
