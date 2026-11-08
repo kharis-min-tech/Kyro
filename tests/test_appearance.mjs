@@ -130,6 +130,51 @@ const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t
      tr.exits === 4, `exits ${tr.exits}`);
 }
 
+// 6b. The usher.
+//
+//     Someone stands at that door all morning: holding it open, walking a
+//     visitor to a seat, stepping back out. Every trip looked like a person
+//     arriving, and the morning's figure climbed all day on one person doing
+//     their job — which is exactly what was reported: "you could just be
+//     counting them the whole time, that's why the number keeps increasing".
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  const usher = look(RED, GREY, 2.6, 0.55);     // same person throughout
+  let t = 0;
+  // In, out, in, out, in — five trips through the door in two minutes.
+  const inward  = [box(100, 120, 48, 124), box(100, 60, 70, 200)];
+  const outward = [box(100, 60, 70, 200), box(100, 120, 48, 124)];
+  for (const trip of [inward, outward, inward, outward, inward]) {
+    see(tr, [trip[0]], (t += 3000), [usher]);
+    see(tr, [trip[1]], (t += 400), [usher]);
+    see(tr, [], (t += 16000));
+  }
+  ok("the usher is counted in once, not three times", tr.entries === 1, `in ${tr.entries}`);
+  ok("and out once, not twice", tr.exits === 1, `out ${tr.exits}`);
+
+  // Three minutes later they really do go out again, and that counts.
+  see(tr, [box(100, 60, 70, 200)], (t += 200000), [usher]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher]);
+  see(tr, [], (t += 16000));
+  ok("but a trip a few minutes later is counted", tr.exits === 2, `out ${tr.exits}`);
+}
+
+// 6c. Everyone else is still counted. The cooling-off only ever applies to
+//     somebody Kyro recognises — a stranger walking through is a stranger.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  const people = [look(RED, CREAM, 2.5, 0.5), look(NAVY, GREY, 2.4, 0.52), look(CREAM, NAVY, 2.6, 0.48)];
+  for (const who of people) {
+    see(tr, [box(100, 120, 48, 124)], (t += 2000), [who]);
+    see(tr, [box(100, 60, 70, 200)], (t += 400), [who]);
+    see(tr, [], (t += 16000));
+  }
+  ok("three different people coming in are three arrivals", tr.entries === 3, `in ${tr.entries}`);
+}
+
 // 7. And the margin is what does that: when several people fit about equally
 //    well, "looks the same" is worth nothing.
 {

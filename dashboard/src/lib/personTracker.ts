@@ -94,6 +94,25 @@ const LOOK_MARGIN = 0.06;
  * turn round, and stand in different light.
  */
 const RETURN_BY_LOOK_MS = 90_000;
+/**
+ * How long before the same person can be counted the same way again.
+ *
+ * An usher stands at the door all morning, stepping in and out, holding it
+ * open, walking someone to a seat and coming back. Every one of those trips
+ * looked like a person arriving, and the morning's figure climbed all day on
+ * one person doing their job.
+ *
+ * So once Kyro has counted somebody in, it will not count that same person in
+ * again for a few minutes — and the same for out. It can only do this for
+ * people it recognises: their coat and build, or their face when face matching
+ * is on. A stranger is always counted.
+ *
+ * Three minutes, not an hour, because people really do go out to the car and
+ * come back, and that is two arrivals. It is a working compromise and not the
+ * real answer — the real answer is a line across the doorway, so that standing
+ * beside a door is not a journey through it at all.
+ */
+const RECOUNT_COOLDOWN_MS = 3 * 60_000;
 
 // A score that rises when the person is seen and falls when they are not, so a
 // box that only flickers in and out never reaches it. Simply totalling sightings
@@ -197,6 +216,9 @@ interface Track {
   firstBox: [number, number, number, number];
   /** Already added to the arrivals or departures, so never added again. */
   tallied: boolean;
+  /** When this person was last counted in, and last counted out. */
+  countedInAt: number;
+  countedOutAt: number;
 }
 
 /**
@@ -420,7 +442,7 @@ export class PersonTracker {
         return;
       }
       this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false,
-        face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
+        countedInAt: -Infinity, countedOutAt: -Infinity, face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
@@ -434,8 +456,14 @@ export class PersonTracker {
         // counted a second time.
         if (t.counted && !t.tallied && gone >= DOOR_DECIDE_MS) {
           const went = wentIn(t.firstBox, t.box, this.inward);
-          if (went === true) this.entries++;
-          else if (went === false) this.exits++;
+          // Counted, unless this is somebody Kyro recognises who it counted
+          // the same way a moment ago — the usher holding the door. See
+          // RECOUNT_COOLDOWN_MS.
+          if (went === true) {
+            if (now - t.countedInAt >= RECOUNT_COOLDOWN_MS) { this.entries++; t.countedInAt = now; }
+          } else if (went === false) {
+            if (now - t.countedOutAt >= RECOUNT_COOLDOWN_MS) { this.exits++; t.countedOutAt = now; }
+          }
           // null = they stood by the door and went back the way they came.
           t.tallied = true;
         }
