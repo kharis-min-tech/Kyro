@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-536756c390c9";
+const VENUE_CODE = "venue-1143ac480c95";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -581,6 +581,11 @@ export class VenueHub extends DurableObject {
 
     // The counting browser couldn't load the face AI. Kept so the Face
     // matching card can say so rather than looking switched on and idle.
+    // The face AI is loaded in that browser and looking at every count —
+    // which is the real answer to "is face matching working". Whether it found
+    // a face just now depends on whether anyone was facing a camera, and that
+    // is not a fault.
+    if (body.faces_ready) await this.ctx.storage.put("face_ready_at", now);
     if (typeof body.faces_error === "string" && body.faces_error) {
       await this.ctx.storage.put("face_error", { at: now, message: clean(body.faces_error, 160), device: device.id });
     } else if (body.faces_error === null && await this.get("face_error", null)) {
@@ -861,12 +866,18 @@ export class VenueHub extends DurableObject {
     const faceNow = Date.now();
     const faceFresh = [...this.faceCodes.entries()].filter(([, f]) => faceNow - f.at < FACE_FRESH_MS);
     const faceTrouble = await this.get("face_error", null);
+    // Loaded and looking, as of the last report from the counting browser.
+    const faceReadyAt = await this.get("face_ready_at", 0);
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
       // those readings held.
       face_cameras: faceFresh.length,
       face_people: faceFresh.reduce((n, [, f]) => n + f.codes.length, 0),
+      // The face AI is loaded and looking at every count. Separate from
+      // whether it found anyone: an empty hall, or a room of people facing the
+      // front, reads no faces and nothing is wrong.
+      face_engine_ready: !!faceReadyAt && faceNow - faceReadyAt < 30_000,
       // What went wrong in the browser doing the counting, if the face AI
       // couldn't be loaded there.
       face_error: faceTrouble && faceNow - faceTrouble.at < 5 * 60_000 ? faceTrouble.message : null,

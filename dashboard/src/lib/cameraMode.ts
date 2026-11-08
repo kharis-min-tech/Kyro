@@ -178,14 +178,20 @@ export type Zone = [number, number, number, number];
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
 export async function sendReport(
   cameras: CameraReport[],
-  /** Why this browser couldn't read faces, or null when it can. */
-  facesError: string | null = null,
+  /**
+   * How face reading is going in this browser. `ready` is the honest answer to
+   * "is it working": the face AI is loaded and looking, whether or not it
+   * found a face this time. Nobody's face being visible is not a fault, and
+   * sending no codes used to look exactly like a fault.
+   */
+  faces: { error?: string | null; ready?: boolean } = {},
 ): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${d.token}` },
-    body: JSON.stringify({ version: CAMERA_MODE_VERSION, faces_error: facesError, cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
+    body: JSON.stringify({ version: CAMERA_MODE_VERSION, faces_error: faces.error ?? null, faces_ready: !!faces.ready,
+      cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
   });
   let res = await post(dev);
   if (res.status === 401) {          // removed on the Cameras page → register again

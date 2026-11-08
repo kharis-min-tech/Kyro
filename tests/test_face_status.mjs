@@ -39,8 +39,8 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
 // 2. A browser that can't load the face AI says so, instead of going quiet.
 {
   ok("the counting browser remembers why faces failed", /faceErr\.current = `The face AI wouldn't load/.test(ctx));
-  ok("and sends it with the counts", /sendReport\(reports, faceErr\.current\)/.test(ctx));
-  ok("the report has somewhere to put it", /faces_error: facesError/.test(cam));
+  ok("and sends it with the counts", /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}\)/.test(ctx));
+  ok("the report has somewhere to put it", /faces_error: faces\.error \?\? null/.test(cam));
   ok("the website keeps it", /await this\.ctx\.storage\.put\("face_error"/.test(worker));
   ok("and forgets it once faces work again",
      /body\.faces_error === null && await this\.get\("face_error", null\)/.test(worker)
@@ -48,12 +48,26 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
   ok("stale trouble isn't shown for ever", /faceNow - faceTrouble\.at < 5 \* 60_000/.test(worker));
 }
 
-// 3. The card says which of the two it is.
+// 2b. "Nobody's face is visible" is not "it isn't working". The browser says
+//     whether the face AI is loaded and looking, separately from whether it
+//     found anyone — a room of people facing the front shows the backs of
+//     their heads, and nothing is wrong.
 {
-  ok("it says when faces are being read", /Reading faces on \{faceCams\}/.test(card));
-  ok("and says plainly when they are not", /On, but no faces are being read\./.test(card));
+  ok("the browser says the AI is loaded and looking",
+     /ready: !!faceEngine\.current/.test(ctx));
+  ok("the website keeps that", /if \(body\.faces_ready\) await this\.ctx\.storage\.put\("face_ready_at", now\)/.test(worker));
+  ok("and only counts it as now", /faceNow - faceReadyAt < 30_000/.test(worker));
+  ok("the card has a state for it", /the face AI is loaded and looking at every count/.test(card));
+  ok("and says 'working' for both good states",
+     (card.match(/Working — /g) ?? []).length === 2);
+}
+
+// 3. The card says which of the three it is.
+{
+  ok("it says when faces are being read", /reading faces on \{faceCams\}/.test(card));
+  ok("and says plainly when the AI isn't running", /On, but the face AI isn&apos;t running\./.test(card));
   ok("it shows the actual reason when there is one", /\{faceErr\s*\?\s*\n?\s*faceErr/.test(card.replace(/\s+/g, " ")) || /faceErr\s*\?\s*faceErr/.test(card.replace(/\s+/g, " ")));
-  ok("and never claims the count is affected", /the counting is\s+unaffected either way/.test(card));
+  ok("and never claims the count is affected", /counting\s+itself is unaffected either way/.test(card));
 }
 
 // 4. Still only during a service, and still wiped when one ends — none of

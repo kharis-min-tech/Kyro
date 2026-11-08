@@ -64,6 +64,7 @@ export function FaceMatching() {
   const faceCams: number = (venue as any)?.face_cameras ?? 0;
   const facePeople: number = (venue as any)?.face_people ?? 0;
   const faceErr: string | null = (venue as any)?.face_error ?? null;
+  const faceReady: boolean = (venue as any)?.face_engine_ready ?? false;
 
   return (
     <div className="mb-6">
@@ -110,19 +111,28 @@ export function FaceMatching() {
             {p.face_matching && live && (
               faceCams > 0 ? (
                 <p className="text-xs mt-1" style={{ color: "#22c55e" }}>
-                  Reading faces on {faceCams} {faceCams === 1 ? "camera" : "cameras"} — {facePeople} {facePeople === 1 ? "face" : "faces"} in the last reading.
+                  Working — reading faces on {faceCams} {faceCams === 1 ? "camera" : "cameras"}, {facePeople} {facePeople === 1 ? "face" : "faces"} in the last reading.
+                </p>
+              ) : faceReady ? (
+                /* The AI is loaded and looking at every count. It found nobody
+                   this time, which is not a fault: a face has to be towards a
+                   camera and big enough in the picture to read, and a room of
+                   people facing the front shows the backs of their heads. */
+                <p className="text-xs mt-1" style={{ color: "#22c55e" }}>
+                  Working — the face AI is loaded and looking at every count. No face is clear enough to read just now:
+                  someone has to be facing a camera, and close enough that their face is more than a few dozen pixels across.
+                  A camera above a doorway, pointing at people as they come towards it, is what gets the most.
                 </p>
               ) : (
                 <div className="mt-2 rounded-lg px-3 py-2"
                   style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
                   <p className="text-xs leading-relaxed" style={{ color: "#fbbf24" }}>
-                    <span className="font-semibold">On, but no faces are being read.</span>{" "}
+                    <span className="font-semibold">On, but the face AI isn&apos;t running.</span>{" "}
                     {faceErr
                       ? faceErr
-                      : `No camera has sent a face reading in the last 10 seconds. The face AI is a 10 MB download that runs in
-                         whichever browser is counting — if that browser has just been reloaded, give it a minute. If nobody is
-                         close enough to the camera for a face to be found, there is nothing to read, and the counting is
-                         unaffected either way.`}
+                      : `The browser doing the counting hasn't loaded it. It is a 10 MB download that happens once — if that
+                         computer has just been reloaded, or has only just started counting, give it a minute. The counting
+                         itself is unaffected either way.`}
                   </p>
                 </div>
               )

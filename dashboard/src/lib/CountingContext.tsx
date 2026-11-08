@@ -436,7 +436,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } = await sendReport(reports, faceErr.current);
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } =
+          await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current });
         // A new session: start the arrivals and departures again from zero.
         //
         // The instruction comes back from the website, so "Start fresh" can be
