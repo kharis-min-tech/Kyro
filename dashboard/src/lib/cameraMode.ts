@@ -101,11 +101,21 @@ export function countPeople(engine: Engine, px: ImageData, tiles?: number): Prom
   return engine.count(px, tiles);
 }
 
-/** Opens one camera at the highest detail it offers (more pixels per person = far people found). */
-export function openCamera(deviceId: string): Promise<MediaStream> {
+/**
+ * Opens one camera at the highest detail it offers — more pixels per person
+ * means people further away are still found.
+ *
+ * `plain` drops the request for detail and takes whatever the camera gives by
+ * default. Some cameras accept 1920x1080, open happily, and then send no
+ * picture at all: a black tile that never explains itself. Asking for nothing
+ * in particular is the way back from that.
+ */
+export function openCamera(deviceId: string, plain = false): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+    video: plain
+      ? { deviceId: { exact: deviceId } }
+      : { deviceId: { exact: deviceId }, width: { ideal: 1920 }, height: { ideal: 1080 } },
   });
 }
 

@@ -28,7 +28,7 @@ import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 
 const ON_KEY = "kyro_counting_on";          // keep counting after a reload
 // An open camera with no picture for this long is worth telling someone about.
-const NO_PICTURE_MS = 15_000;
+const NO_PICTURE_MS = 6_000;
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
@@ -59,6 +59,8 @@ interface Cam {
   /** When this camera last gave a picture, or first failed to. A camera can be
    *  open and still send nothing — a black tile that never explains itself. */
   noPictureSince: number;
+  /** Already reopened without asking for 1920x1080, so we don't loop on it. */
+  relaxed: boolean;
   // Splitting the picture into tiles costs five AI runs instead of one. It only
   // finds people too small to see in the whole picture — useless on a webcam
   // with someone close up, where it made each count five times slower. So try
@@ -152,7 +154,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
-          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0,
+          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, relaxed: false,
           needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
@@ -207,10 +209,28 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // skipped in silence, so the tile stayed black on "Starting…" with
           // nothing to act on. Say so once it has gone on long enough to mean
           // something.
-          if (!c.noPictureSince) c.noPictureSince = Date.now();
-          else if (Date.now() - c.noPictureSince > NO_PICTURE_MS) {
-            c.error = "This camera is open but sending no picture. Unplug it, plug it back in, and press Start counting.";
+          if (!c.noPictureSince) { c.noPictureSince = Date.now(); continue; }
+          if (Date.now() - c.noPictureSince <= NO_PICTURE_MS) continue;
+          if (!c.relaxed) {
+            // Kyro asks every camera for 1920x1080, because more pixels means
+            // people further away are still found. Some cameras accept that,
+            // open happily, and then send nothing at all. Rather than tell
+            // someone to crawl behind the desk and replug it, ask again for
+            // nothing in particular and take what the camera wants to give.
+            c.relaxed = true;
+            c.noPictureSince = 0;
+            try {
+              c.stream?.getTracks().forEach((t) => t.stop());
+              c.stream = await openCamera(c.deviceId, true);
+              c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c.stream = null; c.error = "Unplugged"; refreshViews(); });
+              if (c.video) { c.video.srcObject = c.stream; c.video.play().catch(() => {}); }
+              c.error = null;
+            } catch {
+              c.error = "This camera won't give a picture. Unplug it, plug it back in, and press Start counting.";
+            }
+            continue;
           }
+          c.error = "This camera is open but sending no picture, even at its own settings. Try a different USB socket, or unplug it and plug it back in.";
           continue;
         }
         c.noPictureSince = 0;
