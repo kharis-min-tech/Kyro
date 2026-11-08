@@ -21,7 +21,8 @@ import { camerasApi } from "@/lib/api";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { useEdgeSnapshot, useEdgeVenue, type EdgeCamera } from "@/lib/edgeVenue";
-import { useBrowserPersonCount } from "@/lib/browserPersonCount";
+import { tileCount } from "@/lib/tileCount";
+import { useCounting } from "@/lib/CountingContext";
 import { pickCamera } from "@/lib/pickCamera";
 
 /** Shared storage so attendance headline + integrations payload can read the
@@ -105,7 +106,32 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // The count comes from the one counting engine — the same YOLO11 that
+  // "Counting on this computer" runs, with tracking and arrivals/departures.
+  // The tile used to run a second detector of its own, which is how the same
+  // picture ended up labelled 14 in one corner and 5 in the other.
+  const counting = useCounting();
+  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  // The engine already has this camera open. Borrowing its picture means the
+  // tile isn't a second claim on the same device, and — the point of it —
+  // leaving the page no longer shuts the camera down, because the tile never
+  // owned it. The engine lives in the layout and keeps counting everywhere.
+  const engineStream = det.key ? counting?.streamFor(det.key) ?? null : null;
+
   useEffect(() => {
+    if (engineStream) {
+      setErr(null);
+      setStream(engineStream);
+      const v = videoRef.current;
+      if (v && v.srcObject !== engineStream) {
+        v.srcObject = engineStream;
+        v.muted = true;
+        v.playsInline = true;
+        v.play().catch(() => setErr("Tap the tile to start the preview."));
+      }
+      // No cleanup that stops tracks: this stream belongs to the engine.
+      return;
+    }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
       return;
@@ -171,16 +197,12 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       setStream(null);
     };
-  }, [streamUrl, zoneName]);
+  }, [streamUrl, zoneName, engineStream]);
 
-  // In-browser person counting on the same stream the <video> is showing.
-  // Status is kept honest: we only treat `count` as meaningful while
-  // status === "running"; any other state shows a reason, never a number.
-  const det = useBrowserPersonCount(stream, !!stream && !!cameraId);
   useEffect(() => {
-    if (!cameraId || det.status !== "running" || det.count === null) return;
+    if (!cameraId || det.state !== "counting" || det.count === null) return;
     writeBrowserCount(cameraId, zoneName ?? "Browser camera", det.count);
-  }, [cameraId, zoneName, det.count, det.status]);
+  }, [cameraId, zoneName, det.count, det.state]);
 
   const handleTap = () => {
     const v = videoRef.current;
@@ -190,13 +212,12 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
 
   const detBadge = (() => {
     if (!cameraId) return null;
-    switch (det.status) {
-      case "running":  return { bg: "rgba(22,163,74,0.85)", text: `${det.count ?? 0} · counting` };
-      case "loading":  return { bg: "rgba(99,102,241,0.85)", text: "Loading detector…" };
-      case "paused":   return { bg: "rgba(107,114,128,0.85)", text: "Paused" };
-      case "failed":   return { bg: "rgba(239,68,68,0.85)", text: "Detector unavailable" };
-      case "idle":
-      default:         return { bg: "rgba(107,114,128,0.75)", text: "Preview only" };
+    switch (det.state) {
+      case "counting": return { bg: "rgba(22,163,74,0.85)", text: `${det.count ?? 0} · counting` };
+      case "starting": return { bg: "rgba(99,102,241,0.85)", text: det.message ?? "Starting…" };
+      case "problem":  return { bg: "rgba(239,68,68,0.85)", text: det.message ?? "Not counting" };
+      case "off":
+      default:         return { bg: "rgba(107,114,128,0.75)", text: det.message ?? "Counting is off" };
     }
   })();
 
@@ -216,8 +237,8 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
       {detBadge && (
         <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full flex items-center gap-1.5"
           style={{ background: detBadge.bg, color: "#fff", fontSize: 10, fontWeight: 600 }}
-          title={det.error ?? undefined}>
-          {det.status === "running" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+          title={det.message ?? undefined}>
+          {det.state === "counting" && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
           {detBadge.text}
         </div>
       )}

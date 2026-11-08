@@ -6,12 +6,13 @@ import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
 import { pickCamera } from "@/lib/pickCamera";
+import { tileCount } from "@/lib/tileCount";
+import { useCounting } from "@/lib/CountingContext";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { camerasApi } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
-import { useBrowserPersonCount } from "@/lib/browserPersonCount";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
@@ -170,7 +171,29 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
   const streamRef = useRef<MediaStream | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [err, setErr] = useState<string | null>(null);
+
+  // One counting engine, shared. Borrowing its already-open camera means the
+  // tile is not a second claim on the device, and leaving the page doesn't
+  // shut the camera down — the engine lives in the layout and keeps going.
+  const counting = useCounting();
+  const engineStream = (() => {
+    const k = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName).key;
+    return k ? counting?.streamFor(k) ?? null : null;
+  })();
+
   useEffect(() => {
+    if (engineStream) {
+      setErr(null);
+      setStream(engineStream);
+      const v = videoRef.current;
+      if (v && v.srcObject !== engineStream) {
+        v.srcObject = engineStream;
+        v.muted = true;
+        v.playsInline = true;
+        v.play().catch(() => setErr("Tap the tile to start preview."));
+      }
+      return;   // the engine owns this stream; never stop its tracks here
+    }
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       setErr("This browser can't open cameras. Use Chrome or Edge, over https://.");
       return;
@@ -227,15 +250,15 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
       if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
       setStream(null);
     };
-  }, [streamUrl, zoneName]);
+  }, [streamUrl, zoneName, engineStream]);
 
-  // Local person-counting on the same stream. The result is written to a
-  // shared localStorage key the attendance headline + webhook payload can
-  // read; the badge below only shows a count when detection is actually
-  // running — never pretends.
-  const det = useBrowserPersonCount(stream, !!stream);
+  // The figure comes from the one counting engine, and is written to the
+  // shared key the attendance headline and the webhook payload read. It used
+  // to come from a second detector of the tile's own, which is how those two
+  // places ended up reporting numbers the engine never produced.
+  const det = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
   useEffect(() => {
-    if (det.status !== "running" || det.count === null || typeof window === "undefined") return;
+    if (det.state !== "counting" || det.count === null || typeof window === "undefined") return;
     try {
       const mode = localStorage.getItem("kyro_mode") ?? "demo";
       const key = `kyro_${mode}_browser_counts`;
@@ -244,7 +267,7 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
       localStorage.setItem(key, JSON.stringify(all));
       window.dispatchEvent(new Event("kyro_browser_counts_changed"));
     } catch {}
-  }, [cameraId, zoneName, det.count, det.status]);
+  }, [cameraId, zoneName, det.count, det.state]);
 
   const handleTap = () => { const v = videoRef.current; if (!v) return; v.play().then(() => setErr(null)).catch(() => {}); };
 
@@ -264,19 +287,14 @@ function AttendanceBrowserCamStream({ streamUrl, cameraId, zoneName }: { streamU
         <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full"
           style={{
             background:
-              det.status === "running" ? "rgba(22,163,74,0.85)" :
-              det.status === "loading" ? "rgba(99,102,241,0.85)" :
-              det.status === "paused"  ? "rgba(107,114,128,0.85)" :
-              det.status === "failed"  ? "rgba(239,68,68,0.85)" :
+              det.state === "counting" ? "rgba(22,163,74,0.85)" :
+              det.state === "starting" ? "rgba(99,102,241,0.85)" :
+              det.state === "problem"  ? "rgba(239,68,68,0.85)" :
                                          "rgba(107,114,128,0.75)",
             color: "#fff", fontSize: 10, fontWeight: 600,
           }}
-          title={det.error ?? undefined}>
-          {det.status === "running" ? `${det.count ?? 0} · counting`
-            : det.status === "loading" ? "Loading detector…"
-            : det.status === "paused"  ? "Paused"
-            : det.status === "failed"  ? "Detector unavailable"
-            : "Preview only"}
+          title={det.message ?? undefined}>
+          {det.state === "counting" ? `${det.count ?? 0} · counting` : det.message}
         </div>
       )}
     </div>
