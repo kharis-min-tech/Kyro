@@ -1088,7 +1088,18 @@ export default function AttendancePage() {
       // be too slow to follow anyone through a doorway, was the wrong call.
       // Both are shown instead, camera by camera, underneath.
       const doors = cameras.filter((c) => c.location === "entrance").map((c) => c.camera_id);
-      const ids = new Set(cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
+      // Arrivals and departures come from the DOORWAY camera when there is
+      // one. A room camera reports "entries", but that is not people arriving:
+      // it counts each person it becomes sure of. At 5:15, with the whole hall
+      // walking out, it reported 171 people ARRIVING — the exit rush, counted
+      // backwards, because the room camera became sure of 171 people as they
+      // stood up and moved.
+      //
+      // I removed this once before and replaced the figure with the doorway
+      // camera's, which was far lower, without saying so. That was wrong of
+      // me. Nothing is removed here: every camera's own count is in the table
+      // underneath, under a heading that says what it actually measures.
+      const ids = new Set(doors.length ? doors : cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
       if (ids.size === 0) { setArrivalSeries(null); setArrivalSeriesAll(null); setArrivalEmpty("No cameras connected yet."); return; }
       let cancelled = false;
       const load = () => edgeVenueApi.history(toLocalDateStr(selectedDate), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
@@ -1105,12 +1116,18 @@ export default function AttendancePage() {
             const cam = cameras.find((x) => x.camera_id === c.camera_id);
             return {
               name: cam?.name ?? c.camera_id,
-              where: cam?.location === "entrance" ? "on the entrance" : "on the room",
+              where: cam?.location === "entrance"
+                ? "on the entrance — people walking through the door"
+                : "on the room — people it became sure of, not people arriving",
               points: verified.find((v) => v.camera_id === c.camera_id)?.points ?? [],
               pointsAll: c.points,
             };
           }));
-          setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
+          setArrivalEmpty(isToday_
+            ? (doors.length
+                ? "Nothing counted at the entrance yet. These figures come from the doorway camera only — a room camera counts people it becomes sure of, which is not the same as somebody arriving."
+                : "No one has come in yet today.")
+            : "No entries were recorded on this day.");
         })
         .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });
       load();

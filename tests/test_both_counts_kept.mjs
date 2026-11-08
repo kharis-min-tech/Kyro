@@ -44,8 +44,17 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 //    quietly. Every counting camera is included, and each one's figures are
 //    shown beside the total.
 {
-  ok("every counting camera is included",
-     /const ids = new Set\(cameras\.filter\(\(c\) => c\.location !== "queue"\)\.map\(\(c\) => c\.camera_id\)\);/.test(page));
+  // The arrival figures come from the doorway camera. A room camera reports
+  // "entries", but that counts each person it becomes sure of — at 5:15, with
+  // the whole hall walking out, it reported 171 people ARRIVING.
+  ok("the figures come from the doorway camera when there is one",
+     /const ids = new Set\(doors\.length \? doors : cameras\.filter/.test(page));
+  // But nothing is removed: every camera's own count is still shown, under a
+  // heading that says what it measures.
+  ok("the room camera's count is still shown",
+     /on the room — people it became sure of, not people arriving/.test(page));
+  ok("and the entrance camera's says what IT measures",
+     /on the entrance — people walking through the door/.test(page));
   ok("each camera's own figures are worked out", /edgeCounterSeriesByCamera\(mine, true\)/.test(page));
   ok("and handed to the card", /byCamera=\{arrivalByCamera\}/.test(page));
 }
@@ -61,7 +70,9 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("the breakdown is shown when there is more than one camera",
      /cameraTotals\.length > 1/.test(card));
   ok("it says where each camera is pointed", /on the entrance/.test(page) && /on the room/.test(page));
-  ok("and says the two measure different things", /they measure different\s+things/.test(card));
+  ok("and says what the room camera's figure actually is",
+     /counts people it becomes sure of/.test(card)
+     && /not\s+because they are arrivals/.test(card));
   // The same three choices as the totals: verified or not, this session or the
   // whole day, and the same slot size.
   ok("it follows the unverified switch", /const pts = unverified \? c\.pointsAll : c\.points;/.test(card));

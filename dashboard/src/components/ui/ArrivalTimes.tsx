@@ -386,8 +386,10 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
           {cameraTotals.length > 1 && (
             <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
               <p className="px-3 py-2" style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-inset)" }}>
-                What each camera counted on its own, over the same stretch as the figures above — they measure different
-                things, and the difference between them is worth knowing
+                What each camera counted on its own, over the same stretch as the figures above. Only the entrance camera's
+                count is used in the figures: a room camera counts people it becomes sure of, which rises all through a
+                service and counts the same people again and again. Its numbers are kept here because they are yours, not
+                because they are arrivals.
               </p>
               <table className="w-full" style={{ fontSize: 13 }}>
                 <tbody>
