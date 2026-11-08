@@ -38,3 +38,4 @@ ai/models/weights/*.pth
 
 # Downloaded model weights (fetched automatically on first run)
 ai/models/weights/*.pt
+dashboard/.chunk-archive/

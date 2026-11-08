@@ -31,9 +31,33 @@ if ! grep -q "^const VENUE_CODE = \"$STAMP\";$" worker/venue.js; then
   echo "→ Stamped worker/venue.js as $STAMP"
 fi
 
+# Keep the previous builds' page files alongside the new ones.
+#
+# Next names every chunk after its contents, so each deploy publishes a new set
+# and the old set stops existing. A tab that was already open still asks for
+# the old names the moment someone opens another section of Kyro — and gets
+# nothing, so the app reloads itself in front of whoever is using it. Deploy
+# three times during a service and it happens three times.
+#
+# Nothing here is stale code: the page decides which files to ask for, and a
+# page that has been reloaded asks for the new ones. This only means the files
+# an already-open page needs are still there to be had. Kept for three days,
+# which is longer than any tab stays open.
+ARCHIVE="dashboard/.chunk-archive"
+keep_old_chunks() {
+  mkdir -p "$ARCHIVE"
+  find "$ARCHIVE" -type f -mtime +3 -delete 2>/dev/null
+  # This build's files join the archive, then the archive fills in what the
+  # new build doesn't have. --ignore-existing so nothing current is overwritten.
+  rsync -a "$OUT/_next/static/" "$ARCHIVE/" 2>/dev/null
+  rsync -a --ignore-existing "$ARCHIVE/" "$OUT/_next/static/" 2>/dev/null
+  echo "   keeping $(find "$ARCHIVE" -type f | wc -l | tr -d ' ') files from earlier builds, so open tabs don't break"
+}
+
 echo "→ Building"
 ( cd dashboard && CF_PAGES=1 npm run build 2>&1 | grep -E "Failed|error|Compiled successfully" | head -5 )
 [ -f "$OUT/index.html" ] || { echo "✗ No build output — stopping"; exit 1; }
+keep_old_chunks
 
 # Every page's own file, plus the shared ones the pages load.
 files() { find "$OUT/_next/static/chunks" -name '*.js' -type f | sed "s#^$OUT/##"; }
