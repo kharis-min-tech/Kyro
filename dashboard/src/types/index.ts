@@ -129,6 +129,17 @@ export interface VenueTotal {
    * counted.
    */
   count_from?: string | null;
+  /**
+   * People in the building, counted at the door: everyone in today less
+   * everyone out. null when no camera is on a door, or it isn't counting fast
+   * enough to follow people through one.
+   */
+  in_building?: number | null;
+  /** True when the arrivals and departures came from a camera on a doorway. */
+  in_out_from_door?: boolean;
+  /** The door's whole-day running totals, which in_building is made of. */
+  came_in_all?: number | null;
+  went_out_all?: number | null;
 }
 
 export interface CameraStatus {

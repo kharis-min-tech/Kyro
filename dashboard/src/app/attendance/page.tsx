@@ -784,9 +784,12 @@ export default function AttendancePage() {
         setVenueTotal(vt);
         setVenueFeedAt(Date.now());
         if (edge) setEdgeFeedErr(null);
-        setVenueHistory((h) => [...h.slice(-80), vt.total_current]);
+        // The chart follows the headline: with a camera on the door, "people"
+        // is how many are in the building, not how many happen to be in shot.
+        const here = (edge ? vt.in_building : null) ?? vt.total_current;
+        setVenueHistory((h) => [...h.slice(-80), here]);
         setMetricHistory((m) => ({
-          people:    [...m.people.slice(-80),    vt.total_current],
+          people:    [...m.people.slice(-80),    here],
           occupancy: [...m.occupancy.slice(-80), Math.round(vt.venue_occupancy_pct)],
           entries:   [...m.entries.slice(-80),   vt.total_entries ?? 0],
           exits:     [...m.exits.slice(-80),     vt.total_exits ?? 0],
@@ -1174,6 +1177,10 @@ export default function AttendancePage() {
   // See lib/headlineTotal.ts: in Live mode the server's figure already contains
   // the cameras counting in this browser, because they report like any other
   // camera. Adding them here as well counted everyone twice.
+  // People in the building, counted at the door. See the worker's venueTotal:
+  // a camera on a doorway sees people passing through, which is not an
+  // attendance figure — they have to add up.
+  const inBuilding = edge && isToday ? venueTotal?.in_building ?? null : null;
   const displayTotal = headlineTotal({
     base: isToday ? metricNow : (historicalData?.total ?? 0),
     manualToday: manualTotalToday,
@@ -1181,6 +1188,7 @@ export default function AttendancePage() {
     serverHasBrowserCameras: edge,
     isToday,
     metric,
+    inBuilding,
   });
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
@@ -1341,6 +1349,17 @@ export default function AttendancePage() {
                   <p style={{ fontSize: 56, fontWeight: 900, color: "#818cf8", lineHeight: 1, marginTop: 4 }}>
                     {displayTotal.toLocaleString()}{metricSuffix}
                   </p>
+                  {/* Where the number came from, in its own words. A figure
+                      built from arrivals and departures can drift — anyone
+                      missed at the door is missed all day — so it never
+                      appears without saying what it is. */}
+                  {metric === "people" && typeof inBuilding === "number" && (
+                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
+                      Counted at the entrance: <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.came_in_all ?? 0).toLocaleString()} came in</strong>
+                      {" − "}<strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.went_out_all ?? 0).toLocaleString()} went out</strong>.
+                      {" "}The cameras can see {(venueTotal?.total_current ?? 0).toLocaleString()} right now.
+                    </p>
+                  )}
                   {showVsYesterday && isToday && (
                   <div className="flex items-center gap-1.5 mt-2">
                     <TrendingUp size={12} className="text-green-400" />

@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "2026-11-08-fresh-start";
+const VENUE_CODE = "venue-fd3afd5b6815";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -164,6 +164,12 @@ function roomTotals(zones) {
         zone_name: z.zone_name, cameras: 1,
         current: z.current || 0, peak: z.peak || 0,
         entries: z.entries || 0, exits: z.exits || 0, capacity: z.capacity || 0,
+        // The same two figures before a fresh start was taken off them. How
+        // many people are in the building is everyone who has come in today
+        // less everyone who has gone out, which is not a thing a session's
+        // figures can answer: start fresh at eleven o'clock with three hundred
+        // people already sitting there and "in minus out" is nearly zero.
+        entries_all: z.entries_all || 0, exits_all: z.exits_all || 0,
       });
     } else {
       r.cameras++;
@@ -172,6 +178,8 @@ function roomTotals(zones) {
       // Arrivals and departures double in exactly the same way.
       r.entries = take(r.entries, z.entries);
       r.exits = take(r.exits, z.exits);
+      r.entries_all = take(r.entries_all, z.entries_all);
+      r.exits_all = take(r.exits_all, z.exits_all);
       // One room's seats are its seats, however many cameras watch them.
       r.capacity = take(r.capacity, z.capacity);
     }
@@ -789,6 +797,9 @@ export class VenueHub extends DurableObject {
         current, peak: l.peak || 0,
         entries: sinceFresh(l.entries, base[c.camera_id] && base[c.camera_id].entries),
         exits: sinceFresh(l.exits, base[c.camera_id] && base[c.camera_id].exits),
+        // Everything this camera has counted, whatever was asked of the
+        // session figures. Used for "how many are in the building".
+        entries_all: l.entries || 0, exits_all: l.exits || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
         // In/out means following people between pictures, which needs the camera
@@ -834,6 +845,30 @@ export class VenueHub extends DurableObject {
       in_out_available: trustInOut,
       total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"),
       total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
+      // How many people are in the building, counted at the door: everyone who
+      // has come in today, less everyone who has gone out.
+      //
+      // Not the same question as "how many can the cameras see". A camera on a
+      // doorway sees eleven people, then six, then twenty, as they walk
+      // through — which is no use at all as an attendance figure, and is what
+      // the headline was showing. These are people arriving; they should add
+      // up to the number in the room. A camera on the room can only report
+      // what is in its own view, which on a wide auditorium is a fraction of
+      // the hall.
+      //
+      // It drifts: anyone the door camera misses is missed for the rest of the
+      // day, both ways. So it is only offered when a camera is actually on the
+      // door and counting fast enough to follow people through it, and the
+      // page says plainly where the figure came from.
+      in_building: hasDoor && trustInOut
+        ? Math.max(0, sumDoors("entries_all") - sumDoors("exits_all"))
+        : null,
+      // The two running totals it is made of, so the page can show its
+      // working. Deliberately NOT total_entries / total_exits: those answer
+      // "this session", which after a fresh start is a different question and
+      // would not add up to the figure above.
+      came_in_all: hasDoor ? sumDoors("entries_all") : null,
+      went_out_all: hasDoor ? sumDoors("exits_all") : null,
       // Whether a camera is actually watching the door, so the page can say
       // where the arrivals and departures came from.
       in_out_from_door: hasDoor,

@@ -78,6 +78,37 @@ const parts = (over = {}) => ({
      headlineTotal(parts({ base: 0, browserNow: 0, manualToday: 0 })) === 0);
 }
 
+// 8. A camera on the doorway: "how many people are here" is everyone who came
+//    in less everyone who went out. What a door camera can SEE is people
+//    walking through it — eleven, then six, then twenty — which is not an
+//    attendance figure at all, and was the number in the headline.
+{
+  ok("with a door camera the headline is the people in the building",
+     headlineTotal(parts({ base: 11, inBuilding: 134 })) === 134);
+  ok("the bouncing view doesn't come back when the door figure is zero",
+     headlineTotal(parts({ base: 11, inBuilding: 0 })) === 0);
+  ok("hand counts are still added to it",
+     headlineTotal(parts({ base: 11, inBuilding: 134, manualToday: 12 })) === 146);
+  ok("without a door camera nothing changes",
+     headlineTotal(parts({ base: 11, inBuilding: null })) === 11);
+}
+
+// 9. Arrivals are already a running total — the door's "in the building"
+//    figure must not be swapped in for them, or the two tiles would read the
+//    same number under different names.
+{
+  ok("arrivals are left as arrivals",
+     headlineTotal(parts({ metric: "entries", base: 417, inBuilding: 134 })) === 417);
+  ok("and occupancy is left as a percentage",
+     headlineTotal(parts({ metric: "occupancy", base: 61, inBuilding: 134 })) === 61);
+}
+
+// 10. A past day is still the recorded figure, whatever the door says now.
+{
+  ok("yesterday is not rewritten by today's door",
+     headlineTotal(parts({ isToday: false, base: 300, inBuilding: 134 })) === 300);
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} failed` : "\nAll good. 20 people in the room now reads 20, not 40.");
 process.exit(fails ? 1 : 0);

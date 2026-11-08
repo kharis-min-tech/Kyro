@@ -16,6 +16,12 @@
  * twice. Twenty people in the room, forty in the headline.
  *
  * So: add the browser's own counts only when the server doesn't have them.
+ *
+ * And one more, which changes what `base` even means: when a camera is on the
+ * doorway, "how many people are in the building" is everyone who has come in
+ * less everyone who has gone out — not what the cameras can see. A camera
+ * watching a door sees eleven people, then six, then twenty, as they walk
+ * through it; those are arrivals, and they should add up.
  */
 
 export interface HeadlineParts {
@@ -31,6 +37,13 @@ export interface HeadlineParts {
   isToday: boolean;
   /** Which figure is being shown. */
   metric: string;
+  /**
+   * People in the building, counted at the door (came in − went out), or null
+   * when no camera is watching a door well enough to say. When there is one it
+   * is the better answer for "how many people are here", and replaces what the
+   * cameras happen to see.
+   */
+  inBuilding?: number | null;
 }
 
 /** The metrics that are a number of people, and so can be added to. */
@@ -39,5 +52,8 @@ const HEADCOUNT = ["people", "entries"];
 export function headlineTotal(p: HeadlineParts): number {
   if (!p.isToday || !HEADCOUNT.includes(p.metric)) return p.base;
   const browser = p.serverHasBrowserCameras ? 0 : p.browserNow;
-  return p.base + p.manualToday + browser;
+  // "People" with a door camera: the door's running total, not the view.
+  // "Entries" is already a running total and is left alone.
+  const base = p.metric === "people" && typeof p.inBuilding === "number" ? p.inBuilding : p.base;
+  return base + p.manualToday + browser;
 }
