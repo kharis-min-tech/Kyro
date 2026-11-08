@@ -24,6 +24,7 @@ import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/
 import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { PersonTracker } from "@/lib/personTracker";
+import { lookOf } from "@/lib/appearance";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
@@ -290,7 +291,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           c.rawPeople = people;
           c.people = outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height);
           const codes = await faceCodes(c, px);
-          c.tracker.update(c.people, Date.now(), codes ?? undefined);
+          // What each person looks like — the colour of what they're wearing,
+          // their build, how tall they are in the picture. Costs nothing (no
+          // AI, a sample of the pixels already in hand) and lets Kyro
+          // recognise someone who stepped out of view, without reading faces.
+          // Never stored, never sent: it lives on the track and dies with it.
+          const looks = c.people.map((p) => lookOf(px, p.box as [number, number, number, number]));
+          c.tracker.update(c.people, Date.now(), codes ?? undefined, looks);
           c.count = c.steady.add(c.people.length);
           c.peak = Math.max(c.peak, c.count);
           c.countedAt = Date.now();

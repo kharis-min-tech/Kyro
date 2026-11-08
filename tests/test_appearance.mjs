@@ -1,0 +1,158 @@
+/**
+ * Recognising someone by what they look like, so they aren't counted twice.
+ *
+ * Kyro follows a person by where they were a moment ago. That stops working
+ * within seconds at a doorway: the patch of picture they stood in is the patch
+ * the next person walks into. Past that, the same person coming back was a
+ * stranger — and a stranger walking out is a departure that never happened.
+ *
+ * A face would settle it. Faces are biometric data under UK GDPR, off unless
+ * the church has switched them on with a DPIA and notices at the doors. This
+ * is the weaker thing that needs none of that: the colour of a coat, the
+ * colour of trousers, how tall and wide the shape is. Never stored, never
+ * sent, gone within minutes.
+ *
+ * The danger is the opposite of the one it fixes. A church doorway in November
+ * is a row of dark coats, and merging two people loses a departure and
+ * undercounts the room — worse than counting one person twice. So a match has
+ * to be both strong AND a clear winner, or it is no match at all.
+ *
+ *   node tests/test_appearance.mjs
+ */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { execFileSync } from "node:child_process";
+
+let fails = 0;
+const ok = (name, cond, detail) => {
+  if (cond) console.log(`✓ ${name}`);
+  else { fails++; console.log(`✗ ${name}${detail ? `\n   ${detail}` : ""}`); }
+};
+
+const root = path.resolve(import.meta.dirname, "..");
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kyro-look-"));
+execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
+  path.join(root, "dashboard/src/lib/personTracker.ts"),
+  "--outDir", tmp, "--module", "es2022", "--target", "es2022",
+], { stdio: "inherit" });
+const { alikeLook, PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+
+/** Someone in a given pair of colours. Shares of red and green, then brightness. */
+const look = (top, bottom, shape = 2.5, height = 0.5) => ({ top, bottom, shape, height });
+const NAVY   = [0.26, 0.31, 0.18];
+const GREY   = [0.33, 0.33, 0.45];
+const RED    = [0.55, 0.22, 0.40];
+const CREAM  = [0.36, 0.34, 0.85];
+
+// ── Telling people apart ────────────────────────────────────────────────────
+
+// 1. The same person, two counts apart: same clothes, nearly the same size.
+{
+  const a = look(NAVY, GREY, 2.5, 0.50);
+  const b = look([0.27, 0.30, 0.20], [0.33, 0.34, 0.43], 2.4, 0.52);
+  ok("the same person reads as the same person", alikeLook(a, b) >= 0.78,
+     `scored ${alikeLook(a, b).toFixed(3)}`);
+}
+
+// 2. Different clothes: not the same person, however close they stood.
+{
+  const navy = look(NAVY, GREY);
+  const red  = look(RED, CREAM);
+  ok("a red coat is not a navy one", alikeLook(navy, red) < 0.78,
+     `scored ${alikeLook(navy, red).toFixed(3)}`);
+}
+
+// 3. Same clothes, very different size — a child beside an adult, or someone
+//    at the back of the hall rather than in the doorway.
+{
+  const near = look(NAVY, GREY, 2.5, 0.60);
+  const far  = look(NAVY, GREY, 2.5, 0.20);
+  ok("the same colours at a very different size is not a match",
+     alikeLook(near, far) < 0.78, `scored ${alikeLook(near, far).toFixed(3)}`);
+}
+
+// 4. The light changes between the doorway and three steps inside it. The
+//    colour of a coat shouldn't change with it.
+{
+  const bright = look([0.26, 0.31, 0.55], [0.33, 0.33, 0.60]);
+  const dim    = look([0.26, 0.31, 0.22], [0.33, 0.33, 0.28]);
+  ok("the same coat in dimmer light is still the same coat",
+     alikeLook(bright, dim) >= 0.78, `scored ${alikeLook(bright, dim).toFixed(3)}`);
+}
+
+// ── What it does to counting ────────────────────────────────────────────────
+
+const box = (left, top, w, h) => [left, top, left + w, top + h];
+const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t, undefined, looks);
+
+// 5. The case this exists for. Someone walks out and is counted. Twenty
+//    seconds later — too long for "they were standing there" to mean anything
+//    — they come back and go out again. Recognised, so it is one journey back
+//    in and one journey out, not two strangers leaving.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  const me = look(NAVY, GREY, 2.6, 0.5);
+  let t = 0;
+  see(tr, [box(100, 60, 70, 200)], (t += 400), [me]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [me]);
+  see(tr, [], (t += 16000));
+  ok("they are counted out", tr.exits === 1 && tr.entries === 0, `in ${tr.entries} out ${tr.exits}`);
+
+  // Back into view, walking towards the camera again: an arrival.
+  see(tr, [box(100, 120, 48, 124)], (t += 4000), [me]);
+  see(tr, [box(100, 60, 70, 200)], (t += 400), [me]);
+  see(tr, [], (t += 16000));
+  ok("coming back in is counted in, not as a second departure",
+     tr.entries === 1 && tr.exits === 1, `in ${tr.entries} out ${tr.exits}`);
+}
+
+// 6. A crowd of dark coats. Four people who look alike are in and out of view;
+//    nobody may be merged on the strength of looking like everyone else.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  const coats = [
+    look(NAVY, GREY, 2.5, 0.50),
+    look([0.265, 0.305, 0.19], [0.33, 0.33, 0.44], 2.5, 0.50),
+    look([0.255, 0.315, 0.18], [0.33, 0.34, 0.45], 2.5, 0.51),
+    look([0.26, 0.31, 0.185], [0.335, 0.33, 0.44], 2.5, 0.49),
+  ];
+  // Four people, four places, walking out together.
+  let t = 0;
+  const wide = [box(20, 60, 70, 200), box(200, 60, 70, 200), box(380, 60, 70, 200), box(560, 60, 70, 200)];
+  const far  = [box(20, 120, 48, 124), box(200, 120, 48, 124), box(380, 120, 48, 124), box(560, 120, 48, 124)];
+  see(tr, wide, (t += 400), coats);
+  see(tr, far, (t += 400), coats);
+  see(tr, [], (t += 16000));
+  ok("four people in similar coats are four departures, not one",
+     tr.exits === 4, `exits ${tr.exits}`);
+}
+
+// 7. And the margin is what does that: when several people fit about equally
+//    well, "looks the same" is worth nothing.
+{
+  const src = fs.readFileSync(path.join(root, "dashboard/src/lib/personTracker.ts"), "utf8");
+  ok("a match must be strong", /const SAME_LOOK = 0\.\d+;/.test(src));
+  ok("and a clear winner", /const LOOK_MARGIN = 0\.\d+;/.test(src)
+     && /best - second >= LOOK_MARGIN/.test(src));
+  ok("and recent", /const RETURN_BY_LOOK_MS = /.test(src));
+}
+
+// 8. Nothing about a look leaves the browser. It is not in what the camera
+//    computer sends, and there is nothing to store.
+{
+  const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
+  const reports = ctx.slice(ctx.indexOf("const reports: CameraReport[]"), ctx.indexOf("try {", ctx.indexOf("const reports")));
+  ok("looks are not sent with the counts", !/look/i.test(reports), reports.slice(0, 200));
+  const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), "utf8");
+  const iface = cam.slice(cam.indexOf("export interface CameraReport"), cam.indexOf("export type Zone"));
+  ok("and there is no room for them in a report", !/look/i.test(iface));
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("the website has no idea they exist", !/\blooks?\b/i.test(worker.slice(worker.indexOf("async report("), worker.indexOf("movedFrom("))));
+}
+
+fs.rmSync(tmp, { recursive: true, force: true });
+console.log(fails ? `\n${fails} failed` : "\nAll good. Recognised when it is sure, and a stranger when it isn't.");
+process.exit(fails ? 1 : 0);

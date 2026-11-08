@@ -19,6 +19,45 @@
  */
 
 export interface Box { box: [number, number, number, number] }
+
+export interface Look {
+  /** Upper body: share of red, share of green, brightness. All 0–1. */
+  top: [number, number, number];
+  /** Lower body, the same way. */
+  bottom: [number, number, number];
+  /** Taller than wide, as a ratio: a standing adult is about 2.5. */
+  shape: number;
+  /** How tall they are in the picture, 0–1. Stands in for how far away. */
+  height: number;
+}
+
+/** How alike two looks are, 0–1. Same clothes, same build, same distance → near 1. */
+export function alikeLook(a: Look, b: Look): number {
+  // Colour does most of the work, because the share of the light a coat sends
+  // back barely changes with how much light there is.
+  const chroma = (p: [number, number, number], q: [number, number, number]) =>
+    Math.hypot(p[0] - q[0], p[1] - q[1]);
+  // Brightness is the only thing that tells a black shirt from a white one,
+  // and it is also the thing that changes most between a sunlit doorway and
+  // three steps inside it. So the weight is on the difference BETWEEN someone's
+  // top and bottom — light shirt over dark trousers, or the other way about —
+  // which a change in the lighting moves both of together and so leaves alone.
+  // How bright they are overall still counts, gently.
+  const contrast = Math.abs((a.top[2] - a.bottom[2]) - (b.top[2] - b.bottom[2]));
+  const overall = Math.abs((a.top[2] + a.bottom[2]) / 2 - (b.top[2] + b.bottom[2]) / 2);
+  // Build: someone doesn't change shape between two counts, but a box drawn
+  // around them does wobble, so this is deliberately forgiving.
+  const shape = Math.abs(a.shape - b.shape) / Math.max(a.shape, b.shape, 1);
+  const size = Math.abs(a.height - b.height) / Math.max(a.height, b.height, 0.01);
+  const d = 3.0 * chroma(a.top, b.top)
+          + 2.0 * chroma(a.bottom, b.bottom)
+          + 1.0 * contrast
+          + 0.25 * overall
+          + 0.4 * shape
+          + 0.5 * size;
+  return Math.max(0, 1 - d);
+}
+
 /** How alike two face codes are, 0–1 (see faceEngine). */
 function alike(a: Float32Array, b: Float32Array): number {
   let s = 0;
@@ -27,6 +66,34 @@ function alike(a: Float32Array, b: Float32Array): number {
 }
 /** Two codes this alike are the same person — measured on 600 standard face pairs. */
 const SAME_FACE = 0.4;
+/**
+ * How alike two people must LOOK — clothes, build, how tall they are in the
+ * picture — before Kyro will say they are the same person who was standing
+ * here a moment ago. See lib/appearance.ts.
+ *
+ * Set high on purpose. The cost of being wrong is not symmetrical: merging two
+ * people loses a departure that really happened and quietly undercounts the
+ * room, which is worse than counting one person twice.
+ */
+const SAME_LOOK = 0.78;
+/**
+ * And it must be a clear winner.
+ *
+ * A church doorway in November is a row of dark coats. If four people in the
+ * last few minutes look about equally like the person who just appeared, then
+ * "looks the same" is worth nothing, and the honest answer is that Kyro does
+ * not know. So the best match must beat the next best by this much, or no
+ * match is made at all.
+ */
+const LOOK_MARGIN = 0.06;
+/**
+ * How long a look is believable as identity.
+ *
+ * Longer than a position, which goes stale in seconds because everyone walks
+ * through the same patch of doorway. Not indefinite: people take coats off,
+ * turn round, and stand in different light.
+ */
+const RETURN_BY_LOOK_MS = 90_000;
 
 // A score that rises when the person is seen and falls when they are not, so a
 // box that only flickers in and out never reaches it. Simply totalling sightings
@@ -124,6 +191,8 @@ interface Track {
   lastSeen: number;            // when they were last actually seen
   counted: boolean;            // already counted as someone who arrived
   face: Float32Array | null;   // their face code, when one could be read
+  /** What they looked like: clothing colours, build, height. Never stored. */
+  look: Look | null;
   /** Where they were first seen, for a doorway camera to tell which way they went. */
   firstBox: [number, number, number, number];
   /** Already added to the arrivals or departures, so never added again. */
@@ -244,7 +313,7 @@ export class PersonTracker {
    *              With them, someone who went out of sight and came back is
    *              recognised rather than counted as arriving again.
    */
-  update(people: Box[], now: number = Date.now(), faces?: (Float32Array | null)[]): number {
+  update(people: Box[], now: number = Date.now(), faces?: (Float32Array | null)[], looks?: (Look | null)[]): number {
     const boxes = people.map((p) => p.box);
     // How many sightings before this is a person: fewer at a doorway, where
     // they are only in view for a moment (see DOOR_SCORE_TO_CONFIRM).
@@ -270,6 +339,7 @@ export class PersonTracker {
       const tr = this.tracks[t];
       tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
       if (faces?.[b]) tr.face = faces[b];
+      if (looks?.[b]) tr.look = looks[b];
       tr.score = Math.min(confirmAt + 2, tr.score + 1);
       if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) this.entries++; }
     }
@@ -310,16 +380,47 @@ export class PersonTracker {
           if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
         });
       }
+      // Still nobody. Where they stood has stopped meaning anything, but what
+      // they look like hasn't — the navy coat that stepped out of view ten
+      // seconds ago. Only when one person fits clearly better than everyone
+      // else: in a hall full of dark coats, "looks the same" means nothing and
+      // Kyro would rather count a stranger than merge two people and lose a
+      // departure. See SAME_LOOK and LOOK_MARGIN.
+      const myLook = looks?.[bi] ?? null;
+      if (revive < 0 && myLook) {
+        let best = 0, second = 0, bestAt = -1;
+        this.tracks.forEach((t, ti) => {
+          if (takenTrack.has(ti) || t.missing === 0 || !t.look) return;
+          if (now - t.lastSeen > RETURN_BY_LOOK_MS) return;
+          const s = alikeLook(t.look, myLook);
+          if (s > best) { second = best; best = s; bestAt = ti; }
+          else if (s > second) { second = s; }
+        });
+        if (bestAt >= 0 && best >= SAME_LOOK && best - second >= LOOK_MARGIN) revive = bestAt;
+      }
       if (revive >= 0) {
         const t = this.tracks[revive];
         takenTrack.add(revive);
         t.box = b; t.missing = 0; t.lastSeen = now;
         if (mine) t.face = mine;
+        if (myLook) t.look = myLook;
+        // Recognised, and their last crossing has already been counted — so
+        // this is a new journey, not the old one carrying on. Their direction
+        // is judged from here.
+        //
+        // Without this, someone counted in at the door could never be counted
+        // out again for the rest of the five minutes they are remembered: they
+        // would walk to their car and Kyro would still have them inside. And
+        // with it, a person who steps out, hovers, and comes back counts out
+        // then in — which nets to the truth, rather than to a departure that
+        // never ended.
+        if (t.tallied) { t.tallied = false; t.firstBox = b; }
         t.score = Math.min(confirmAt + 2, t.score + 1);
         if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) this.entries++; }
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false, face: faces?.[bi] ?? null });
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false,
+        face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
