@@ -22,6 +22,7 @@ import {
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
+import { countOrder } from "@/lib/countOrder";
 import { PersonTracker } from "@/lib/personTracker";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
@@ -74,6 +75,8 @@ interface Cam {
   // the whole picture alone, and check now and then whether tiles would add
   // anyone; if they would, keep using them for this camera.
   needsTiles: boolean; sinceTileCheck: number;
+  /** Watching a doorway. It gets more turns, and never splits the picture. */
+  isDoor: boolean;
   tracker: PersonTracker;      // follows people between counts → arrived / left
   faces: string[] | null;      // face codes to send, when face matching is on
   facesAt: number;
@@ -171,7 +174,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
-          needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
+          needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
       }
@@ -229,7 +232,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const countLoop = useCallback(async () => {
     while (running.current) {
       let did = false;
-      for (const c of [...cams.current.values()]) {
+      // A doorway camera gets more turns than a room one — see countOrder.
+      for (const c of countOrder([...cams.current.values()])) {
         if (!running.current) break;
         if (!c.stream || !c.video || !engine.current) continue;
         const px = grab(c.video, c.grabCanvas);
@@ -266,10 +270,14 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         c.noPictureSince = 0;
         const t0 = performance.now();
         try {
-          // Check every 10th count whether tiles are earning their keep.
-          const checking = ++c.sinceTileCheck >= 10;
+          // Splitting the picture into tiles costs five AI runs instead of
+          // one. At a doorway it is never worth it: people are a step from the
+          // lens and fill the frame, so the whole picture finds them — and
+          // five runs a count is exactly how a door camera ends up looking
+          // once a second while people walk through it faster than that.
+          const checking = !c.isDoor && ++c.sinceTileCheck >= 10;
           if (checking) c.sinceTileCheck = 0;
-          const useTiles = c.needsTiles || checking;
+          const useTiles = !c.isDoor && (c.needsTiles || checking);
           let people = await countPeople(engine.current, px, useTiles ? undefined : 1);
           if (checking) {
             const whole = await countPeople(engine.current, px, 1);
@@ -427,7 +435,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         }
         // A camera on a door counts people by which way they walked, not by
         // appearing and disappearing — everyone at a door does both.
-        for (const c of cams.current.values()) c.tracker.watchesDoorway(doorways[c.key] ?? null);
+        for (const c of cams.current.values()) {
+          const inward = doorways[c.key] ?? null;
+          c.isDoor = !!inward;
+          c.tracker.watchesDoorway(inward);
+        }
         zonesRef.current = zones;
         if (countConfidence !== undefined) countConfidenceRef.current = countConfidence;
         faceOnRef.current = !!faceMatching;
