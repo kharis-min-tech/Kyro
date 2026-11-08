@@ -57,8 +57,20 @@ export function bucketArrivals(series: CounterPoint[][], minutes: number): Arriv
 
   for (const raw of series) {
     const pts = [...raw].filter((p) => Number.isFinite(p.t)).sort((a, b) => a.t - b.t);
+    // The first reading is a starting point, not a count.
+    //
+    // These are running totals: a reading of 55 means 55 since the camera
+    // started, not 55 just now. Only the step between two readings is people
+    // moving. Treating the first one as a step charged a camera's whole
+    // history to whichever quarter of an hour Kyro happened to start looking —
+    // the morning's arrivals landing in one bar as if they had all walked in
+    // at once. The same mistake the website itself used to make, in the chart
+    // rather than the totals.
     pts.forEach((p, i) => {
-      const prev = i === 0 ? { entries: 0, exits: 0 } : pts[i - 1];
+      if (i === 0) return;
+      const prev = pts[i - 1];
+      // A counter that went backwards means the camera started again, so the
+      // new reading is the step.
       const dIn  = p.entries >= prev.entries ? p.entries - prev.entries : p.entries;
       const dOut = p.exits   >= prev.exits   ? p.exits   - prev.exits   : p.exits;
       add(p.t, dIn, dOut);

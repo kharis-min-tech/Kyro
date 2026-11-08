@@ -39,8 +39,10 @@ export interface EdgeHistoryPoint {
   camera_id: string;
   timestamp: string;
   attendance: number;
-  total_entries: number;
-  total_exits: number;
+  total_entries: number | null;
+  total_exits: number | null;
+  /** False when Kyro won't stand behind this reading's arrivals and departures. */
+  in_out_known?: boolean;
   occupancy_pct: number;
 }
 
@@ -277,10 +279,24 @@ export function aggregateEdgeHistory(rows: EdgeHistoryPoint[], capacities: Recor
   return out;
 }
 
-/** History rows grouped per camera as entry/exit counter points (for arrival times). */
+/**
+ * History rows grouped per camera as entry/exit counter points (for arrival
+ * times).
+ *
+ * Readings the website will not stand behind come back with their arrivals and
+ * departures withheld. Those used to be read as a zero, which is not the same
+ * thing at all: a morning of zeroes followed by the first real reading looked
+ * like a counter leaping from nothing to its whole running total, and the chart
+ * put that entire leap into one fifteen-minute bar — "55 people arrived"
+ * between 12:15 and 12:30, which was the morning's total arriving at once.
+ *
+ * A withheld reading is left out, not counted as none.
+ */
 export function edgeCounterSeries(rows: EdgeHistoryPoint[]): { t: number; entries: number; exits: number }[][] {
   const by: Record<string, { t: number; entries: number; exits: number }[]> = {};
   for (const r of rows) {
+    if ((r as EdgeHistoryPoint & { in_out_known?: boolean }).in_out_known === false) continue;
+    if (r.total_entries === null || r.total_exits === null) continue;
     (by[r.camera_id] ??= []).push({ t: Date.parse(r.timestamp), entries: r.total_entries || 0, exits: r.total_exits || 0 });
   }
   return Object.values(by).map((pts) => pts.sort((a, b) => a.t - b.t));
