@@ -63,8 +63,14 @@ export function CountingCard() {
 
         {on && !demo && (
           <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
-            Counting in a browser sends <strong>the number of people</strong>. AI questions, seat-by-seat colours, in/out and
-            face matching are worked out by the installed counter, so they stay empty in this mode.
+            {/* This used to say in/out and face matching needed the installed
+                counter. They don't: the browser follows people between pictures
+                and sends arrivals and departures, and it sends face codes too
+                once face matching is switched on. Saying otherwise sent an
+                operator looking for an installation she didn't need. */}
+            Counting in a browser sends <strong>the number of people, and arrivals and departures</strong>.
+            Face matching works here too, once it is switched on below. Seat-by-seat colours and AI
+            questions are worked out by the installed counter, so they stay empty in this mode.
           </p>
         )}
 
