@@ -463,6 +463,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     };
   }, [phase, syncCameras]);
 
+  // Tell the rest of the page that this browser is the counter, so nothing
+  // reloads it out from under a service. CrashRecovery reads this.
+  useEffect(() => {
+    try {
+      if (phase === "running") sessionStorage.setItem("kyro_counting_live", "1");
+      else sessionStorage.removeItem("kyro_counting_live");
+    } catch { /* fine without it */ }
+  }, [phase]);
+
   const streamFor = useCallback((key: string) => cams.current.get(key)?.stream ?? null, []);
   const total = views.filter((v) => v.streaming).reduce((n, v) => n + v.count, 0);
   const secondsPerCount = views.reduce((m, v) => Math.max(m, v.secondsPerCount), 0);
