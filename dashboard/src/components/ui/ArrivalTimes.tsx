@@ -56,7 +56,9 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
         {label}
       </p>
       <p className="font-semibold" style={{ fontSize: 15, color: "var(--text-primary)", marginTop: 2 }}>{value}</p>
-      {sub && <p className="truncate" style={{ fontSize: 11, color: "var(--text-tertiary)" }}>{sub}</p>}
+      {/* Wrapped, not truncated. "281 more came in than ..." tells the reader
+          nothing except that something was hidden from them. */}
+      {sub && <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.35 }}>{sub}</p>}
     </div>
   );
 }
