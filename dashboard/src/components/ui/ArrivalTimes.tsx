@@ -22,7 +22,7 @@ const BORDER = "var(--border-subtle)";
 const ARRIVE = "var(--series-arrive)";
 const LEAVE  = "var(--series-leave)";
 
-const SLOT_CHOICES = [15, 30, 60] as const;
+const SLOT_CHOICES = [15, 30, 60, 120, 180, 240] as const;
 type SlotMinutes = typeof SLOT_CHOICES[number];
 
 function fmtTime(t: number): string {
@@ -92,7 +92,7 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
 
   // ── Geometry ──
   const padL = 40, padR = 8, padT = 22, padB = 22, axisH = 22;
-  const minColW = minutes === 15 ? 18 : minutes === 30 ? 28 : 44;
+  const minColW = minutes === 15 ? 18 : minutes === 30 ? 28 : minutes === 60 ? 44 : 64;
   const fitColW = slots.length ? (wrapW - padL - padR) / slots.length : 0;
   const colW = Math.min(64, Math.max(minColW, fitColW));
   const gap = 2;
@@ -103,7 +103,9 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
   const baseY = padT + half;
   const yMax = niceMax(Math.max(1, ...slots.map((s) => Math.max(s.arrived, s.left))));
   const scale = (v: number) => (v / yMax) * half;
-  const labelEvery = minutes === 15 ? 4 : minutes === 30 ? 2 : 1; // ≈ one label per hour
+  // About one label per hour at the fine sizes; every bar once a bar is an
+  // hour or more, or the axis would be mostly blank.
+  const labelEvery = minutes === 15 ? 4 : minutes === 30 ? 2 : 1;
 
   const hovered = hover !== null ? slots[hover] : null;
 
@@ -120,7 +122,7 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
             )}
           </p>
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
-            How many people came in and went out in each {minutes === 60 ? "hour" : `${minutes} minutes`}
+            How many people came in and went out in each {minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`}
           </p>
         </div>
         {hasData && (
@@ -133,7 +135,7 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
                   style={minutes === m
                     ? { background: "var(--bg-hover)", color: "var(--text-primary)" }
                     : { color: "var(--text-muted)" }}>
-                  {m === 60 ? "1 hr" : `${m} min`}
+                  {m < 60 ? `${m} min` : `${m / 60} hr`}
                 </button>
               ))}
             </div>

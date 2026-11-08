@@ -87,6 +87,18 @@ const pt = (mins, entries, exits) => ({ t: T + mins * min, entries, exits });
      new Date(busiest.start).toISOString().slice(11, 16) === "12:15", new Date(busiest.start).toISOString());
 }
 
+// 6b. Longer bars, for looking at a whole morning rather than a rush. A three
+//     hour bar starts on a three hour boundary, not wherever the data starts.
+{
+  const long = [[pt(0, 0, 0), pt(30, 12, 0), pt(150, 40, 9)]];
+  for (const size of [120, 180, 240]) {
+    const r = bucketArrivals(long, size);
+    ok(`a ${size / 60} hour bar keeps every arrival`, r.totalArrived === 40, `${size}: ${r.totalArrived}`);
+    const mins = new Date(r.slots[0].start).getHours() * 60 + new Date(r.slots[0].start).getMinutes();
+    ok(`a ${size / 60} hour bar starts on its own boundary`, mins % size === 0, `${size}: ${mins}`);
+  }
+}
+
 // 7. One reading on its own says nothing about movement.
 {
   const r = bucketArrivals([[pt(0, 55, 9)]], 15);
