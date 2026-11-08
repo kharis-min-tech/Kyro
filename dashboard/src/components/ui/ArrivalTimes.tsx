@@ -14,8 +14,8 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Table2, BarChart3, AlertTriangle } from "lucide-react";
-import { bucketArrivals, type CounterPoint, type Slot } from "@/lib/arrivals";
+import { Clock, Table2, BarChart3, AlertTriangle, RotateCcw } from "lucide-react";
+import { bucketArrivals, sinceFreshStart, type CounterPoint, type Slot } from "@/lib/arrivals";
 
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -78,6 +78,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample 
   emptyMessage: string;
   /** Demo data — labelled so nobody mistakes it for real numbers. */
   isSample?: boolean;
+  /**
+   * When this session's counting began (epoch ms), if someone asked for a
+   * fresh start. The card then shows this session by itself, and offers the
+   * whole day beside it — nothing is deleted by starting fresh.
+   */
+  sessionFrom?: number | null;
+  /** Start the figures again from zero, for a new session. Omit to hide the button. */
+  onFreshStart?: () => Promise<void> | void;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -97,7 +105,18 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample 
   const [unverified, setUnverified] = useState(false);
   const extra = (unverifiedSeries?.length ?? 0) - (series?.length ?? 0);
   const canShowUnverified = !!unverifiedSeries && (extra > 0 || unverifiedSeries.some((p, i) => p.length !== (series?.[i]?.length ?? 0)));
-  const shown = unverified && unverifiedSeries ? unverifiedSeries : series;
+  const picked = unverified && unverifiedSeries ? unverifiedSeries : series;
+  // This session, or the whole day. A fresh start keeps every reading, so both
+  // are always available; "this session" is simply the default once one has
+  // been asked for.
+  const [wholeDay, setWholeDay] = useState(false);
+  const [freshing, setFreshing] = useState(false);
+  const [freshErr, setFreshErr] = useState<string | null>(null);
+  const showingSession = !!sessionFrom && !wholeDay;
+  const shown = useMemo(
+    () => (showingSession ? sinceFreshStart(picked ?? [], sessionFrom!) : picked),
+    [picked, showingSession, sessionFrom],
+  );
   const summary = useMemo(() => bucketArrivals(shown ?? [], minutes), [shown, minutes]);
   const { slots, peakArrival, peakDeparture } = summary;
   const hasData = slots.length > 0;
@@ -136,9 +155,40 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample 
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
             How many people came in and went out in each {minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`}
           </p>
+          {/* Which stretch of the day these figures cover. Said out loud, so a
+              session's figures are never mistaken for the day's. */}
+          {sessionFrom && (
+            <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4 }}>
+              {showingSession
+                ? <>This session only, counting from <strong style={{ color: "var(--text-secondary)" }}>{fmtTime(sessionFrom)}</strong>. Nothing was deleted.</>
+                : <>The whole day, including before this session started at {fmtTime(sessionFrom)}.</>}
+              {" "}
+              <button type="button" onClick={() => { setWholeDay((v) => !v); setHover(null); }}
+                className="underline" style={{ color: "var(--text-secondary)" }}>
+                {showingSession ? "Show the whole day" : "Show this session only"}
+              </button>
+            </p>
+          )}
         </div>
-        {hasData && (
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Always here, data or not: the moment to press it is at the start of
+              a session, when there is nothing to show yet. */}
+          {onFreshStart && (
+            <button type="button" disabled={freshing}
+              onClick={async () => {
+                setFreshing(true); setFreshErr(null);
+                try { await onFreshStart(); setWholeDay(false); }
+                catch (e) { setFreshErr(e instanceof Error ? e.message : "Couldn't start fresh just now"); }
+                setFreshing(false);
+              }}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
+              style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}
+              title="The arrivals and departures start again from zero for a new session. Every reading is kept.">
+              <RotateCcw size={12} /> {freshing ? "Starting fresh…" : "Start fresh"}
+            </button>
+          )}
+          {hasData && (
+            <>
             <div className="flex rounded-lg p-0.5" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }} role="group" aria-label="Slot size">
               {SLOT_CHOICES.map((m) => (
                 <button key={m} onClick={() => { setMinutes(m); setHover(null); }}
@@ -166,12 +216,18 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample 
               style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-tertiary)" }}>
               {view === "chart" ? <><Table2 size={12} /> Table</> : <><BarChart3 size={12} /> Chart</>}
             </button>
-          </div>
-        )}
+            </>
+          )}
+        </div>
+        {freshErr && <p className="w-full" style={{ fontSize: 12, color: "#b45309" }}>{freshErr}</p>}
       </div>
 
       {!hasData ? (
-        <p className="px-5 py-8 text-center" style={{ fontSize: 13, color: "var(--text-faint)" }}>{emptyMessage}</p>
+        <p className="px-5 py-8 text-center" style={{ fontSize: 13, color: "var(--text-faint)" }}>
+          {showingSession
+            ? `Nobody counted in or out since this session started at ${fmtTime(sessionFrom!)}. New arrivals appear here within a minute or two.`
+            : emptyMessage}
+        </p>
       ) : (
         <div className="p-5 flex flex-col gap-4">
           {unverified && (

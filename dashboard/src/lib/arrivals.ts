@@ -116,6 +116,35 @@ export function bucketArrivals(series: CounterPoint[][], minutes: number): Arriv
 }
 
 /**
+ * Only the part of each series that belongs to this session.
+ *
+ * A fresh start doesn't delete anything: the whole day is still there, and the
+ * card can still show it. This narrows the view to the readings from the fresh
+ * start onwards.
+ *
+ * The reading just BEFORE the fresh start is kept as a starting point, because
+ * these are running totals and a count needs two readings. Keeping it costs
+ * nothing and saves the first minute of the session:
+ *
+ *   - a browser counter that was put back to zero reads lower than it did, so
+ *     the step from the old total is read as "started again" and the new
+ *     reading counts in full (see bucketArrivals);
+ *   - a camera computer that kept counting reads higher, and the step from the
+ *     old total is exactly the people who moved since.
+ *
+ * Either way nobody is counted twice and nobody is missed.
+ */
+export function sinceFreshStart(series: CounterPoint[][], from: number | null): CounterPoint[][] {
+  if (!from) return series;
+  return series.map((pts) => {
+    const sorted = [...pts].sort((a, b) => a.t - b.t);
+    const i = sorted.findIndex((p) => p.t >= from);
+    if (i < 0) return [];                 // nothing since the fresh start
+    return i === 0 ? sorted : sorted.slice(i - 1);
+  });
+}
+
+/**
  * The backend stores timestamps as naive UTC ("2026-10-05T09:45:00").
  * `new Date()` would read that as LOCAL time, shifting every slot by the
  * UTC offset — so treat a timestamp without a zone suffix as UTC.

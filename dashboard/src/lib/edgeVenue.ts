@@ -90,6 +90,8 @@ export const edgeVenueApi = {
     edgeFetch<EdgeHistoryPoint[]>(`/api/live/history?date=${enc(date)}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
   daily: (days: number, tz: string, camera?: string) =>
     edgeFetch<EdgeDaily>(`/api/live/daily?days=${enc(String(days))}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
+  /** Start the arrival / departure figures again from zero, for a new session. Deletes nothing. */
+  freshStart: () => edgeFetch<{ from: string }>("/api/live/counts/fresh", { method: "POST" }),
   pairingCode: () => edgeFetch<{ code: string; expires_at: string }>("/api/live/pairing-code", { method: "POST" }),
   devices: () => edgeFetch<EdgeDevice[]>("/api/live/devices"),
   removeDevice: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/devices/${enc(id)}`, { method: "DELETE" }),

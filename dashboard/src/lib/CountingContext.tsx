@@ -34,6 +34,7 @@ const NO_PICTURE_MS = 6_000;
 // its figures let go.
 const GONE_FOR_GOOD_MS = 5 * 60_000;
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
+const FRESH_KEY = "kyro_counts_fresh_from"; // the fresh start this browser has applied
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
 const FACES_EVERY_MS = 4_000;     // reading faces is costly; counting comes first
@@ -136,6 +137,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   // running (the website decides and tells us with each report).
   const faceOnRef = useRef(false);
   const faceEngine = useRef<FaceEngine | null>(null);
+  // The fresh start this browser has already applied, so a new session's zero
+  // happens once and not on every report. Remembered across a reload: a
+  // refresh must not undo a fresh start, nor re-apply an old one.
+  const freshApplied = useRef<number>(0);
+  useEffect(() => {
+    // Read after mounting, never while rendering: this page is also built
+    // ahead of time, where there is no browser and no localStorage.
+    try { freshApplied.current = Number(localStorage.getItem(FRESH_KEY)) || 0; } catch { /* fine without it */ }
+  }, []);
   const faceLoading = useRef(false);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -402,7 +412,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways } = await sendReport(reports);
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom } = await sendReport(reports);
+        // A new session: start the arrivals and departures again from zero.
+        //
+        // The instruction comes back from the website, so "Start fresh" can be
+        // pressed on a phone at the door and still reach the computer in the
+        // office that is doing the counting. The people being followed are
+        // kept, so "here now" doesn't blink and nobody in the room is counted
+        // as having just walked in.
+        if (countFrom > freshApplied.current) {
+          freshApplied.current = countFrom;
+          try { localStorage.setItem(FRESH_KEY, String(countFrom)); } catch { /* fine without it */ }
+          for (const c of cams.current.values()) { c.tracker.resetCounts(); c.peak = c.count; }
+        }
         // A camera on a door counts people by which way they walked, not by
         // appearing and disappearing — everyone at a door does both.
         for (const c of cams.current.values()) c.tracker.watchesDoorway(doorways[c.key] ?? null);

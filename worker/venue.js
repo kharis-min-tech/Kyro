@@ -113,6 +113,24 @@ const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_questi
  * tells the website it may show these figures at all.
  */
 /**
+ * A camera's arrivals / departures since the last fresh start.
+ *
+ * The cameras report running totals: 40 means 40 since the camera started, not
+ * 40 just now. A fresh start remembers each camera's total at that moment, and
+ * everything after it is measured from there — so a new session begins at zero
+ * without a single reading being deleted.
+ *
+ * A counter that reads LOWER than the remembered total means the counting
+ * started over (the browser counter was reset, or the camera computer
+ * restarted), so the reading is already the count since then and stands as it
+ * is. Same rule the arrival chart uses for the same reason.
+ */
+function sinceFresh(total, base) {
+  const n = total || 0, b = base || 0;
+  return n < b ? n : n - b;
+}
+
+/**
  * One room's figures from however many cameras are watching it.
  *
  * Kyro added its cameras together. Point two at the same room — which is the
@@ -327,6 +345,13 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/service/start" && request.method === "POST") {
         if (role !== "admin") return json({ error: "Only administrators can start a service" }, 403);
         return json(await this.startServiceNow());
+      }
+      // "Start fresh": the arrivals and departures begin again from zero for a
+      // new session. Whoever may run the counting may do this; it deletes
+      // nothing (see freshStart).
+      if (p === "/api/live/counts/fresh" && request.method === "POST") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can start the counts fresh" }, 403);
+        return json(await this.freshStart());
       }
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
@@ -588,6 +613,10 @@ export class VenueHub extends DurableObject {
     }
     return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor, doorways,
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
+      // When a fresh start was last asked for. A counter that hasn't applied
+      // this one yet puts its arrivals and departures back to zero — so "Start
+      // fresh" pressed on a phone reaches the computer doing the counting.
+      count_from: await this.get("count_from", 0),
       report_every_s: 2, snapshot_every_s: 20 });
   }
 
@@ -735,13 +764,18 @@ export class VenueHub extends DurableObject {
   async venueTotal() {
     const cams = (await this.cameraList()).filter((c) => c.location !== "queue");
     const live = await this.get("live", {});
+    // Where this session's figures start from — see freshStart().
+    const freshAt = await this.get("count_from", 0);
+    const base = await this.get("count_base", {});
     const zones = cams.map((c) => {
       const l = live[c.camera_id] || {};
       const running = this.isOnline(l);
       const current = running ? l.current || 0 : 0;
       return {
         camera_id: c.camera_id, zone_name: c.zone_name || c.name, camera_name: c.name, location: c.location || "indoor",
-        current, peak: l.peak || 0, entries: l.entries || 0, exits: l.exits || 0,
+        current, peak: l.peak || 0,
+        entries: sinceFresh(l.entries, base[c.camera_id] && base[c.camera_id].entries),
+        exits: sinceFresh(l.exits, base[c.camera_id] && base[c.camera_id].exits),
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
         // In/out means following people between pictures, which needs the camera
@@ -799,6 +833,10 @@ export class VenueHub extends DurableObject {
       // How many rooms those cameras add up to, so the page can say when two
       // of them are watching the same one.
       rooms_total: rooms.length, doors_total: doors.length,
+      // When the arrivals and departures above started counting from, if a
+      // fresh start was asked for. null means "everything the cameras have
+      // counted". The page says which, so a figure is never silently partial.
+      count_from: freshAt ? new Date(freshAt).toISOString() : null,
     };
   }
 
@@ -1404,6 +1442,29 @@ export class VenueHub extends DurableObject {
    * runs during a service, so face matching could never be tried out. Hence
    * this.
    */
+  /**
+   * Start the arrival and departure figures again from zero, for a new session.
+   *
+   * Nothing is deleted. Every reading stays in the database exactly as it was,
+   * and the whole day can still be looked at — all this does is remember each
+   * camera's running total at this moment, so from here on the figures are
+   * measured from zero. A second service in the afternoon therefore doesn't
+   * inherit the morning's arrivals, and a morning's record is never lost to get
+   * that.
+   *
+   * It also reaches the browsers doing the counting: each one sees this moment
+   * in its next reply and puts its own tallies back to zero, keeping the people
+   * it is already following so the "in the room now" figure doesn't blink.
+   */
+  async freshStart(now = Date.now()) {
+    const live = await this.get("live", {});
+    const base = {};
+    for (const [id, l] of Object.entries(live)) base[id] = { entries: l.entries || 0, exits: l.exits || 0 };
+    await this.ctx.storage.put("count_base", base);
+    await this.ctx.storage.put("count_from", now);
+    return { from: new Date(now).toISOString() };
+  }
+
   async startServiceNow() {
     const live = await this.get("service_live", null);
     if (live) return { live, already: true };
@@ -1413,6 +1474,12 @@ export class VenueHub extends DurableObject {
     this.recentTotals = [];
     await this.ctx.storage.put("service_live", fresh);
     await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
+    // A service started by hand is a new session: its arrivals and departures
+    // start from zero, rather than carrying the last one's in with them.
+    // (A service that starts by ITSELF doesn't do this — it is only noticed
+    // once the room has filled, so starting fresh then would throw away the
+    // arrivals that gave it away.)
+    await this.freshStart(now);
     if (!(await this.ctx.storage.getAlarm())) await this.ctx.storage.setAlarm(now + 5 * 60_000);
     return { live: fresh, already: false };
   }

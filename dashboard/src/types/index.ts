@@ -123,6 +123,12 @@ export interface VenueTotal {
   zones: ZoneLive[];
   cameras_running: number;
   cameras_total: number;
+  /**
+   * When the arrivals and departures above started counting from, after
+   * someone asked for a fresh start. null means everything the cameras have
+   * counted.
+   */
+  count_from?: string | null;
 }
 
 export interface CameraStatus {

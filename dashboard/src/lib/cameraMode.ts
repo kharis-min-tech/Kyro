@@ -176,7 +176,7 @@ export type Zone = [number, number, number, number];
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
-export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward> }> {
+export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -199,6 +199,9 @@ export async function sendReport(cameras: CameraReport[]): Promise<{ disabled: s
     faceMatching: !!body.face_matching,
     // Which cameras are watching a doorway, and which way is "in".
     doorways: body.doorways && typeof body.doorways === "object" ? body.doorways : {},
+    // When a fresh start was last asked for, so this browser's tallies can
+    // begin again from zero for a new session. 0 = never.
+    countFrom: Number(body.count_from) || 0,
   };
 }
 

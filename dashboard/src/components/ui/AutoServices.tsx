@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Download, Loader2, Pencil, Radio, ScanFace, Square, Trash2, X } from "lucide-react";
+import { Check, Download, Loader2, Pencil, Play, Radio, RotateCcw, ScanFace, Square, Trash2, X } from "lucide-react";
 import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
 import { edgeVenueApi, useEdgeVenue } from "@/lib/edgeVenue";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +19,10 @@ export const servicesApi = {
   remove: (id: string, alsoCounts = false) =>
     edgeFetch<{ deleted: boolean }>(`/api/live/services/${encodeURIComponent(id)}${alsoCounts ? "?counts=1" : ""}`, { method: "DELETE" }),
   end: (id: string) => edgeFetch<{ ended: boolean }>(`/api/live/services/${encodeURIComponent(id)}/end`, { method: "POST" }),
+  /** Record a service from now, and start this session's arrivals and departures from zero. */
+  start: () => edgeFetch<{ already: boolean }>("/api/live/service/start", { method: "POST" }),
+  /** Only the figures: start the arrivals and departures again from zero. Deletes nothing. */
+  freshCounts: () => edgeVenueApi.freshStart(),
   rename: (id: string, name: string) => edgeFetch<Service>(`/api/live/services/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) }),
 };
 
@@ -114,16 +118,41 @@ export function AutoServices() {
                 Face matching is on for this service. Its face codes are wiped when the service ends.</p>
             )}
             {admin && (
-              <button onClick={() => act(live.id, () => servicesApi.end(live.id))} disabled={busy === live.id}
-                className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50">
-                <Square size={11} /> End the service now
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => act(live.id, () => servicesApi.end(live.id))} disabled={busy === live.id}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50">
+                  <Square size={11} /> End the service now
+                </button>
+                <button onClick={() => act("fresh", servicesApi.freshCounts)} disabled={busy === "fresh"}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50"
+                  title="The came in / went out figures start again from zero. Every reading is kept.">
+                  <RotateCcw size={11} /> {busy === "fresh" ? "Starting fresh…" : "Start the in / out counts fresh"}
+                </button>
+              </div>
             )}
           </div>
         ) : (
-          <div className="flex items-center gap-3">
-            <Radio size={18} className="text-gray-600 shrink-0" />
-            <p className="text-sm text-gray-400">No service right now. Recording starts by itself when the cameras see people arrive.</p>
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center gap-3">
+              <Radio size={18} className="text-gray-600 shrink-0" />
+              <p className="text-sm text-gray-400">No service right now. Recording starts by itself when the cameras see people arrive.</p>
+            </div>
+            {admin && (
+              <>
+                <button onClick={() => act("start", servicesApi.start)} disabled={busy === "start"}
+                  className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+                  <Play size={11} /> {busy === "start" ? "Starting…" : "Start a session now"}
+                </button>
+                {/* Said plainly, because it changes the figures on Analytics:
+                    the session's arrivals and departures begin at zero, and
+                    the morning's are still there to look at. */}
+                <p className="text-xs text-gray-500">
+                  Starts recording straight away, without waiting for the room to fill, and starts this session&apos;s
+                  <strong className="text-gray-400"> came in / went out</strong> figures from zero. Nothing already counted
+                  is deleted — the whole day is still on Analytics.
+                </p>
+              </>
+            )}
           </div>
         )}
       </div>

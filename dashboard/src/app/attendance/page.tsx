@@ -993,6 +993,19 @@ export default function AttendancePage() {
       .catch(() => {});
   }, [selectedDate, cameras, metric, edge]);
 
+  // A fresh start for a new session: the arrivals and departures begin again
+  // from zero. Every reading is kept — the card offers the whole day beside it.
+  const freshAt = venueTotal?.count_from ? Date.parse(venueTotal.count_from) : null;
+  // Only relevant to the day it happened on. Looking back at last Sunday, the
+  // figures are that whole day's, and the card shouldn't claim otherwise.
+  const sessionFrom = freshAt && toLocalDateStr(new Date(freshAt)) === toLocalDateStr(selectedDate) ? freshAt : null;
+  const startFresh = async () => {
+    await edgeVenueApi.freshStart();
+    const vt = await edgeVenueApi.venue().catch(() => null);
+    if (vt) setVenueTotal(vt);
+    setArrivalTick((n) => n + 1);
+  };
+
   // Arrival / exit times for the selected day — per-camera cumulative
   // entry/exit counters, bucketed into time slots by <ArrivalTimes>.
   const [arrivalSeries, setArrivalSeries] = useState<CounterPoint[][] | null>(null);
@@ -1001,6 +1014,9 @@ export default function AttendancePage() {
   // them up by accident.
   const [arrivalSeriesAll, setArrivalSeriesAll] = useState<CounterPoint[][] | null>(null);
   const [arrivalEmpty, setArrivalEmpty]   = useState("Loading…");
+  // Bumped after a fresh start so the day's readings are re-fetched at once,
+  // rather than up to two minutes later.
+  const [arrivalTick, setArrivalTick] = useState(0);
   useEffect(() => {
     const isToday_ = selectedDate.toDateString() === new Date().toDateString();
     if (userChoseDemo()) {
@@ -1058,7 +1074,7 @@ export default function AttendancePage() {
     // Today keeps filling in as the backend snapshots every couple of minutes.
     const t = isToday_ ? setInterval(load, 120_000) : undefined;
     return () => { cancelled = true; if (t) clearInterval(t); };
-  }, [selectedDate, cameras, edge]);
+  }, [selectedDate, cameras, edge, arrivalTick]);
 
   const now = new Date();
   const dateStr = selectedDate.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
@@ -1395,7 +1411,9 @@ export default function AttendancePage() {
             {/* When people arrive / leave — operator/admin only, like the metric selector */}
             {hydrated && (role === "admin" || role === "operator" || inDemoMode()) && (
               <ArrivalTimes series={arrivalSeries} unverifiedSeries={arrivalSeriesAll}
-                emptyMessage={arrivalEmpty} isSample={userChoseDemo()} />
+                emptyMessage={arrivalEmpty} isSample={userChoseDemo()}
+                sessionFrom={sessionFrom}
+                onFreshStart={edge && !userChoseDemo() ? startFresh : undefined} />
             )}
 
             {/* Zone overview cards */}

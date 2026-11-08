@@ -332,4 +332,18 @@ export class PersonTracker {
   reset(): void {
     this.tracks = []; this.entries = 0; this.exits = 0;
   }
+
+  /**
+   * A new session: the tallies start again from zero, but the people being
+   * followed are kept.
+   *
+   * Not the same as reset(). Forgetting the tracks as well would blank "how
+   * many are in the room now" and then count everyone sitting there as having
+   * just arrived — a new session starting with a hundred arrivals that never
+   * happened. The people in view carry on being the same people; only the
+   * running totals begin again.
+   */
+  resetCounts(): void {
+    this.entries = 0; this.exits = 0;
+  }
 }
