@@ -2,6 +2,9 @@ import { handleAccounts, currentUser } from "./accounts.js";
 export { VenueHub } from "./venue.js";
 import { handleIntegrations, runIntegrationTick, isBlockedHost } from "./integrations.js";
 
+/** Bumped with each deploy worth checking, and read back through /api/version. */
+const WORKER_CODE = "2026-11-08-fresh-start";
+
 /**
  * Kyro edge Worker — runs in front of the static dashboard on Cloudflare.
  *
@@ -90,6 +93,21 @@ export default {
           await env.SUBS.put(`err:${new Date().toISOString()}:${crypto.randomUUID().slice(0, 8)}`, text, { expirationTtl: 14 * 86400 });
         }
         return new Response(null, { status: 204 });
+      }
+
+      // "Is the new code really live?" — no sign-in needed, and nothing in it
+      // is private: a build stamp and the version of the live-cameras code
+      // that is actually answering. The deploy script checks it.
+      if (url.pathname === "/api/version") {
+        let venue = null;
+        if (env.VENUE) {
+          try {
+            const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
+            const res = await hub.fetch("https://hub/internal/version", { headers: { "X-Kyro-Internal": "1" } });
+            venue = res.ok ? (await res.json()).venue : "old";   // 404 = still running older code
+          } catch { venue = "unreachable"; }
+        }
+        return json({ worker: WORKER_CODE, venue });
       }
 
       // Live cameras: the camera computer at church (device token) and the

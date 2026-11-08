@@ -78,6 +78,12 @@ const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought
  * arrivals and departures are withheld.
  */
 const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
+/**
+ * Bumped whenever this file gains something the website will ask for. Read
+ * back through /api/version, so a deploy can be checked rather than believed —
+ * see the note on /internal/version.
+ */
+const VENUE_CODE = "2026-11-08-fresh-start";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -292,6 +298,13 @@ export class VenueHub extends DurableObject {
     try {
       // ── Inside the Worker only (index.js never forwards /internal/*) ──
       if (p === "/internal/day-peaks" && request.headers.get("X-Kyro-Internal") === "1") return json(await this.dayPeaks(url.searchParams.get("date") || "", url.searchParams.get("tz") || "UTC"));
+      // Which version of THIS file is actually running. A Durable Object
+      // carries on running the code it started with — a deploy doesn't reach
+      // one that is still busy — so "deployed ✓" can be true while the live
+      // link to the cameras is still answering with last week's code. That is
+      // exactly what happened to "Start fresh": the button was new, the server
+      // it called was not, and all anyone saw was "Not found".
+      if (p === "/internal/version" && request.headers.get("X-Kyro-Internal") === "1") return json({ venue: VENUE_CODE });
 
       // ── Camera computer (device token) ──
       if (p === "/api/devices/pair" && request.method === "POST") return this.pair(request);
