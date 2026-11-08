@@ -996,6 +996,10 @@ export default function AttendancePage() {
   // Arrival / exit times for the selected day — per-camera cumulative
   // entry/exit counters, bucketed into time slots by <ArrivalTimes>.
   const [arrivalSeries, setArrivalSeries] = useState<CounterPoint[][] | null>(null);
+  // The same day including the readings Kyro won't stand behind, for the
+  // "unverified" view. Kept separately so the ordinary figures can never pick
+  // them up by accident.
+  const [arrivalSeriesAll, setArrivalSeriesAll] = useState<CounterPoint[][] | null>(null);
   const [arrivalEmpty, setArrivalEmpty]   = useState("Loading…");
   useEffect(() => {
     const isToday_ = selectedDate.toDateString() === new Date().toDateString();
@@ -1008,12 +1012,14 @@ export default function AttendancePage() {
     }
     if (edge) {
       const ids = new Set(cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
-      if (ids.size === 0) { setArrivalSeries(null); setArrivalEmpty("No cameras connected yet."); return; }
+      if (ids.size === 0) { setArrivalSeries(null); setArrivalSeriesAll(null); setArrivalEmpty("No cameras connected yet."); return; }
       let cancelled = false;
       const load = () => edgeVenueApi.history(toLocalDateStr(selectedDate), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
         .then((rows: EdgeHistoryPoint[]) => {
           if (cancelled) return;
-          setArrivalSeries(edgeCounterSeries(rows.filter((r) => ids.has(r.camera_id))));
+          const mine = rows.filter((r) => ids.has(r.camera_id));
+          setArrivalSeries(edgeCounterSeries(mine));
+          setArrivalSeriesAll(edgeCounterSeries(mine, true));
           setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
         })
         .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });
@@ -1388,7 +1394,8 @@ export default function AttendancePage() {
 
             {/* When people arrive / leave — operator/admin only, like the metric selector */}
             {hydrated && (role === "admin" || role === "operator" || inDemoMode()) && (
-              <ArrivalTimes series={arrivalSeries} emptyMessage={arrivalEmpty} isSample={userChoseDemo()} />
+              <ArrivalTimes series={arrivalSeries} unverifiedSeries={arrivalSeriesAll}
+                emptyMessage={arrivalEmpty} isSample={userChoseDemo()} />
             )}
 
             {/* Zone overview cards */}

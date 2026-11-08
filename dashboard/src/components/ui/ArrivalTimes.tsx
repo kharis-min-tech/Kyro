@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Table2, BarChart3 } from "lucide-react";
+import { Clock, Table2, BarChart3, AlertTriangle } from "lucide-react";
 import { bucketArrivals, type CounterPoint, type Slot } from "@/lib/arrivals";
 
 const CARD   = "var(--bg-card)";
@@ -63,9 +63,17 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, emptyMessage, isSample }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
+  /**
+   * The same, including readings Kyro won't stand behind — the figures from
+   * before it counted people at a door by the direction they walked, when
+   * anyone appearing counted as arriving and anyone disappearing as leaving.
+   * Nothing is ever deleted, so these can be looked at; they are only ever
+   * shown behind a switch, under a label saying what they are.
+   */
+  unverifiedSeries?: CounterPoint[][] | null;
   /** Shown when there is nothing to chart (no cameras / no data that day). */
   emptyMessage: string;
   /** Demo data — labelled so nobody mistakes it for real numbers. */
@@ -86,7 +94,11 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
     return () => ro.disconnect();
   });
 
-  const summary = useMemo(() => bucketArrivals(series ?? [], minutes), [series, minutes]);
+  const [unverified, setUnverified] = useState(false);
+  const extra = (unverifiedSeries?.length ?? 0) - (series?.length ?? 0);
+  const canShowUnverified = !!unverifiedSeries && (extra > 0 || unverifiedSeries.some((p, i) => p.length !== (series?.[i]?.length ?? 0)));
+  const shown = unverified && unverifiedSeries ? unverifiedSeries : series;
+  const summary = useMemo(() => bucketArrivals(shown ?? [], minutes), [shown, minutes]);
   const { slots, peakArrival, peakDeparture } = summary;
   const hasData = slots.length > 0;
 
@@ -139,6 +151,16 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
                 </button>
               ))}
             </div>
+            {canShowUnverified && (
+              <button type="button" onClick={() => { setUnverified((v) => !v); setHover(null); }}
+                aria-pressed={unverified}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+                style={unverified
+                  ? { background: "rgba(245,158,11,0.15)", color: "#b45309", border: "1px solid rgba(245,158,11,0.5)" }
+                  : { background: "var(--bg-inset)", color: "var(--text-muted)", border: `1px solid ${BORDER}` }}>
+                {unverified ? "Showing unverified" : "Show unverified"}
+              </button>
+            )}
             <button onClick={() => setView((v) => (v === "chart" ? "table" : "chart"))}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs"
               style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-tertiary)" }}>
@@ -152,16 +174,31 @@ export function ArrivalTimes({ series, emptyMessage, isSample }: {
         <p className="px-5 py-8 text-center" style={{ fontSize: 13, color: "var(--text-faint)" }}>{emptyMessage}</p>
       ) : (
         <div className="p-5 flex flex-col gap-4">
+          {unverified && (
+            <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+              style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.45)" }}>
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#b45309" }} />
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                <strong>These figures are not counts of people.</strong> They include readings from
+                before Kyro counted at a doorway by the direction people walked, when anyone appearing
+                counted as arriving and anyone disappearing as leaving — so everyone passing a door was
+                counted both ways, and arrivals climbed while rooms emptied. They are shown because
+                nothing is ever deleted, not because they are right. The attendance counts are
+                unaffected, and were always measured properly.
+              </p>
+            </div>
+          )}
+
           {/* Headline answers */}
           <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))" }}>
             {/* The day's two totals, first and plainly labelled. They were
                 here before, as small print under "Half had arrived by" and
                 "First arrivals" — which is no place for the number most people
                 open this card to find. */}
-            <StatTile label="Came in, all day" swatch={ARRIVE}
+            <StatTile label={unverified ? "Came in, all day (unverified)" : "Came in, all day"} swatch={ARRIVE}
               value={summary.totalArrived.toLocaleString()}
               sub={`${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
-            <StatTile label="Went out, all day" swatch={LEAVE}
+            <StatTile label={unverified ? "Went out, all day (unverified)" : "Went out, all day"} swatch={LEAVE}
               value={summary.totalLeft.toLocaleString()}
               sub={summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             <StatTile label="Busiest arrival time" swatch={ARRIVE}

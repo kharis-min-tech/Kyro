@@ -825,6 +825,12 @@ export class VenueHub extends DurableObject {
           // counting flicker rather than people (see IN_OUT_TRUSTED_FROM).
           total_entries: trusted ? r.entries : null, total_exits: trusted ? r.exits : null,
           in_out_known: trusted,
+          // The figures as recorded, whether or not Kyro will stand behind
+          // them. Nothing is deleted — it is only kept out of the charts — and
+          // an administrator can ask to see the shape of a day anyway, clearly
+          // labelled. Separate fields so nothing that reads total_entries can
+          // pick these up by accident and present them as fact.
+          raw_entries: r.entries, raw_exits: r.exits,
           occupancy_pct: r.capacity ? Math.round((r.current / r.capacity) * 1000) / 10 : 0,
         };
       });

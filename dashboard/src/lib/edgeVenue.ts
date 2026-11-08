@@ -43,6 +43,9 @@ export interface EdgeHistoryPoint {
   total_exits: number | null;
   /** False when Kyro won't stand behind this reading's arrivals and departures. */
   in_out_known?: boolean;
+  /** As recorded, verified or not. Only for a view that says which it is. */
+  raw_entries?: number;
+  raw_exits?: number;
   occupancy_pct: number;
 }
 
@@ -292,12 +295,19 @@ export function aggregateEdgeHistory(rows: EdgeHistoryPoint[], capacities: Recor
  *
  * A withheld reading is left out, not counted as none.
  */
-export function edgeCounterSeries(rows: EdgeHistoryPoint[]): { t: number; entries: number; exits: number }[][] {
+export function edgeCounterSeries(
+  rows: EdgeHistoryPoint[],
+  /** Include readings Kyro won't stand behind. Only for a view that says so. */
+  unverified = false,
+): { t: number; entries: number; exits: number }[][] {
   const by: Record<string, { t: number; entries: number; exits: number }[]> = {};
   for (const r of rows) {
-    if ((r as EdgeHistoryPoint & { in_out_known?: boolean }).in_out_known === false) continue;
-    if (r.total_entries === null || r.total_exits === null) continue;
-    (by[r.camera_id] ??= []).push({ t: Date.parse(r.timestamp), entries: r.total_entries || 0, exits: r.total_exits || 0 });
+    const withheld = r.in_out_known === false || r.total_entries === null || r.total_exits === null;
+    if (withheld && !unverified) continue;
+    const entries = withheld ? r.raw_entries : r.total_entries;
+    const exits = withheld ? r.raw_exits : r.total_exits;
+    if (entries === undefined || entries === null || exits === undefined || exits === null) continue;
+    (by[r.camera_id] ??= []).push({ t: Date.parse(r.timestamp), entries, exits });
   }
   return Object.values(by).map((pts) => pts.sort((a, b) => a.t - b.t));
 }
