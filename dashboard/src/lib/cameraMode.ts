@@ -200,7 +200,7 @@ export async function sendReport(
    * sending no codes used to look exactly like a fault.
    */
   faces: { error?: string | null; ready?: boolean } = {},
-): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null }> {
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -230,6 +230,8 @@ export async function sendReport(
     // The service being recorded. People are remembered for as long as one
     // runs, and forgotten when it ends.
     service: typeof body.service === "string" ? body.service : null,
+    // "auto", or an operator saying everybody at the door is arriving/leaving.
+    doorMode: body.door_mode === "in" || body.door_mode === "out" ? body.door_mode : null,
   };
 }
 

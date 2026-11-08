@@ -1039,6 +1039,14 @@ export default function AttendancePage() {
     URL.revokeObjectURL(a.href);
   };
 
+  const doorMode = ((venueTotal as { door_mode?: string } | null)?.door_mode ?? "auto") as "auto" | "in" | "out";
+  const doorModeBy = (venueTotal as { door_mode_by?: string } | null)?.door_mode_by ?? "";
+  const setDoorMode = async (mode: "auto" | "in" | "out") => {
+    await edgeVenueApi.doorMode(mode);
+    const vt = await edgeVenueApi.venue().catch(() => null);
+    if (vt) setVenueTotal(vt);
+  };
+
   const startFresh = async () => {
     await edgeVenueApi.freshStart();
     const vt = await edgeVenueApi.venue().catch(() => null);
@@ -1521,7 +1529,9 @@ export default function AttendancePage() {
                 sessionFrom={sessionFrom}
                 onFreshStart={edge && !userChoseDemo() ? startFresh : undefined}
                 byCamera={arrivalByCamera}
-                onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined} />
+                onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined}
+                doorMode={doorMode} doorModeBy={doorModeBy}
+                onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}
 
             {/* Every decision the entrance made, in words — so the figures

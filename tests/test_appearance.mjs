@@ -84,7 +84,9 @@ const CREAM  = [0.36, 0.34, 0.85];
 // ── What it does to counting ────────────────────────────────────────────────
 
 const box = (left, top, w, h) => [left, top, left + w, top + h];
-const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t, undefined, looks);
+const see = (tr, boxes, t, looks, faces) => tr.update(boxes.map((b) => ({ box: b })), t, faces, looks);
+/** A face code: distinct people get codes pointing in different directions. */
+const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
 
 // 5. The case this exists for. Someone walks out and is counted. Twenty
 //    seconds later — too long for "they were standing there" to mean anything
@@ -141,13 +143,14 @@ const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t
   const tr = new PersonTracker();
   tr.watchesDoorway("closer");
   const usher = look(RED, GREY, 2.6, 0.55);     // same person throughout
+  const theirFace = face(1);                   // face matching is on at Kharis
   let t = 0;
   // In, out, in, out, in — five trips through the door in two minutes.
   const inward  = [box(100, 120, 48, 124), box(100, 60, 70, 200)];
   const outward = [box(100, 60, 70, 200), box(100, 120, 48, 124)];
   for (const trip of [inward, outward, inward, outward, inward]) {
-    see(tr, [trip[0]], (t += 3000), [usher]);
-    see(tr, [trip[1]], (t += 400), [usher]);
+    see(tr, [trip[0]], (t += 3000), [usher], [theirFace]);
+    see(tr, [trip[1]], (t += 400), [usher], [theirFace]);
     see(tr, [], (t += 16000));
   }
   ok("the usher is counted in once, not three times", tr.entries === 1, `in ${tr.entries}`);
@@ -155,15 +158,15 @@ const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t
 
   // Half an hour later, still the same service, still the same usher: still
   // once. Remembering them for three minutes only moved the problem.
-  see(tr, [box(100, 60, 70, 200)], (t += 1_800_000), [usher]);
-  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher]);
+  see(tr, [box(100, 60, 70, 200)], (t += 1_800_000), [usher], [theirFace]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
   see(tr, [], (t += 16000));
   ok("and still once half an hour into the service", tr.exits === 1, `out ${tr.exits}`);
 
   // The service ends. Everybody is forgotten, and the next one starts clean.
   tr.forgetPeople();
-  see(tr, [box(100, 60, 70, 200)], (t += 5000), [usher]);
-  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher]);
+  see(tr, [box(100, 60, 70, 200)], (t += 5000), [usher], [theirFace]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
   see(tr, [], (t += 16000));
   ok("after the service ends they are somebody new again", tr.exits === 2, `out ${tr.exits}`);
 }

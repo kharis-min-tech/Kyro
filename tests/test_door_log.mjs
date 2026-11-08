@@ -30,7 +30,8 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
 const { PersonTracker } = await import(path.join(tmp, "personTracker.js"));
 
 const box = (left, top, w, h) => [left, top, left + w, top + h];
-const see = (tr, boxes, t, looks) => tr.update(boxes.map((b) => ({ box: b })), t, undefined, looks);
+const see = (tr, boxes, t, looks, faces) => tr.update(boxes.map((b) => ({ box: b })), t, faces, looks);
+const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
 const look = (top, bottom, shape = 2.5, height = 0.5) => ({ top, bottom, shape, height });
 const NAVY = [0.26, 0.31, 0.18], GREY = [0.33, 0.33, 0.45], RED = [0.55, 0.22, 0.40];
 
@@ -59,10 +60,11 @@ const NAVY = [0.26, 0.31, 0.18], GREY = [0.33, 0.33, 0.45], RED = [0.55, 0.22, 0
   const tr = new PersonTracker();
   tr.watchesDoorway("closer");
   const usher = look(RED, GREY, 2.6, 0.55);
-  let t = 0;
+  const theirFace = face(1);     // face matching on, which is how one person
+  let t = 0;                     // is told from the next at a quiet door
   for (let trip = 0; trip < 3; trip++) {
-    see(tr, [box(100, 120, 48, 124)], (t += 3000), [usher]);
-    see(tr, [box(100, 60, 70, 200)], (t += 400), [usher]);
+    see(tr, [box(100, 120, 48, 124)], (t += 3000), [usher], [theirFace]);
+    see(tr, [box(100, 60, 70, 200)], (t += 400), [usher], [theirFace]);
     see(tr, [], (t += 16000));
   }
   const events = tr.drainEvents();

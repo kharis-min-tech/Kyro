@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -99,6 +99,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * church can keep; a file on their own computer is.
    */
   onDownload?: () => void;
+  /**
+   * What the doorway cameras have been told: "auto" to work out each person's
+   * direction, or that everybody crossing right now is arriving / leaving.
+   */
+  doorMode?: "auto" | "in" | "out";
+  onDoorMode?: (mode: "auto" | "in" | "out") => Promise<void> | void;
+  /** Who said so, for the line that says it is still on. */
+  doorModeBy?: string;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -285,6 +293,48 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
         )}
         {freshErr && <p className="w-full" style={{ fontSize: 12, color: "#b45309" }}>{freshErr}</p>}
       </div>
+
+      {/* "Everybody is leaving now."
+          Kyro normally works out which way each person went by watching them
+          move, which needs two clear sightings — and a crowded door at the end
+          of a service is the hardest moment to get that right. At that moment
+          the church already knows the answer, so it can simply say so. */}
+      {onDoorMode && (
+        <div className="px-5 py-3 flex flex-col gap-2" style={{ borderBottom: `1px solid ${BORDER}`,
+          background: doorMode && doorMode !== "auto" ? "rgba(79,70,229,0.07)" : undefined }}>
+          <div className="flex flex-wrap items-center gap-2">
+            <span style={{ fontSize: 12, color: "var(--text-muted)" }}>At the entrance, right now:</span>
+            <div className="flex rounded-lg p-0.5" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }} role="group">
+              {([
+                ["auto", "Work it out"],
+                ["in", "Everyone is arriving"],
+                ["out", "Everyone is leaving"],
+              ] as const).map(([m, label]) => (
+                <button key={m} type="button" onClick={() => onDoorMode(m)} aria-pressed={(doorMode ?? "auto") === m}
+                  className="px-2.5 py-1 rounded-md text-xs font-medium"
+                  style={(doorMode ?? "auto") === m
+                    ? { background: m === "auto" ? "var(--bg-hover)" : "#4f46e5", color: m === "auto" ? "var(--text-primary)" : "#fff" }
+                    : { color: "var(--text-muted)" }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.45 }}>
+            {doorMode === "out"
+              ? <><strong style={{ color: "var(--text-secondary)" }}>Counting everyone at the entrance as leaving.</strong> Every person
+                 the camera is sure of is counted out, without having to work out which way they walked — which is what it struggles
+                 with in a crowd. Anyone walking back IN is counted as leaving too, so put this back to
+                 &quot;Work it out&quot; once the hall has emptied{doorModeBy ? ` (turned on by ${doorModeBy})` : ""}.</>
+              : doorMode === "in"
+              ? <><strong style={{ color: "var(--text-secondary)" }}>Counting everyone at the entrance as arriving.</strong> For the
+                 doors opening, when everybody is coming the same way. Anyone going OUT is counted as arriving too, so put this
+                 back to &quot;Work it out&quot; once people are settled{doorModeBy ? ` (turned on by ${doorModeBy})` : ""}.</>
+              : <>Kyro works out which way each person went by watching them move across the doorway. In a crush that is the hardest
+                 thing to get right — so when everybody is going the same way, say so, and it counts them that way instead of guessing.</>}
+          </p>
+        </div>
+      )}
 
       {!hasData ? (
         <p className="px-5 py-8 text-center" style={{ fontSize: 13, color: "var(--text-faint)" }}>

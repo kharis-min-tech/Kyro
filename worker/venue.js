@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-b139eefe02ef";
+const VENUE_CODE = "venue-dc724efdcdea";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -374,6 +374,14 @@ export class VenueHub extends DurableObject {
       // "Start fresh": the arrivals and departures begin again from zero for a
       // new session. Whoever may run the counting may do this; it deletes
       // nothing (see freshStart).
+      // "Everybody is leaving now" — see PersonTracker.watchesDoorway.
+      if (p === "/api/live/door-mode" && request.method === "POST") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can change this" }, 403);
+        const b = await request.json().catch(() => ({}));
+        const mode = ["auto", "in", "out"].includes(b.mode) ? b.mode : "auto";
+        await this.ctx.storage.put("door_mode", { mode, by: user || "", at: Date.now() });
+        return json({ mode });
+      }
       if (p === "/api/live/counts/fresh" && request.method === "POST") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can start the counts fresh" }, 403);
         return json(await this.freshStart());
@@ -687,6 +695,9 @@ export class VenueHub extends DurableObject {
       // this one yet puts its arrivals and departures back to zero — so "Start
       // fresh" pressed on a phone reaches the computer doing the counting.
       count_from: await this.get("count_from", 0),
+      // "auto" = work out which way each person went. "in"/"out" = an operator
+      // has said everybody crossing is arriving, or leaving.
+      door_mode: (await this.get("door_mode", null))?.mode ?? "auto",
       // Which service is being recorded, if one is. The counting browser
       // remembers people for as long as one service runs — so the usher
       // holding the door isn't counted in forty times — and forgets every one
@@ -1031,6 +1042,9 @@ export class VenueHub extends DurableObject {
       // fresh start was asked for. null means "everything the cameras have
       // counted". The page says which, so a figure is never silently partial.
       count_from: freshAt ? new Date(freshAt).toISOString() : null,
+      // What the doorway cameras have been told, if anything. See door_mode.
+      door_mode: (await this.get("door_mode", null))?.mode ?? "auto",
+      door_mode_by: (await this.get("door_mode", null))?.by ?? "",
     };
   }
 

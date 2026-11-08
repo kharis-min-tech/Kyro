@@ -84,8 +84,13 @@ const SAME_LOOK = 0.78;
  * "looks the same" is worth nothing, and the honest answer is that Kyro does
  * not know. So the best match must beat the next best by this much, or no
  * match is made at all.
+ *
+ * Twice what it was. Three people in near-identical coats walking out one
+ * after another were close enough that the third was claimed by the second,
+ * and a margin that small is not evidence of anything. A coat identifies
+ * somebody in a crowd only when it genuinely stands out; a face does the rest.
  */
-const LOOK_MARGIN = 0.06;
+const LOOK_MARGIN = 0.12;
 /**
  * How long a look is believable as identity.
  *
@@ -353,9 +358,32 @@ export class PersonTracker {
    */
   private inward: Inward | null = null;
 
+  /**
+   * Told, rather than worked out: everybody crossing this doorway now is
+   * leaving (or arriving).
+   *
+   * Kyro normally decides which way somebody went by watching them move — see
+   * wentIn. That needs them in view twice, clearly enough to say which
+   * direction they travelled, and at a crowded door at the end of a service it
+   * is the hardest moment to get right: people are shoulder to shoulder, half
+   * of them hidden behind the rest.
+   *
+   * At that moment the church already knows the answer. Everybody is leaving.
+   * So an operator can say so, and every person the camera is sure of is
+   * counted that way — no direction needed. It is the difference between a
+   * guess and a fact, and the fact comes from the person standing there.
+   *
+   * Somebody already counted out stays counted out, so holding the door still
+   * doesn't count anyone twice.
+   */
+  private assume: "in" | "out" | null = null;
+
   /** null for a camera watching a room; a direction for one watching a door. */
-  watchesDoorway(inward: Inward | null): void {
+  watchesDoorway(inward: Inward | null, assume: "in" | "out" | null = null): void {
     if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; this.known = []; }
+    // Changing what is assumed must not reset anything: it is a change of
+    // what Kyro is being told, not a new camera.
+    this.assume = assume;
   }
 
   /** Give it this count's people; returns how many are here now (confirmed only). */
@@ -439,15 +467,22 @@ export class PersonTracker {
       // departure. See SAME_LOOK and LOOK_MARGIN.
       const myLook = looks?.[bi] ?? null;
       if (revive < 0 && myLook) {
-        let best = 0, second = 0, bestAt = -1;
+        let best = 0, second = 0, bestAt = -1, candidates = 0;
         this.tracks.forEach((t, ti) => {
           if (takenTrack.has(ti) || t.missing === 0 || !t.look) return;
           if (now - t.lastSeen > RETURN_BY_LOOK_MS) return;
+          candidates++;
           const s = alikeLook(t.look, myLook);
           if (s > best) { second = best; best = s; bestAt = ti; }
           else if (s > second) { second = s; }
         });
-        if (bestAt >= 0 && best >= SAME_LOOK && best - second >= LOOK_MARGIN) revive = bestAt;
+        // Only in a crowd. "Clearly better than everyone else" is worth
+        // nothing when there is one person to be better than — the first
+        // person through a door would claim the second one on the strength of
+        // a similar coat, and six people leaving a crowded hall were counted
+        // as one. Somebody on their own stepping out and back is recognised by
+        // where they are instead, which is the path above and far safer.
+        if (candidates >= 2 && bestAt >= 0 && best >= SAME_LOOK && best - second >= LOOK_MARGIN) revive = bestAt;
       }
       if (revive >= 0) {
         const t = this.tracks[revive];
@@ -484,7 +519,8 @@ export class PersonTracker {
         // as counted, so the same person coming back is recognised and never
         // counted a second time.
         if (t.counted && !t.tallied && gone >= DOOR_DECIDE_MS) {
-          const went = wentIn(t.firstBox, t.box, this.inward);
+          // Told, or worked out. See watchesDoorway.
+          const went = this.assume ? this.assume === "in" : wentIn(t.firstBox, t.box, this.inward);
           // Counted, unless this is somebody Kyro already counted this way —
           // the usher holding the door. See MOST_REMEMBERED.
           if (went === true) {
@@ -563,14 +599,23 @@ export class PersonTracker {
       });
     }
     if (at < 0 && look) {
-      let best = 0, second = 0;
+      let best = 0, second = 0, candidates = 0;
       pool.forEach((k, i) => {
         if (!k.look) return;
+        candidates++;
         const s = alikeLook(k.look, look);
         if (s > best) { second = best; best = s; at = i; }
         else if (s > second) second = s;
       });
-      if (!(best >= SAME_LOOK && best - second >= LOOK_MARGIN)) at = -1;
+      // "Clearly better than everyone else" means nothing when there is only
+      // one person to be better than: the first person through the door would
+      // make the second one "the same person" on the strength of a similar
+      // coat, and six people leaving a crowded hall were counted as one.
+      //
+      // So a coat can only identify somebody among a crowd of remembered
+      // people, where being a clear winner means something. One on its own has
+      // to be claimed by a face.
+      if (candidates < 2 || !(best >= SAME_LOOK && best - second >= LOOK_MARGIN)) at = -1;
     }
     if (at < 0) return no;
     // They are a live person again; they go back into the remembered list when

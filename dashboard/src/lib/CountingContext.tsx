@@ -477,7 +477,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       }));
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current });
         // A different service, or none: forget everybody seen in the last one.
         // People are remembered only for as long as one service runs — see
@@ -503,7 +503,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         for (const c of cams.current.values()) {
           const inward = doorways[c.key] ?? null;
           c.isDoor = !!inward;
-          c.tracker.watchesDoorway(inward);
+          // doorMode: an operator has said everybody crossing is arriving or
+          // leaving — at the end of a service that is a fact, not a guess.
+          c.tracker.watchesDoorway(inward, inward ? doorMode : null);
         }
         zonesRef.current = zones;
         if (countConfidence !== undefined) countConfidenceRef.current = countConfidence;

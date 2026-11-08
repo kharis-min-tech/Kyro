@@ -92,6 +92,9 @@ export const edgeVenueApi = {
     edgeFetch<EdgeDaily>(`/api/live/daily?days=${enc(String(days))}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
   /** Start the arrival / departure figures again from zero, for a new session. Deletes nothing. */
   freshStart: () => edgeFetch<{ from: string }>("/api/live/counts/fresh", { method: "POST" }),
+  /** Tell the doorway cameras that everybody crossing now is arriving, or leaving. */
+  doorMode: (mode: "auto" | "in" | "out") =>
+    edgeFetch<{ mode: string }>("/api/live/door-mode", { method: "POST", body: JSON.stringify({ mode }) }),
   pairingCode: () => edgeFetch<{ code: string; expires_at: string }>("/api/live/pairing-code", { method: "POST" }),
   devices: () => edgeFetch<EdgeDevice[]>("/api/live/devices"),
   removeDevice: (id: string) => edgeFetch<{ removed: boolean }>(`/api/live/devices/${enc(id)}`, { method: "DELETE" }),
