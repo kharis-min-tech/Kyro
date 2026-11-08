@@ -113,7 +113,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 60, 70, 200)], (t += 300));
   ok("nobody is counted while they are still in the doorway", tr.entries === 0 && tr.exits === 0);
 
-  see(tr, [], (t += 9000));       // they have gone through, and the grace is up
+  see(tr, [], (t += 16000));       // they have gone through, and the grace is up
   ok("walking in counts as one arrival", tr.entries === 1, `entries ${tr.entries}`);
   ok("and not as a departure", tr.exits === 0);
 }
@@ -127,7 +127,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 100, 60, 160)], (t += 300));
   see(tr, [box(100, 120, 50, 130)], (t += 300));
   see(tr, [box(100, 140, 40, 100)], (t += 300));
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("walking out counts as a departure", tr.exits === 1, `exits ${tr.exits}`);
   ok("and not as an arrival", tr.entries === 0, `entries ${tr.entries} — the old way said 1`);
 }
@@ -139,7 +139,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   tr.watchesDoorway("closer");
   let t = 0;
   for (let i = 0; i < 4; i++) see(tr, [box(100, 100, 60, 150)], (t += 300));
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("hovering in the doorway counts as nothing", tr.entries === 0 && tr.exits === 0);
 }
 
@@ -154,8 +154,8 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [], (t += 3000));
   ok("three seconds later they are still being given a chance", tr.entries === 0);
 
-  see(tr, [], (t += 6000));
-  ok("nine seconds after they went, they are counted", tr.entries === 1);
+  see(tr, [], (t += 13000));
+  ok("sixteen seconds after they went, they are counted", tr.entries === 1);
 }
 
 // 10. One person, counted once — the thing the grace period is for.
@@ -172,7 +172,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   ok("nothing is counted while they might still come back", tr.exits === 0);
   see(tr, [box(100, 125, 48, 125)], (t += 300));  // back, near where they were, soon
   see(tr, [box(100, 140, 40, 100)], (t += 300));  // and carrying on out
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("they are counted once, not twice", tr.exits === 1, `exits ${tr.exits}`);
   ok("and not as an arrival on the way back", tr.entries === 0, `entries ${tr.entries}`);
 }
@@ -189,9 +189,9 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
     see(tr, [box(left, 130, 45, 115)], (t += 300));
   };
   walkOut(100);
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   walkOut(600);                 // a different person, elsewhere in the doorway
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("two people leaving are two departures", tr.exits === 2, `exits ${tr.exits}`);
 }
 
@@ -207,7 +207,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 120, 50, 130)], (t += 300));
   see(tr, [box(100, 100, 60, 160)], (t += 300));
   see(tr, [box(100, 60, 70, 200)], (t += 300));
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   const had = tr.entries;
   tr.watchesDoorway("away");
   ok("it had counted something first", had >= 1);
@@ -231,7 +231,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   walkOut();
   see(tr, [], (t += 40000));    // gone 40 seconds — longer than a place is believable
   walkOut();                    // the next person, through the same doorway
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("the next person through the same door is a second departure", tr.exits === 2, `exits ${tr.exits}`);
 }
 
@@ -249,13 +249,13 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
     see(tr, [box(100, 130, 45, 115)], (t += 300));
   };
   walkOut();
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("they are counted out promptly", tr.exits === 1, `exits ${tr.exits}`);
 
   // Back into view a few seconds later, and out again.
   see(tr, [box(100, 128, 46, 118)], (t += 300));
   see(tr, [box(100, 140, 40, 100)], (t += 300));
-  see(tr, [], (t += 9000));
+  see(tr, [], (t += 16000));
   ok("coming back and leaving again doesn't count them twice", tr.exits === 1, `exits ${tr.exits}`);
   ok("nor as an arrival", tr.entries === 0, `entries ${tr.entries}`);
 }

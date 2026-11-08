@@ -83,16 +83,17 @@ const RETURN_BY_PLACE_MS = 15_000;
  *
  * Separate from how long their track is kept. Waiting the whole grace before
  * counting meant watching a room empty with the figure five minutes behind —
- * no use to anyone standing there. Eight seconds is long enough that stepping
- * behind the person in front doesn't count as leaving, and short enough to
- * watch the room empty as it happens.
+ * no use to anyone standing there. Fifteen seconds is long enough that a pause
+ * in the doorway, or being hidden behind the two people coming through next,
+ * doesn't count as leaving, and short enough to watch the room empty as it
+ * happens.
  *
  * The track lives on afterwards, marked as already counted, so the same person
  * coming back is still recognised and never counted twice. Prompt and careful
  * are not in conflict here — they were only tied together by one number doing
  * both jobs.
  */
-const DOOR_DECIDE_MS = 8_000;
+const DOOR_DECIDE_MS = 15_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;
