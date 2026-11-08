@@ -111,6 +111,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   // been asked for.
   const [wholeDay, setWholeDay] = useState(false);
   const [freshing, setFreshing] = useState(false);
+  const [freshAsking, setFreshAsking] = useState(false);
   const [freshErr, setFreshErr] = useState<string | null>(null);
   const showingSession = !!sessionFrom && !wholeDay;
   const shown = useMemo(
@@ -174,13 +175,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
           {/* Always here, data or not: the moment to press it is at the start of
               a session, when there is nothing to show yet. */}
           {onFreshStart && (
-            <button type="button" disabled={freshing}
-              onClick={async () => {
-                setFreshing(true); setFreshErr(null);
-                try { await onFreshStart(); setWholeDay(false); }
-                catch (e) { setFreshErr(e instanceof Error ? e.message : "Couldn't start fresh just now"); }
-                setFreshing(false);
-              }}
+            <button type="button" disabled={freshing || freshAsking}
+              onClick={() => { setFreshAsking(true); setFreshErr(null); }}
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
               style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}
               title="The arrivals and departures start again from zero for a new session. Every reading is kept.">
@@ -219,6 +215,41 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
             </>
           )}
         </div>
+        {freshAsking && (
+          /* Asked here rather than in one of the browser's own boxes: those
+             appear for reloads too, can't say why they are asking, and teach
+             people to click through warnings without reading them. */
+          <div className="w-full rounded-xl px-3 py-2.5 flex flex-col gap-2"
+            style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
+            <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+              Start the came in / went out figures from zero?
+            </p>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+              For a new session. <strong>Nothing is deleted</strong> — everything counted so far is kept, this card
+              shows the new session on its own, and <em>Show the whole day</em> brings the rest back whenever you want it.
+              The counting computer starts its tally again within a few seconds; people already in the room stay counted
+              as being there.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" disabled={freshing}
+                onClick={async () => {
+                  setFreshing(true); setFreshErr(null);
+                  try { await onFreshStart!(); setWholeDay(false); setFreshAsking(false); }
+                  catch (e) { setFreshErr(e instanceof Error ? e.message : "Couldn't start fresh just now"); }
+                  setFreshing(false);
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
+                style={{ background: "#4f46e5" }}>
+                {freshing ? "Starting fresh…" : "Yes, start fresh"}
+              </button>
+              <button type="button" onClick={() => setFreshAsking(false)} disabled={freshing}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"
+                style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
         {freshErr && <p className="w-full" style={{ fontSize: 12, color: "#b45309" }}>{freshErr}</p>}
       </div>
 

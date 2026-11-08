@@ -41,6 +41,7 @@ export function AutoServices() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmFresh, setConfirmFresh] = useState(false);
   const [alsoCounts, setAlsoCounts] = useState(false);
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const { venue } = useEdgeVenue(true, 5000);
@@ -117,13 +118,36 @@ export function AutoServices() {
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><ScanFace size={13} className="text-green-400" />
                 Face matching is on for this service. Its face codes are wiped when the service ends.</p>
             )}
+            {admin && confirmFresh && (
+              <div className="rounded-xl px-3 py-2.5 flex flex-col gap-2"
+                style={{ background: "var(--bg-hover)", border: "1px solid var(--border-subtle)" }}>
+                <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
+                  Start the came in / went out figures from zero?
+                </p>
+                <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                  For a new session. <strong>Nothing is deleted</strong> — everything counted so far is kept, and
+                  Analytics still shows the whole day. The service recording and the attendance figures are untouched.
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setConfirmFresh(false); act("fresh", servicesApi.freshCounts); }}
+                    disabled={busy === "fresh"}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+                    Yes, start fresh
+                  </button>
+                  <button onClick={() => setConfirmFresh(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-gray-300" style={{ background: "var(--bg-card)" }}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
             {admin && (
               <div className="flex flex-wrap items-center gap-2">
                 <button onClick={() => act(live.id, () => servicesApi.end(live.id))} disabled={busy === live.id}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50">
                   <Square size={11} /> End the service now
                 </button>
-                <button onClick={() => act("fresh", servicesApi.freshCounts)} disabled={busy === "fresh"}
+                <button onClick={() => setConfirmFresh(true)} disabled={busy === "fresh" || confirmFresh}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50"
                   title="The came in / went out figures start again from zero. Every reading is kept.">
                   <RotateCcw size={11} /> {busy === "fresh" ? "Starting fresh…" : "Start the in / out counts fresh"}

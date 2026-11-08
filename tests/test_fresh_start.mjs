@@ -152,5 +152,27 @@ const day = [[...morning, ...afternoon]];
   ok("reset() still forgets the people as well", tr.update([], now + 400) === 0 && tr.entries === 0);
 }
 
+// 10. It asks first. Starting fresh changes what every figure on the page
+//     means for the rest of the session, and the button sits beside a row of
+//     harmless ones — a stray click should not be the whole of it. Asked in
+//     the page, not in one of the browser's own boxes: those appear for
+//     reloads too, cannot say why they are asking, and teach people to click
+//     through warnings without reading them.
+{
+  const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
+  ok("the button asks before doing anything", /setFreshAsking\(true\)/.test(card));
+  ok("the question says what it does",
+     /Start the came in \/ went out figures from zero\?/.test(card));
+  ok("and says nothing is deleted", /<strong>Nothing is deleted<\/strong>/.test(card));
+  ok("there is a way to say yes", /Yes, start fresh/.test(card));
+  ok("and a way to say no", /Cancel/.test(card));
+  ok("only the yes actually starts fresh",
+     /onFreshStart!\(\)/.test(card) && !/onClick=\{async \(\) => \{\s*setFreshing\(true\); setFreshErr\(null\);\s*try \{ await onFreshStart\(\)/.test(card));
+
+  const services = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
+  ok("the Services page asks too", /setConfirmFresh\(true\)/.test(services)
+     && /Start the came in \/ went out figures from zero\?/.test(services));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good");
 process.exit(fails ? 1 : 0);
