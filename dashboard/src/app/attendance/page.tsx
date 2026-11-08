@@ -1235,6 +1235,11 @@ export default function AttendancePage() {
   // People in the building, counted at the door. See the worker's venueTotal:
   // a camera on a doorway sees people passing through, which is not an
   // attendance figure — they have to add up.
+  // The headline reads the same figure the Sessions page and everything else
+  // reads — venue total_current — rather than working out its own. Three pages
+  // each deciding what "how many are here" means is how 1, 9 and 13 ended up
+  // on the screen at the same moment.
+  const seenNow = (venueTotal as { seen_now?: number } | null)?.seen_now ?? venueTotal?.total_current ?? 0;
   const inBuilding = edge && isToday ? venueTotal?.in_building ?? null : null;
   // There IS a camera on the entrance, but its count isn't being used for the
   // headline. Rather than quietly showing a different figure under the same
@@ -1249,7 +1254,8 @@ export default function AttendancePage() {
     serverHasBrowserCameras: edge,
     isToday,
     metric,
-    inBuilding,
+    // total_current is already the agreed figure; nothing to override.
+    inBuilding: null,
   });
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
@@ -1414,21 +1420,21 @@ export default function AttendancePage() {
                       built from arrivals and departures can drift — anyone
                       missed at the door is missed all day — so it never
                       appears without saying what it is. */}
-                  {metric === "people" && doorExplained && (
-                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
-                      This is what the cameras can <strong style={{ color: "var(--text-secondary)" }}>see right now</strong>, not everyone in the building.
-                      {slowDoor
-                        ? ` Kyro can't add up the entrance count yet: “${slowDoor.camera_name}” is managing ${slowDoor.fps ?? 0} counts a second
-                           and needs ${slowDoor.fps_needed ?? 3} to follow people through a doorway. Closing other programs on the counting
-                           computer, or giving that camera its own USB socket, is what speeds it up.`
-                        : " The entrance camera isn't counting at the moment, so there is nothing to add up."}
+                  {metric === "people" && doorExplained && slowDoor && (
+                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 4, lineHeight: 1.45 }}>
+                      “{slowDoor.camera_name}” is managing {slowDoor.fps ?? 0} counts a second and needs {slowDoor.fps_needed ?? 3} to
+                      follow people through a doorway, so its count isn&apos;t being added up yet.
                     </p>
                   )}
-                  {metric === "people" && typeof inBuilding === "number" && (
+                  {metric === "people" && isToday && edge && (
                     <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
-                      Counted at the entrance: <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.came_in_all ?? 0).toLocaleString()} came in</strong>
-                      {" − "}<strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.went_out_all ?? 0).toLocaleString()} went out</strong>.
-                      {" "}The cameras can see {(venueTotal?.total_current ?? 0).toLocaleString()} right now.
+                      The cameras can see <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong> right now
+                      {typeof inBuilding === "number"
+                        ? <>, and the entrance has counted <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.came_in_all ?? 0).toLocaleString()} in</strong> and{" "}
+                           <strong style={{ color: "var(--text-secondary)" }}>{(venueTotal?.went_out_all ?? 0).toLocaleString()} out</strong>. Kyro shows whichever
+                           is larger, because no camera sees a whole hall and the number must never be less than what is plainly in shot.</>
+                        : <>. No camera is counting people through a doorway well enough to add arrivals up, so this is what can be seen
+                           — a floor, not the whole building.</>}
                     </p>
                   )}
                   {showVsYesterday && isToday && (

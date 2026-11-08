@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-9382db1e59b3";
+const VENUE_CODE = "venue-cfd98d3917e1";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -919,6 +919,29 @@ export class VenueHub extends DurableObject {
     const faceTrouble = await this.get("face_error", null);
     // Loaded and looking, as of the last report from the counting browser.
     const faceReadyAt = await this.get("face_ready_at", 0);
+    // ── One number for "how many people are here" ──────────────────────────
+    //
+    // There were three, and all three were on the screen at once: the cameras
+    // could see 9, the Sessions page said 13, and the headline said 1. Each
+    // was answering a different question honestly and the church was left to
+    // guess which one to believe.
+    //
+    // There is one rule now, used everywhere.
+    //
+    // What the cameras can see is a FLOOR: those people are demonstrably in
+    // the building. No camera sees a whole hall, so it is almost always too
+    // low. What the entrance has counted in, less what it has counted out, is
+    // better when the door camera is keeping up — and nonsense when it isn't,
+    // which is how the headline came to read 1 with nine people in shot.
+    //
+    // So: whichever is larger. It can never contradict what is plainly visible,
+    // and it takes the door's word when the door has seen more than the room.
+    // The page shows both parts underneath, so the number is never a mystery.
+    const seenNow = Math.max(0, sum("current") - twice);
+    const doorNet = hasDoor && trustInOut
+      ? Math.max(0, sumDoors("entries_all") - sumDoors("exits_all"))
+      : null;
+    const hereNow = Math.max(seenNow, doorNet ?? 0);
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
@@ -933,7 +956,11 @@ export class VenueHub extends DurableObject {
       // couldn't be loaded there.
       face_error: faceTrouble && faceNow - faceTrouble.at < 5 * 60_000 ? faceTrouble.message : null,
       in_out_available: trustInOut,
-      total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"),
+      // The one figure. Every page reads this.
+      total_current: hereNow,
+      /** What the cameras can actually see right now — the floor. */
+      seen_now: seenNow,
+      total_peak: sum("peak"),
       total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
       // How many people are in the building, counted at the door: everyone who
       // has come in today, less everyone who has gone out.
@@ -950,9 +977,7 @@ export class VenueHub extends DurableObject {
       // day, both ways. So it is only offered when a camera is actually on the
       // door and counting fast enough to follow people through it, and the
       // page says plainly where the figure came from.
-      in_building: hasDoor && trustInOut
-        ? Math.max(0, sumDoors("entries_all") - sumDoors("exits_all"))
-        : null,
+      in_building: doorNet,
       // The two running totals it is made of, so the page can show its
       // working. Deliberately NOT total_entries / total_exits: those answer
       // "this session", which after a fresh start is a different question and
@@ -966,7 +991,7 @@ export class VenueHub extends DurableObject {
       // steps out of the entrance camera's view and comes back can be counted
       // as arriving twice, and the page should not pretend otherwise.
       face_matching: faceOn,
-      total_capacity: cap, venue_occupancy_pct: cap ? Math.round((Math.max(0, sum("current") - twice) / cap) * 1000) / 10 : 0,
+      total_capacity: cap, venue_occupancy_pct: cap ? Math.round((hereNow / cap) * 1000) / 10 : 0,
       zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
       // How many rooms those cameras add up to, so the page can say when two
       // of them are watching the same one.
