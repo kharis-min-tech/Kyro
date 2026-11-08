@@ -45,7 +45,7 @@ import type { Camera, VenueTotal, ZoneLive } from "@/types";
 import {
   Video, WifiOff, Users, ArrowUpRight, ArrowDownLeft,
   Maximize2, AlertTriangle, CheckCircle, XCircle,
-  Armchair, ChevronDown, ChevronUp, Minus, Plus,
+  Armchair, ChevronDown, ChevronUp, Minus, Plus, Play,
 } from "lucide-react";
 
 const BG      = "var(--bg-base)";
@@ -210,6 +210,10 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
     v.play().then(() => setErr(null)).catch(() => {});
   };
 
+  // Only offer to start when pressing it would actually do something: the
+  // engine is here, idle, and this person is allowed to count.
+  const canStart = !!counting && counting.allowed && counting.phase === "idle" && det.state === "off";
+
   const detBadge = (() => {
     if (!cameraId) return null;
     switch (det.state) {
@@ -234,7 +238,19 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
       <video ref={videoRef} autoPlay playsInline muted
         className="absolute inset-0 w-full h-full object-cover"
         style={{ background: "#000" }} />
-      {detBadge && (
+      {/* Counting is off, and this is a camera on this very computer — so the
+          tile can just switch it on. Sending the operator to another page to
+          press a button that could be here is how a working camera sat there
+          showing nothing. */}
+      {canStart ? (
+        <button type="button"
+          onClick={(e) => { e.stopPropagation(); counting?.start().catch(() => {}); }}
+          className="absolute bottom-2 left-2 px-2.5 py-1 rounded-full flex items-center gap-1.5 hover:opacity-90"
+          style={{ background: "rgba(79,70,229,0.92)", color: "#fff", fontSize: 10, fontWeight: 600 }}>
+          <Play size={10} />
+          {counting?.needsPermission ? "Allow the camera and start" : "Start counting"}
+        </button>
+      ) : detBadge && (
         <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-full flex items-center gap-1.5"
           style={{ background: detBadge.bg, color: "#fff", fontSize: 10, fontWeight: 600 }}
           title={det.message ?? undefined}>
