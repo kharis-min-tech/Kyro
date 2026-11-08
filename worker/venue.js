@@ -100,6 +100,49 @@ const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_questi
  * Returns true once there is something real to compare against, which is what
  * tells the website it may show these figures at all.
  */
+/**
+ * One room's figures from however many cameras are watching it.
+ *
+ * Kyro added its cameras together. Point two at the same room — which is the
+ * obvious thing to do, to cover it properly — and every person in it was
+ * counted twice. The only thing that ever took a duplicate back out was face
+ * matching, which is biometric, off by default, and only runs during a live
+ * service; without it the headline was simply double.
+ *
+ * Cameras that share a zone name are views of ONE room, so the room holds the
+ * fullest view, never the sum. Two cameras seeing 13 and 11 of the same room
+ * means about 13 people, not 24. It is still an estimate — a camera that can
+ * only see half the room reports half — but it cannot be wildly over, and
+ * being over is what makes a count worthless.
+ *
+ * Cameras in different zones are different rooms and are still added up.
+ */
+function roomTotals(zones) {
+  const rooms = new Map();
+  for (const z of zones) {
+    const key = String(z.zone_name || z.camera_id || "").trim().toLowerCase();
+    const r = rooms.get(key);
+    const take = (a, b) => Math.max(a || 0, b || 0);
+    if (!r) {
+      rooms.set(key, {
+        zone_name: z.zone_name, cameras: 1,
+        current: z.current || 0, peak: z.peak || 0,
+        entries: z.entries || 0, exits: z.exits || 0, capacity: z.capacity || 0,
+      });
+    } else {
+      r.cameras++;
+      r.current = take(r.current, z.current);
+      r.peak = take(r.peak, z.peak);
+      // Arrivals and departures double in exactly the same way.
+      r.entries = take(r.entries, z.entries);
+      r.exits = take(r.exits, z.exits);
+      // One room's seats are its seats, however many cameras watch them.
+      r.capacity = take(r.capacity, z.capacity);
+    }
+  }
+  return [...rooms.values()];
+}
+
 function countedMovement(counters, row, arrivals, departures, hour) {
   const e = Math.max(0, Number(row.entries) || 0);
   const x = Math.max(0, Number(row.exits) || 0);
@@ -679,13 +722,17 @@ export class VenueHub extends DurableObject {
         in_out: (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
       };
     });
-    const sum = (k) => zones.reduce((n, z) => n + (z[k] || 0), 0);
+    // Cameras watching the same room are one room, not two — see roomTotals.
+    const rooms = roomTotals(zones);
+    const sum = (k) => rooms.reduce((n, r) => n + (r[k] || 0), 0);
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = zones.filter((z) => z.is_running);
     let twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
-    // Someone can't be double-counted more often than the smaller overlapping camera sees people.
-    const counts = running.map((z) => z.current || 0).sort((a, b) => b - a);
+    // Overlap inside one room is already gone; only people seen in two
+    // different rooms at once are left to take out, and never more than the
+    // smaller rooms hold.
+    const counts = rooms.map((r) => r.current || 0).sort((a, b) => b - a);
     twice = Math.min(twice, counts.slice(1).reduce((a, b) => a + b, 0));
     const trustInOut = zones.some((z) => z.is_running && z.in_out);
     return {
@@ -695,6 +742,9 @@ export class VenueHub extends DurableObject {
       total_entries: trustInOut ? sum("entries") : null, total_exits: trustInOut ? sum("exits") : null,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((Math.max(0, sum("current") - twice) / cap) * 1000) / 10 : 0,
       zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
+      // How many rooms those cameras add up to, so the page can say when two
+      // of them are watching the same one.
+      rooms_total: rooms.length,
     };
   }
 

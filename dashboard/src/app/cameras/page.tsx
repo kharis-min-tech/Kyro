@@ -1596,6 +1596,14 @@ function HelpPanel() {
 
 export default function CamerasPage() {
   const { cameras, loading, error, refresh, updateCamera, deleteCamera } = useCameras();
+  // More than one camera, every one in a zone of its own: either they really
+  // are separate rooms, or everyone is being counted once per camera.
+  const sameRoomWarning = (() => {
+    const counting = cameras.filter((c) => !isQueueCamera(c));
+    if (counting.length < 2) return 0;
+    const zones = new Set(counting.map((c) => (c.zone_name || c.name || "").trim().toLowerCase()));
+    return zones.size === counting.length ? counting.length : 0;
+  })();
   const { role } = useAuth();
   // Operators run the services in-building and need to add cameras too — the
   // previous admin-only gate meant anyone signed in as an operator saw the
@@ -1663,6 +1671,24 @@ export default function CamerasPage() {
 
         {(!error || edge) && loading && (
           <p className="text-sm text-gray-500 py-8 text-center">Loading cameras…</p>
+        )}
+
+        {/* Two cameras in two zones are two rooms, and Kyro adds rooms up. Point
+            both at the same room without saying so and everyone in it is
+            counted twice — which is exactly what happens when the zone is left
+            blank, because it then takes the camera's own name. */}
+        {(!error || edge) && !loading && sameRoomWarning && (
+          <div className="rounded-xl p-3 mb-4 flex items-start gap-2"
+            style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
+            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-200 leading-relaxed">
+              You have {sameRoomWarning} cameras, each in its own zone, so Kyro counts them as
+              {" "}{sameRoomWarning} separate rooms and adds the numbers together.{" "}
+              <strong>If they are watching the same room, give them the same Zone name</strong>
+              {" "}(tap the pencil beside Zone below). Kyro then takes the fullest view instead of
+              the total, so nobody is counted twice.
+            </p>
+          </div>
         )}
 
         {(!error || edge) && !loading && cameras.length > 0 && (
