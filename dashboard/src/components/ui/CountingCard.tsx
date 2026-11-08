@@ -51,7 +51,7 @@ export function CountingCard() {
                    pictures other devices see stop arriving. Moving between
                    Kyro's own pages is fine; leaving Kyro on screen is not
                    optional. */
-                ? "You can move around Kyro freely — counting carries on. Keep this tab the one on screen, though: every browser slows a tab right down once you switch to another tab or app, and counting slows with it."
+                ? "You can move around Kyro freely — counting carries on. Keep this tab on screen, though: every browser slows a tab right down once you switch to another tab or app. Closing it, or reloading, stops counting and starts the figures again."
                 : needsPermission
                 ? "Your browser hasn't let Kyro use the camera yet. That first tap is the browser's rule — after it, counting starts by itself whenever a camera is plugged in."
                 : "Plug your camera into this computer — straight in, or a wireless transmitter's receiver through a capture card. Counting starts by itself."}

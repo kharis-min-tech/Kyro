@@ -59,5 +59,21 @@ ok("no page inside Kyro is reached by reloading the browser", offenders.length =
   ok("being signed out still starts afresh", /location\.href\s*=\s*"\/login"/.test(guard));
 }
 
+// Kyro must not put a browser "Leave site?" box in the way. It fires on every
+// reload as well as on leaving, cannot say why it is asking, and so amounts to
+// a warning people learn to click through without reading. The Cameras page
+// says counting stops when the tab is closed, where it can actually be read.
+{
+  const offenders = [];
+  for (const file of walk(srcDir)) {
+    const text = fs.readFileSync(file, "utf8");
+    if (/beforeunload/.test(text)) offenders.push(path.relative(root, file));
+  }
+  ok("nothing asks the browser to confirm leaving", offenders.length === 0, offenders.join(", "));
+
+  const card = fs.readFileSync(path.join(srcDir, "components/ui/CountingCard.tsx"), "utf8");
+  ok("the Cameras page says so instead", /Closing it, or reloading, stops counting/.test(card));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Moving between sections keeps the count.");
 process.exit(fails ? 1 : 0);

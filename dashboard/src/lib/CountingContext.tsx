@@ -454,16 +454,21 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     lock();
     const onVis = () => { if (document.visibilityState === "visible") lock(); };
     const onDevices = () => { syncCameras().catch(() => {}); };
-    // Closing the tab really does stop counting, so it is still worth a warning.
-    const onLeave = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    // No "Leave site?" box.
+    //
+    // Closing the tab really does stop counting, and this asked before letting
+    // it happen. But the browser shows that box for every reload too, and it
+    // cannot tell the operator why it is asking — so what it amounted to in
+    // practice was a warning on every refresh, which teaches people to click
+    // through warnings without reading them. The Cameras page says plainly
+    // that counting stops when the tab is closed; that is the right place for
+    // it, where it can be read rather than dismissed.
     document.addEventListener("visibilitychange", onVis);
     navigator.mediaDevices.addEventListener("devicechange", onDevices);
-    window.addEventListener("beforeunload", onLeave);
     const poll = setInterval(onDevices, 10_000);   // some browsers don't announce plug-ins
     return () => {
       document.removeEventListener("visibilitychange", onVis);
       navigator.mediaDevices.removeEventListener("devicechange", onDevices);
-      window.removeEventListener("beforeunload", onLeave);
       clearInterval(poll);
     };
   }, [phase, syncCameras]);
