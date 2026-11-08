@@ -77,6 +77,22 @@ const DOOR_GRACE_MS = 5 * 60_000;
  * about the door.
  */
 const RETURN_BY_PLACE_MS = 15_000;
+/**
+ * How long someone must be out of a doorway camera's view before their
+ * departure is counted.
+ *
+ * Separate from how long their track is kept. Waiting the whole grace before
+ * counting meant watching a room empty with the figure five minutes behind —
+ * no use to anyone standing there. Eight seconds is long enough that stepping
+ * behind the person in front doesn't count as leaving, and short enough to
+ * watch the room empty as it happens.
+ *
+ * The track lives on afterwards, marked as already counted, so the same person
+ * coming back is still recognised and never counted twice. Prompt and careful
+ * are not in conflict here — they were only tied together by one number doing
+ * both jobs.
+ */
+const DOOR_DECIDE_MS = 8_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;
@@ -91,6 +107,8 @@ interface Track {
   face: Float32Array | null;   // their face code, when one could be read
   /** Where they were first seen, for a doorway camera to tell which way they went. */
   firstBox: [number, number, number, number];
+  /** Already added to the arrivals or departures, so never added again. */
+  tallied: boolean;
 }
 
 /**
@@ -279,22 +297,30 @@ export class PersonTracker {
         if (!t.counted && t.score >= SCORE_TO_CONFIRM) { t.counted = true; if (!this.inward) this.entries++; }
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, face: faces?.[bi] ?? null });
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false, face: faces?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
-      if (now - t.lastSeen < (this.inward ? DOOR_GRACE_MS : GRACE_MS)) return true;
-      if (t.counted) {
-        if (this.inward) {
-          // A doorway: they have gone, so now we can say which way.
+      const gone = now - t.lastSeen;
+
+      if (this.inward) {
+        // A doorway. Count them as soon as they have clearly gone — eight
+        // seconds — rather than at the end of the grace, so a room emptying
+        // can be watched as it happens. The track is kept afterwards, marked
+        // as counted, so the same person coming back is recognised and never
+        // counted a second time.
+        if (t.counted && !t.tallied && gone >= DOOR_DECIDE_MS) {
           const went = wentIn(t.firstBox, t.box, this.inward);
           if (went === true) this.entries++;
           else if (went === false) this.exits++;
           // null = they stood by the door and went back the way they came.
-        } else {
-          this.exits++;   // a room: only people we'd counted as arriving can leave
+          t.tallied = true;
         }
+        return gone < DOOR_GRACE_MS;
       }
+
+      if (gone < GRACE_MS) return true;
+      if (t.counted) this.exits++;   // a room: only people we'd counted as arriving can leave
       return false;
     });
 
