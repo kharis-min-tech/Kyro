@@ -736,7 +736,8 @@ export class VenueHub extends DurableObject {
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
-    let twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
+    const faceOn = (await this.privacy()).face_matching && !!(await this.get("service_live", null));
+    let twice = faceOn ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
     // Overlap inside one room is already gone; only people seen in two
     // different rooms at once are left to take out, and never more than the
     // smaller rooms hold.
@@ -759,6 +760,10 @@ export class VenueHub extends DurableObject {
       // Whether a camera is actually watching the door, so the page can say
       // where the arrivals and departures came from.
       in_out_from_door: hasDoor,
+      // Whether faces are being matched right now. Without it, someone who
+      // steps out of the entrance camera's view and comes back can be counted
+      // as arriving twice, and the page should not pretend otherwise.
+      face_matching: faceOn,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((Math.max(0, sum("current") - twice) / cap) * 1000) / 10 : 0,
       zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
       // How many rooms those cameras add up to, so the page can say when two
