@@ -54,7 +54,14 @@ const hereNow = (seen, door, room = 0) => Math.max(seen, door ?? room);
 //    less everyone out" does not come back down when a hall empties — one
 //    missed departure and a service would run until midnight.
 {
-  ok("service tracking uses what can be seen", /const people = v\.seen_now \?\? v\.total_current;/.test(src));
+  // Whether a service is running goes by what the cameras can see…
+  ok("starting and ending a service goes by what can be seen",
+     /const seen = v\.seen_now \?\? v\.total_current;/.test(src)
+     && /if \(seen >= SERVICE_START_PEOPLE\)/.test(src)
+     && /if \(seen >= SERVICE_END_PEOPLE\)/.test(src));
+  // …but how busy it got is the figure every page shows, or "Here now 81"
+  // sits next to "Busiest 19", which cannot be true of anything.
+  ok("how busy it got is the figure every page shows", /const people = v\.total_current;/.test(src));
 }
 
 // 4. The rule lives in the website, once, and the parts are published with it

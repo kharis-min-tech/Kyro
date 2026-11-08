@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-d1e3fe0c93a5";
+const VENUE_CODE = "venue-b139eefe02ef";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -1652,17 +1652,24 @@ export class VenueHub extends DurableObject {
 
   async trackService(now) {
     const v = await this.venueTotal();
-    // What the cameras can SEE, deliberately — not the headline figure. A
-    // service starts when people are in the room and ends when the room is
-    // empty, and "everyone counted in less everyone counted out" doesn't come
-    // back down to nothing when a hall empties: one missed departure and the
-    // service would run until midnight.
-    const people = v.seen_now ?? v.total_current;
+    // Two different jobs, two different figures, and using one for both put
+    // "Here now 81" next to "Busiest 19" — which cannot be true of anything.
+    //
+    // Whether a service is running goes by what the cameras can SEE: it starts
+    // when people are in the room and ends when the room is empty, and
+    // "everyone counted in less everyone counted out" never comes back down to
+    // nothing — one missed departure and a service would record until
+    // midnight.
+    //
+    // How busy it got is the figure every page shows, or the service's own
+    // record would contradict what was on the screen all the way through it.
+    const seen = v.seen_now ?? v.total_current;
+    const people = v.total_current;
     const st = await this.get("service_state", { busy_since: null, quiet_since: null });
     let live = await this.get("service_live", null);
     let dirty = false;
     if (!live) {
-      if (people >= SERVICE_START_PEOPLE) {
+      if (seen >= SERVICE_START_PEOPLE) {
         if (!st.busy_since) { st.busy_since = now; dirty = true; }
         if (now - st.busy_since >= SERVICE_START_MS) {
           live = { id: `svc-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`, name: serviceName(st.busy_since),
@@ -1672,7 +1679,7 @@ export class VenueHub extends DurableObject {
           await this.ctx.storage.put("service_live", live);
           dirty = true;
         }
-      } else if (st.busy_since) { st.busy_since = null; dirty = true; }
+      } else if (st.busy_since) { st.busy_since = null; dirty = true; }   // the room emptied again
     } else {
       // "Busiest" only counts a number that held for PEAK_HOLD_MS: a moment's flicker (or the
       // seconds before face matching merges people seen on two cameras) isn't recorded.
@@ -1683,7 +1690,7 @@ export class VenueHub extends DurableObject {
       const nowByRoom = {};
       for (const z of v.zones) nowByRoom[z.zone_name] = (nowByRoom[z.zone_name] ?? 0) + (z.current || 0);
       for (const [room, n] of Object.entries(nowByRoom)) live.rooms[room] = Math.max(live.rooms[room] ?? 0, n);
-      if (people >= SERVICE_END_PEOPLE) { if (st.quiet_since) { st.quiet_since = null; dirty = true; } }
+      if (seen >= SERVICE_END_PEOPLE) { if (st.quiet_since) { st.quiet_since = null; dirty = true; } }
       else if (!st.quiet_since) { st.quiet_since = now; dirty = true; }
       await this.ctx.storage.put("service_live", live);
       // If every camera computer goes off, no reports come in: a timer still ends the service.
