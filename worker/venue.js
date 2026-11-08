@@ -637,7 +637,13 @@ export class VenueHub extends DurableObject {
     server.serializeAttachment({ kind: "box", device: device.id });
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
     this.tellBox(device.id, null, server);
-    return new Response(null, { status: 101, webSocket: client });
+    // Echo the protocol back when one was offered, or a browser refuses the
+    // connection. The installed camera computer offers none and is unaffected.
+    const offered = request.headers.get("Sec-WebSocket-Protocol");
+    return new Response(null, {
+      status: 101, webSocket: client,
+      ...(offered ? { headers: { "Sec-WebSocket-Protocol": "kyro" } } : {}),
+    });
   }
 
   async watch(camera_id, request) {

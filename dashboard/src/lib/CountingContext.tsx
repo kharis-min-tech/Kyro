@@ -17,10 +17,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  loadEngine, listCameras, openCamera, cameraKey, grab, countPeople,
+  loadEngine, listCameras, openCamera, cameraKey, grab, countPeople, savedDevice,
   sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
+import { startLiveStream } from "@/lib/liveStream";
 import { PersonTracker } from "@/lib/personTracker";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
@@ -466,6 +467,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       clearInterval(poll);
     };
   }, [phase, syncCameras]);
+
+  // Live video to anyone watching from another device. Only runs while a
+  // camera is actually being watched — see lib/liveStream.ts.
+  useEffect(() => {
+    if (phase !== "running" || demoRef.current) return;
+    const dev = savedDevice();
+    if (!dev) return;
+    const stop = startLiveStream({
+      token: dev.token,
+      frameFor: (key) => cams.current.get(key)?.video ?? null,
+    });
+    return stop;
+  }, [phase]);
 
   // Tell the rest of the page that this browser is the counter, so nothing
   // reloads it out from under a service. CrashRecovery reads this.

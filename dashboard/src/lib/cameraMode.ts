@@ -148,7 +148,7 @@ export async function cameraKey(deviceId: string): Promise<string> {
 
 interface DeviceCred { device_id: string; token: string }
 
-function savedDevice(): DeviceCred | null {
+export function savedDevice(): DeviceCred | null {
   try { const d = JSON.parse(localStorage.getItem(DEVICE_KEY) ?? "null"); return d?.token ? d : null; } catch { return null; }
 }
 

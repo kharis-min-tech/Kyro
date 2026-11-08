@@ -102,6 +102,18 @@ export default {
         headers.delete("X-Kyro-User");
         headers.delete("X-Kyro-Pages");
         headers.delete("X-Kyro-Username");
+        // The counting browser sends live video the same way the installed
+        // camera computer does, over /api/devices/stream. A browser cannot put
+        // a header on a WebSocket, so its device token arrives as the second
+        // "protocol" — exactly as the live-video viewer below does it — and is
+        // turned back into the Authorization header the device check expects.
+        if (url.pathname === "/api/devices/stream" && request.headers.get("Upgrade") === "websocket") {
+          const proto = request.headers.get("Sec-WebSocket-Protocol");
+          if (proto && !headers.get("Authorization")) {
+            const [name, token] = proto.split(",").map((x) => x.trim());
+            if (name === "kyro" && token) headers.set("Authorization", `Bearer ${token}`);
+          }
+        }
         if (url.pathname.startsWith("/api/live/")) {
           // A browser can't add headers to a WebSocket, so live video sends the
           // sign-in token as its second "protocol" instead: ["kyro", token].
