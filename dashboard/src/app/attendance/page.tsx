@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
 import { useCameras } from "@/hooks/useCameras";
 import { tileCount } from "@/lib/tileCount";
+import { headlineTotal } from "@/lib/headlineTotal";
 import { useCounting } from "@/lib/CountingContext";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { camerasApi } from "@/lib/api";
@@ -1148,13 +1149,17 @@ export default function AttendancePage() {
     };
   }, []);
 
-  const manualApplies = isToday && (metric === "people" || metric === "entries");
-  const browserApplies = isToday && (metric === "people" || metric === "entries");
-  const displayTotal = (isToday
-    ? metricNow
-    : (historicalData?.total ?? 0))
-    + (manualApplies ? manualTotalToday : 0)
-    + (browserApplies ? browserTotalNow : 0);
+  // See lib/headlineTotal.ts: in Live mode the server's figure already contains
+  // the cameras counting in this browser, because they report like any other
+  // camera. Adding them here as well counted everyone twice.
+  const displayTotal = headlineTotal({
+    base: isToday ? metricNow : (historicalData?.total ?? 0),
+    manualToday: manualTotalToday,
+    browserNow: browserTotalNow,
+    serverHasBrowserCameras: edge,
+    isToday,
+    metric,
+  });
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
   // Edge Live: "Live" only while at least one camera is actually reporting.
