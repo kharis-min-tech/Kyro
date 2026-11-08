@@ -23,6 +23,7 @@ import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { CountingCard } from "@/components/ui/CountingCard";
 import { useCounting } from "@/lib/CountingContext";
 import { FaceMatching } from "@/components/ui/FaceMatching";
+import { scanOutcome } from "@/lib/cameraScan";
 
 // ─── Queue camera detection ───────────────────────────────────────────────────
 
@@ -600,6 +601,9 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
   const [showAll, setShowAll]         = useState(false);
   const [pickedId, setPickedId]       = useState<string | null>(null);
   const [detectErr, setDetectErr]     = useState<string | null>(null);
+  // Separate from detectErr: "nothing new, here's everything" is not a fault,
+  // and dressing it up as a warning is what made a working camera look broken.
+  const [detectNote, setDetectNote]   = useState<string | null>(null);
   const [scanned, setScanned]         = useState(false);
 
   const supportsMediaDevices = typeof navigator !== "undefined"
@@ -629,6 +633,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
     }
     setDetecting(true);
     setDetectErr(null);
+    setDetectNote(null);
     setScanned(true);
     try {
       // One-shot permission request so the subsequent enumerate() returns
@@ -640,18 +645,17 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
         .filter((d) => d.kind === "videoinput")
         .map((d, i) => ({ id: d.deviceId, label: d.label || `Camera ${i + 1}` }));
       setAllDevices(vids);
-      const base = baselineIds ?? new Set<string>();
-      const fresh = vids.filter((v) => !base.has(v.id));
-      setNewDevices(fresh);
-      if (fresh.length === 0) {
-        setDetectErr("No new camera found — nothing was plugged in. Connect a camera, then tap Scan again.");
-      }
+      const outcome = scanOutcome(vids, baselineIds ?? new Set<string>());
+      setNewDevices(outcome.fresh);
+      setDetectNote(outcome.note);
+      setDetectErr(outcome.problem);
+      if (outcome.showAll) setShowAll(true);
     } catch (e: unknown) {
       const name = (e as Error)?.name;
       if (name === "NotAllowedError") {
         setDetectErr("Camera access blocked. Allow it in your browser's address bar and try again.");
       } else if (name === "NotFoundError") {
-        setDetectErr("No cameras found on this device at all.");
+        setDetectErr("Kyro can't see any camera on this computer. Check the cable is pushed in at both ends, then tap Scan again.");
       } else {
         setDetectErr("Couldn't scan for cameras. Try reloading the page.");
       }
@@ -955,7 +959,9 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                      {newDevices.length > 0 ? `New camera${newDevices.length !== 1 ? "s" : ""} detected` : "Scan result"}
+                      {newDevices.length > 0
+                        ? `New camera${newDevices.length !== 1 ? "s" : ""} detected`
+                        : allDevices.length > 0 ? "Cameras on this computer" : "Scan result"}
                     </p>
                     <button type="button" onClick={detect} disabled={detecting}
                       className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50"
@@ -970,6 +976,16 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                       <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
                       <p className="text-xs text-amber-200">{detectErr}</p>
                     </div>
+                  )}
+
+                  {/* Not a warning — nothing is wrong, it just explains why the
+                      camera isn't flagged as new. Amber here was read as a
+                      failure and sent the operator looking for a fault. */}
+                  {detectNote && (
+                    <p className="text-xs leading-relaxed rounded-xl p-3"
+                      style={{ background: "var(--bg-hover)", color: "var(--text-tertiary)", border: "1px solid var(--border-subtle)" }}>
+                      {detectNote}
+                    </p>
                   )}
 
                   {newDevices.length > 0 && (
@@ -995,7 +1011,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                       <button type="button" onClick={() => setShowAll((v) => !v)}
                         className="text-xs" style={{ color: "var(--text-muted)" }}>
                         {showAll
-                          ? "Hide already-connected cameras"
+                          ? "Hide the full list"
                           : `Show already-connected cameras (${allDevices.length - newDevices.length})`}
                       </button>
                       {showAll && (
