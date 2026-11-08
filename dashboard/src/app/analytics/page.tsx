@@ -617,7 +617,10 @@ export default function AnalyticsPage() {
             {summary && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <Stat label="Total services" value={summary.total_sessions} sub={edge ? `Last ${EDGE_DAYS} days` : "Last 6 months"} icon={Calendar} accent="#6366f1"/>
-                <Stat label={edge ? "Peak" : "All-time peak"} value={summary.all_time_peak.toLocaleString()} sub={edge ? `Most at once, last ${EDGE_DAYS} days` : "Single service record"} icon={TrendingUp} accent="#f59e0b"/>
+                <Stat label={edge ? "Busiest day" : "All-time peak"}
+                  value={((summary as { busiest_day?: number }).busiest_day ?? summary.all_time_peak).toLocaleString()}
+                  sub={edge ? `Most who came in on one day · ${summary.all_time_peak.toLocaleString()} seen at once` : "Single service record"}
+                  icon={TrendingUp} accent="#f59e0b"/>
                 <Stat label="Average attendance" value={Math.round(summary.avg_attendance).toLocaleString()}
                   sub={trend!==0?`${trend>0?"↑":"↓"} ${Math.abs(trend)}% vs prior period`:"Stable"} icon={Users} accent="#4ade80"/>
                 <Stat label="Avg occupancy" value={`${summary.avg_occupancy_pct}%`} sub="Of seat capacity" icon={BarChart2} accent="#818cf8"/>
@@ -628,9 +631,14 @@ export default function AnalyticsPage() {
                 room, which can only report its own corner of a wide hall — and
                 until now Analytics used the room's view while the live page
                 used the door's, so the two disagreed. */}
-            {summary && (summary as { from_door?: boolean }).from_door && (
-              <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
-                Attendance is counted at the entrance: everyone who came in, less everyone who went out.
+            {summary && (
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+                {(summary as { attendance_is_arrivals?: boolean }).attendance_is_arrivals
+                  ? <><strong style={{ color: "var(--text-secondary)" }}>Attendance is how many people came in</strong>, as the cameras counted
+                      them walking in — not how many were in shot at one moment. No camera sees a whole hall, so
+                      &quot;seen at once&quot; is always the smaller number and is never the attendance.</>
+                  : <>No camera counted anyone in or out on these days, so attendance falls back to the most the cameras saw at
+                      once. That is a floor, not an answer — a camera sees its own corner of a room.</>}
                 {summary.avg_occupancy_pct === 0 && " Occupancy stays at 0% until the rooms have their number of seats set, on the Cameras page."}
               </p>
             )}

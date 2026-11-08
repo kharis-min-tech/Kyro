@@ -63,17 +63,21 @@ const min = 60_000;
     door: { camera_id: "door", location: "entrance", zone_capacity: 0 },
   };
   const out = await run({ rows, cams });
-  // The day's attendance is still what the cameras saw. I had this replaced by
-  // the door's net — everyone in less everyone out — until an afternoon when
-  // about 900 people were in the building and the door camera, too slow to
-  // follow anyone through a doorway, made it 106. A figure from one camera
-  // does not get to overwrite the rest.
-  ok("the day's attendance is what the cameras saw",
-     out.summary.all_time_peak > 0 && out.summary.all_time_peak < 100,
-     `peak ${out.summary.all_time_peak}`);
+  // A day's attendance is how many people came IN. "Most at once" is a
+  // different and much smaller number: a camera sees its own corner of a hall,
+  // so on an afternoon with about 900 people in the building the most seen at
+  // once was 19 — and 19 was being reported as the day's attendance.
+  ok("the day's attendance is how many came in",
+     out.history[0].attendance === 200, `got ${out.history[0].attendance}`);
+  ok("what the cameras saw at once is kept as its own figure",
+     out.history[0].seen_at_once > 0 && out.history[0].seen_at_once < 30,
+     `got ${out.history[0].seen_at_once}`);
+  ok("and 'most at once' stays what it says it is",
+     out.summary.all_time_peak === out.history[0].seen_at_once, `got ${out.summary.all_time_peak}`);
+  ok("the busiest day is the busiest day", out.summary.busiest_day === 200, `got ${out.summary.busiest_day}`);
   ok("and the door's own figure is carried alongside it",
      out.history[0].door_attendance === 190, `got ${out.history[0].door_attendance}`);
-  ok("the page is told a door camera is there", out.summary.from_door === true);
+  ok("the page is told these are counts of arrivals", out.summary.attendance_is_arrivals === true);
 }
 
 // 2. No camera on a door: unchanged — what the cameras could see.
@@ -84,9 +88,12 @@ const min = 60_000;
   }
   const cams = { room: { camera_id: "room", location: "indoor", zone_capacity: 100 } };
   const out = await run({ rows, cams });
-  ok("without a door camera the peak is what was seen", out.summary.all_time_peak === 27,
-     `peak ${out.summary.all_time_peak}`);
-  ok("and the page isn't told otherwise", out.summary.from_door === false);
+  // Nothing counted anyone in or out, so attendance falls back to the most
+  // seen at once — a floor, and the page says so.
+  ok("with nothing counting arrivals, attendance falls back to what was seen",
+     out.summary.all_time_peak === 27, `peak ${out.summary.all_time_peak}`);
+  ok("and the page is told it is a fallback", out.summary.attendance_is_arrivals === false);
+  ok("no door camera is reported", out.summary.from_door === false);
 }
 
 // 3. The counting computer restarted at lunchtime and the door counter went

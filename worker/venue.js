@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-859732989333";
+const VENUE_CODE = "venue-9382db1e59b3";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -1252,6 +1252,9 @@ export class VenueHub extends DurableObject {
     const hasDoors = doorIds.size > 0 && (!camera || doorIds.has(camera));
     const doorRun = new Map();   // camera → running arrivals and departures today
     let doorNet = 0;             // people in the building by the door's count
+    // Every camera's running arrivals and departures, for the day's total.
+    const dayRun = new Map();
+    let cameIn = 0;
     const byDay = new Map();   // date → { peak, capacity, at }
     const arrivals = new Array(24).fill(0);
     const departures = new Array(24).fill(0);
@@ -1263,7 +1266,7 @@ export class VenueHub extends DurableObject {
     const counters = new Map();
     for (const r of rows) {
       const d = fmt.format(new Date(r.ts));
-      if (d !== day) { day = d; last = new Map(); counters.clear(); doorRun.clear(); }
+      if (d !== day) { day = d; last = new Map(); counters.clear(); doorRun.clear(); dayRun.clear(); cameIn = 0; }
       last.set(r.camera_id, { current: r.current || 0, capacity: r.capacity || 0, ts: r.ts });
       let rooms = 0, all = 0, cap = 0, roomCams = 0;
       for (const [k, v] of last) {
@@ -1296,6 +1299,22 @@ export class VenueHub extends DurableObject {
         for (const run of doorRun.values()) net += run.in - run.out;
         doorNet = Math.max(0, net);
       }
+      // How many people came in that day — which is what a church means by
+      // attendance. "Most at once" is a different number and a much smaller
+      // one: a camera sees its own corner of a hall, so on an afternoon with
+      // about 900 people in the building the most seen at once was 19. That
+      // was being reported as the day's attendance.
+      {
+        const run = dayRun.get(r.camera_id) ?? { lastIn: null, in: 0 };
+        const rin = r.entries || 0;
+        if (run.lastIn !== null) run.in += rin >= run.lastIn ? rin - run.lastIn : rin;
+        run.lastIn = rin;
+        dayRun.set(r.camera_id, run);
+        // Cameras watching the same thing are not added together — the fullest
+        // view is taken, the same rule rooms already use, so two cameras on one
+        // door don't double the morning.
+        cameIn = Math.max(...[...dayRun.values()].map((x) => x.in), 0);
+      }
       if (r.ts >= IN_OUT_TRUSTED_FROM) {
         const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
         if (countedMovement(counters, r, arrivals, departures, hour) && d !== lastMovementDay) {
@@ -1303,16 +1322,29 @@ export class VenueHub extends DurableObject {
         }
       }
       const cur = byDay.get(d);
-      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts, door: doorNet });
-      else if (doorNet > (cur.door || 0)) cur.door = doorNet;
+      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts, door: doorNet, came_in: cameIn });
+      else {
+        if (doorNet > (cur.door || 0)) cur.door = doorNet;
+        if (cameIn > (cur.came_in || 0)) cur.came_in = cameIn;
+      }
     }
     // A day where the cameras never saw anyone (e.g. a quick test) isn't a service.
-    const history = [...byDay.entries()].filter(([, v]) => v.peak > 0).sort().map(([d, v]) => ({
-      timestamp: new Date(v.at).toISOString(), date: d, attendance: v.peak,
-      // What the door made of the same day, for comparison. Never instead of.
-      door_attendance: v.door || 0,
-      occupancy_pct: v.capacity ? Math.round((v.peak / v.capacity) * 1000) / 10 : 0,
-    }));
+    const history = [...byDay.entries()].filter(([, v]) => v.peak > 0 || v.came_in > 0).sort().map(([d, v]) => {
+      // A day's attendance is how many people came in. Falling back to the
+      // most seen at once only when nothing counted anyone in or out — which
+      // is a floor, never the answer, because no camera sees a whole hall.
+      const attendance = v.came_in > 0 ? v.came_in : v.peak;
+      return {
+        timestamp: new Date(v.at).toISOString(), date: d, attendance,
+        /** The most the cameras saw at one moment. A different question. */
+        seen_at_once: v.peak,
+        /** How many walked in that day, as the cameras counted them. */
+        came_in: v.came_in || 0,
+        /** What a camera on the door made of the same day, for comparison. */
+        door_attendance: v.door || 0,
+        occupancy_pct: v.capacity ? Math.round((attendance / v.capacity) * 1000) / 10 : 0,
+      };
+    });
     const n = history.length;
     const m = movementDays || 1;
     const arrival = arrivals.map((count, hour) => ({
@@ -1320,12 +1352,17 @@ export class VenueHub extends DurableObject {
       exits: departures[hour], avg_exits: Math.round((departures[hour] / m) * 10) / 10,
     }));
     const summary = {
-      // Where the attendance figures came from, so the page can say.
+      // Whether these attendance figures are counts of people arriving, or a
+      // fallback to the most seen at once because nothing counted arrivals.
+      attendance_is_arrivals: n > 0 && history.some((h) => h.came_in > 0),
       from_door: hasDoors,
       // How many of these days have movement Kyro can stand behind.
       movement_days: movementDays, movement_known_from: new Date(IN_OUT_TRUSTED_FROM).toISOString(),
       camera_id: camera || "all", total_sessions: n,
-      all_time_peak: n ? Math.max(...history.map((h) => h.attendance)) : 0,
+      // "Most at once" stays what it says: the fullest the cameras ever saw
+      // the place, not the day's attendance.
+      all_time_peak: n ? Math.max(...history.map((h) => h.seen_at_once)) : 0,
+      busiest_day: n ? Math.max(...history.map((h) => h.attendance)) : 0,
       avg_attendance: n ? Math.round(history.reduce((a, h) => a + h.attendance, 0) / n) : 0,
       avg_occupancy_pct: n ? Math.round((history.reduce((a, h) => a + h.occupancy_pct, 0) / n) * 10) / 10 : 0,
       first_session: n ? history[0].timestamp : null, last_session: n ? history[n - 1].timestamp : null,

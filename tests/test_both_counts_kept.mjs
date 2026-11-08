@@ -63,8 +63,9 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 // 3. Analytics keeps what the cameras saw, and offers the door's net beside
 //    it rather than instead of it.
 {
-  ok("the day's attendance is still what the cameras saw",
-     /if \(!cur \|\| total > cur\.peak\) byDay\.set\(d, \{ peak: total, capacity: cap, at: r\.ts, door: doorNet \}\)/.test(worker));
+  ok("what the cameras saw at once is still kept, under its own name",
+     /seen_at_once: v\.peak,/.test(worker));
+  ok("and a day's attendance is how many came in", /const attendance = v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker));
   ok("the door's own figure is carried alongside", /door_attendance: v\.door \|\| 0,/.test(worker));
   ok("and the hour-by-hour arrivals use every camera again",
      !/const movementCam = /.test(worker));
