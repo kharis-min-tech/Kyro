@@ -374,9 +374,14 @@ function ZoneTableRow({ camera, idx, role }: { camera: Camera; idx: number; role
   const { current, peak, history } = useLiveRow(camera, role);
   const col = zoneColour(idx);
   const trend = history.length >= 2 ? history[history.length - 1] - history[history.length - 2] : 0;
+  // Moving within Kyro must never reload the page. A reload throws away the
+  // browser that is doing the counting: the AI unloads, the cameras close, and
+  // every figure goes back to nothing. This row sent people to the Seat Map
+  // that way, so opening the Seat Map mid-service wiped the count.
+  const router = useRouter();
   return (
     <tr style={{ borderBottom: `1px solid ${BORDER}`, cursor: "pointer" }}
-      onClick={() => window.location.href = "/seating"}
+      onClick={() => router.push("/seating")}
       onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elevated)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
       <td style={{ padding: "14px 16px" }}>

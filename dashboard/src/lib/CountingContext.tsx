@@ -29,6 +29,9 @@ import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 const ON_KEY = "kyro_counting_on";          // keep counting after a reload
 // An open camera with no picture for this long is worth telling someone about.
 const NO_PICTURE_MS = 6_000;
+// A camera missing this long is treated as gone for good, and only then are
+// its figures let go.
+const GONE_FOR_GOOD_MS = 5 * 60_000;
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
@@ -61,6 +64,8 @@ interface Cam {
   noPictureSince: number;
   /** Already reopened without asking for 1920x1080, so we don't loop on it. */
   relaxed: boolean;
+  /** When this camera dropped off the list of plugged-in cameras, if it has. */
+  goneSince: number;
   // Splitting the picture into tiles costs five AI runs instead of one. It only
   // finds people too small to see in the whole picture — useless on a webcam
   // with someone close up, where it made each count five times slower. So try
@@ -154,7 +159,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
-          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, relaxed: false,
+          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, relaxed: false, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
@@ -186,10 +191,23 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         c.video.remove(); c.video = null;
       }
     }
+    // A camera that drops off the list keeps its figures for a while.
+    //
+    // It used to be forgotten the instant it wasn't listed, taking its count,
+    // its peak and everything its tracker knew with it — so a loose plug, a
+    // moment's hiccup in the browser's device list, or the camera being busy
+    // for a second started the morning again from nothing. Close the camera,
+    // by all means; don't throw away what it counted.
     for (const [key, c] of cams.current) {
-      if (!seen.has(key)) {
+      if (seen.has(key)) { c.goneSince = 0; continue; }
+      if (!c.goneSince) {
+        c.goneSince = Date.now();
         c.stream?.getTracks().forEach((t) => t.stop());
+        c.stream = null;
         c.video?.remove();
+        c.video = null;
+        c.error = "Unplugged — its count is kept for a few minutes in case it comes back";
+      } else if (Date.now() - c.goneSince > GONE_FOR_GOOD_MS) {
         cams.current.delete(key);
       }
     }
