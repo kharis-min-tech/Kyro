@@ -90,7 +90,22 @@ async function fetchModel(name: string, parts: number, onProgress: (pct: number)
   return model;
 }
 
-export interface LocalEngine { run: RunModel; tiles: number | "auto"; size: number; kind: "accurate" | "light"; backend: string }
+export interface LocalEngine {
+  run: RunModel; tiles: number | "auto"; size: number; kind: "accurate" | "light"; backend: string;
+  /**
+   * The lighter, quicker AI, kept beside the accurate one for cameras that
+   * need speed more than reach.
+   *
+   * A camera on a doorway is the case. The accurate AI looks at 1280 pixels
+   * square and takes about half a second a look, which is one or two counts a
+   * second — and somebody walks through a door in less than that, so they are
+   * seen once, and one sighting cannot say which way they were going. The
+   * lighter AI looks at 640 and is several times quicker. It finds fewer
+   * people at the back of a hall, which is exactly what a doorway camera does
+   * not need: everyone it cares about is a step away.
+   */
+  fast?: { run: RunModel; tiles: number | "auto"; size: number };
+}
 
 async function hasRealGpu(): Promise<boolean> {
   const gpu = (navigator as unknown as { gpu?: { requestAdapter(): Promise<any> } }).gpu;
@@ -174,6 +189,9 @@ export async function startEngine(
   onProgress(100, "Ready");
   const engine: LocalEngine = {
     run: l.run, tiles: l.m.tiles, size: l.m.size, kind: "light", backend: gpu ? "graphics chip" : "processor",
+    // Kept, so that if the accurate AI takes over below, a doorway camera can
+    // still have the quick one.
+    fast: { run: l.run, tiles: l.m.tiles, size: l.m.size },
   };
 
   // Counting has begun. Now see, without holding anything up, whether this
@@ -198,7 +216,25 @@ export async function startEngine(
 }
 
 /** `tiles` overrides the engine's own choice — 1 means the whole picture only,
- *  which is five times faster and loses nothing when nobody is far away. */
-export function countWith(engine: LocalEngine, px: Pixels, tiles?: number): Promise<Person[]> {
-  return detectPeople(px, engine.run, { tiles: tiles ?? engine.tiles, size: engine.size });
+ *  which is five times faster and loses nothing when nobody is far away.
+ *  `fast` asks for the lighter AI, for a doorway. See LocalEngine.fast. */
+export function countWith(engine: LocalEngine, px: Pixels, tiles?: number, fast?: boolean): Promise<Person[]> {
+  const use = fast && engine.fast ? engine.fast : engine;
+  return detectPeople(px, use.run, { tiles: tiles ?? use.tiles, size: use.size });
+}
+
+/**
+ * Make sure the quick AI is loaded, for a doorway camera.
+ *
+ * A computer that already knew it could run the accurate AI went straight to
+ * it and never loaded the light one, so there was no quick path to offer. This
+ * loads it in the background; until it arrives, counting carries on with
+ * whatever is already there.
+ */
+export async function ensureFast(engine: LocalEngine): Promise<void> {
+  if (engine.fast) return;
+  const ort = await loadOrt();
+  ort.env.wasm.wasmPaths = ORT_BASE;
+  const l = await startModel(ort, "light", await hasRealGpu(), () => {});
+  engine.fast = { run: l.run, tiles: l.m.tiles, size: l.m.size };
 }

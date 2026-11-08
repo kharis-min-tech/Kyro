@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-47a6b0c19a43";
+const VENUE_CODE = "venue-123978225ed0";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -380,7 +380,7 @@ export class VenueHub extends DurableObject {
       }
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
-      if (p === "/api/live/movement" && request.method === "GET") return json(this.movementByDay(url));
+      if (p === "/api/live/movement" && request.method === "GET") return json(await this.movementByDay(url));
       // "What did you actually count?" — every decision the door cameras made
       // in the last little while, so it can be checked against the door.
       if (p === "/api/live/door-log" && request.method === "GET") return json(await this.doorLogFor());
@@ -1050,7 +1050,7 @@ export class VenueHub extends DurableObject {
    * and only for times Kyro can stand behind (see IN_OUT_TRUSTED_FROM).
    * ?date=YYYY-MM-DD&tz=Europe/London
    */
-  movementByDay(url) {
+  async movementByDay(url) {
     const date = url.searchParams.get("date") || "";
     const tz = url.searchParams.get("tz") || "UTC";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "date must be YYYY-MM-DD" };
@@ -1068,9 +1068,17 @@ export class VenueHub extends DurableObject {
     // tracker counted them. See the note on countedMovement above for why
     // arrivals are NOT worked out from changes in the number in the room.
     const counters = new Map();
+    // Arrivals and departures come from the DOOR when there is a camera on
+    // one. A room camera's "entries" is not arrivals: it counts every person
+    // it notices, and over a couple of hours of people standing up, turning
+    // round and being hidden behind each other it notices the same
+    // congregation again and again.
+    const doorIds = new Set(Object.values(await this.get("cameras", {}))
+      .filter((c) => c.location === "entrance").map((c) => c.camera_id));
     let known = false, peak = 0, peakHour = null;
     for (const r of rows) {
       if (fmt.format(new Date(r.ts)) !== date) continue;
+      const movementCam = doorIds.size === 0 || doorIds.has(r.camera_id);
       last.set(r.camera_id, { current: r.current || 0, ts: r.ts });
       let total = 0;
       for (const [k, v] of last) {
@@ -1080,7 +1088,7 @@ export class VenueHub extends DurableObject {
       const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
       if (total > busiest[hour]) busiest[hour] = total;
       if (total > peak) { peak = total; peakHour = hour; }
-      if (r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
+      if (movementCam && r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
     }
     return {
       date, in_out_known: known, peak, peak_hour: peakHour,
@@ -1280,7 +1288,7 @@ export class VenueHub extends DurableObject {
         for (const run of doorRun.values()) net += run.in - run.out;
         total = Math.max(0, net);
       }
-      if (r.ts >= IN_OUT_TRUSTED_FROM) {
+      if (r.ts >= IN_OUT_TRUSTED_FROM && (!hasDoors || doorIds.has(r.camera_id))) {
         const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
         if (countedMovement(counters, r, arrivals, departures, hour) && d !== lastMovementDay) {
           lastMovementDay = d; movementDays++;

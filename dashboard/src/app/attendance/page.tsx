@@ -1031,7 +1031,14 @@ export default function AttendancePage() {
       return;
     }
     if (edge) {
-      const ids = new Set(cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
+      // Arrivals and departures come from the DOOR, when there is a camera on
+      // one. A room camera's "entries" is not arrivals: it counts every person
+      // it notices, and over a couple of hours of people standing up, turning
+      // round and being hidden behind each other it notices the same
+      // congregation again and again. That is what made this figure climb all
+      // afternoon — 811, 824, 831 — with nobody new coming in.
+      const doors = cameras.filter((c) => c.location === "entrance").map((c) => c.camera_id);
+      const ids = new Set(doors.length ? doors : cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
       if (ids.size === 0) { setArrivalSeries(null); setArrivalSeriesAll(null); setArrivalEmpty("No cameras connected yet."); return; }
       let cancelled = false;
       const load = () => edgeVenueApi.history(toLocalDateStr(selectedDate), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
@@ -1040,7 +1047,11 @@ export default function AttendancePage() {
           const mine = rows.filter((r) => ids.has(r.camera_id));
           setArrivalSeries(edgeCounterSeries(mine));
           setArrivalSeriesAll(edgeCounterSeries(mine, true));
-          setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
+          setArrivalEmpty(isToday_
+            ? (doors.length
+                ? "Nobody counted in or out at the entrance yet. Only the entrance camera's count is used here — a room camera notices the same people over and over, which is not the same thing as somebody arriving."
+                : "No one has come in yet today.")
+            : "No entries were recorded on this day.");
         })
         .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });
       load();

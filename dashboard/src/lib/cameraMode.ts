@@ -17,7 +17,17 @@ export const CAMERA_MODE_VERSION = "web-1.0";
 
 /** The AI, as seen from the page. It runs in a background worker so the camera
  *  pictures and buttons stay smooth while it counts. */
-export interface Engine { kind: "accurate" | "light"; backend: string; count(px: ImageData, tiles?: number): Promise<Person[]> }
+export interface Engine {
+  kind: "accurate" | "light";
+  backend: string;
+  /**
+   * `tiles` = 1 looks at the whole picture once. `fast` asks for the lighter,
+   * quicker AI — for a camera on a doorway, where people cross in a second and
+   * looking twice as often matters more than seeing someone at the back of a
+   * hall.
+   */
+  count(px: ImageData, tiles?: number, fast?: boolean): Promise<Person[]>;
+}
 
 const ENGINE_KEY = "kyro_engine_kind";
 
@@ -25,7 +35,7 @@ function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<
   let prefer: "accurate" | "light" | undefined;
   try { const v = localStorage.getItem(ENGINE_KEY); if (v === "accurate" || v === "light") prefer = v; } catch { /* fine without it */ }
   return startEngine(onProgress, prefer, (kind) => { try { localStorage.setItem(ENGINE_KEY, kind); } catch { /* fine */ } })
-    .then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles) => countWith(e, px, tiles) }));
+    .then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles, fast) => countWith(e, px, tiles, fast) }));
 }
 
 export function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
@@ -50,7 +60,7 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
         ready = true;
         resolve({
           kind: m.kind, backend: m.backend,
-          count: (px) => new Promise<Person[]>((ok, fail) => {
+          count: (px, tiles, fast) => new Promise<Person[]>((ok, fail) => {
             const id = nextId++;
             waiting.set(id, { ok, fail });
             // The picture is COPIED to the worker, not handed over. Handing it
@@ -61,7 +71,10 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
             // are read from it afterwards — and the second look found nothing
             // there: "An ArrayBuffer is detached and could not be cloned."
             // A counting engine must not destroy what it was asked to count.
-            worker.postMessage({ type: "count", id, px: { data: px.data, width: px.width, height: px.height } });
+            // `tiles` and `fast` used to be dropped here, so every setting
+            // the page chose per camera — whole picture only, lighter AI —
+            // quietly did nothing once counting moved into the worker.
+            worker.postMessage({ type: "count", id, tiles, fast, px: { data: px.data, width: px.width, height: px.height } });
           }),
         });
       } else if (m.type === "result" || m.type === "count-error") {
@@ -98,8 +111,8 @@ export function grab(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
 
 /** `tiles` = 1 counts the whole picture in one look (five times faster, and
  *  loses nothing unless someone is too small to see without tiling). */
-export function countPeople(engine: Engine, px: ImageData, tiles?: number): Promise<Person[]> {
-  return engine.count(px, tiles);
+export function countPeople(engine: Engine, px: ImageData, tiles?: number, fast?: boolean): Promise<Person[]> {
+  return engine.count(px, tiles, fast);
 }
 
 /**

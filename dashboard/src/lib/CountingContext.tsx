@@ -306,7 +306,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           const checking = !c.isDoor && ++c.sinceTileCheck >= 10;
           if (checking) c.sinceTileCheck = 0;
           const useTiles = !c.isDoor && (c.needsTiles || checking);
-          let people = await countPeople(engine.current, px, useTiles ? undefined : 1);
+          // A doorway camera also uses the quicker AI: people cross a door in
+          // a second, and looking twice as often matters far more there than
+          // seeing someone at the back of a hall. See LocalEngine.fast.
+          let people = await countPeople(engine.current, px, useTiles ? undefined : 1, c.isDoor);
           if (checking) {
             const whole = await countPeople(engine.current, px, 1);
             const sure = (list: Person[]) => list.filter((p) => p.score >= countConfidenceRef.current).length;

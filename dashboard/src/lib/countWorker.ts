@@ -4,10 +4,12 @@
  * picture the page sends, off the page's own thread, so the camera pictures
  * and buttons never freeze while it works.
  */
-import { startEngine, countWith, type LocalEngine } from "@/lib/countEngine";
+import { startEngine, countWith, ensureFast, type LocalEngine } from "@/lib/countEngine";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let engine: LocalEngine | null = null;
+/** Loading the quick AI for a doorway camera, started the first time one asks. */
+let fastLoading = false;
 
 ctx.onmessage = async (ev: MessageEvent) => {
   const m = ev.data;
@@ -24,7 +26,14 @@ ctx.onmessage = async (ev: MessageEvent) => {
     }
   } else if (m.type === "count" && engine) {
     try {
-      const people = await countWith(engine, m.px, m.tiles);
+      // A doorway camera wants the quick AI. If it isn't here yet, fetch it in
+      // the background and count with what we have meanwhile — never make a
+      // camera wait for a download.
+      if (m.fast && !engine.fast && !fastLoading) {
+        fastLoading = true;
+        ensureFast(engine).catch(() => {}).finally(() => { fastLoading = false; });
+      }
+      const people = await countWith(engine, m.px, m.tiles, m.fast);
       ctx.postMessage({ type: "result", id: m.id, people });
     } catch (e) {
       ctx.postMessage({ type: "count-error", id: m.id, message: e instanceof Error ? e.message : String(e) });
