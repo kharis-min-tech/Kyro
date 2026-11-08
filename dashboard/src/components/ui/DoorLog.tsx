@@ -1,0 +1,113 @@
+"use client";
+
+/**
+ * "I don't know what you're counting."
+ *
+ * Every decision the doorway cameras made, as they made it, in words that can
+ * be held up against the door itself: counted in, counted out, recognised and
+ * not counted again, or at the door and went back the way they came.
+ *
+ * Nothing here says who anyone is. A time, a camera, and one word.
+ */
+
+import { useEffect, useState } from "react";
+import { ArrowDownLeft, ArrowUpRight, DoorOpen, RotateCcw, HelpCircle } from "lucide-react";
+import { edgeFetch } from "@/lib/edgeAuth";
+
+const BORDER = "var(--border-subtle)";
+
+interface DoorEvent { camera: string; camera_id: string; at: string; kind: string }
+interface DoorLog {
+  events: DoorEvent[];
+  counted_in: number; counted_out: number;
+  repeats_not_counted: number; unclear: number;
+}
+
+const WORDS: Record<string, { text: string; colour: string; Icon: typeof ArrowUpRight }> = {
+  "in":        { text: "Counted IN",  colour: "var(--series-arrive)", Icon: ArrowUpRight },
+  "out":       { text: "Counted OUT", colour: "var(--series-leave)",  Icon: ArrowDownLeft },
+  "again-in":  { text: "Same person coming in again — not counted",  colour: "var(--text-tertiary)", Icon: RotateCcw },
+  "again-out": { text: "Same person going out again — not counted",  colour: "var(--text-tertiary)", Icon: RotateCcw },
+  "unclear":   { text: "At the door, went back the way they came — not counted", colour: "var(--text-faint)", Icon: HelpCircle },
+};
+
+const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
+
+export function DoorLog() {
+  const [log, setLog] = useState<DoorLog | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => edgeFetch<DoorLog>("/api/live/door-log")
+      .then((r) => { if (alive) { setLog(r); setErr(null); } })
+      .catch((e) => { if (alive) setErr(e instanceof Error ? e.message : "Couldn't load it"); });
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 5000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+
+  if (err) return null;
+  if (!log) return null;
+  const nothing = log.events.length === 0;
+
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}` }}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
+        <div className="min-w-0">
+          <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            <DoorOpen size={14} /> What the entrance counted
+          </p>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+            {nothing
+              ? "Nothing yet. Each decision appears here as it is made."
+              : <>Every decision, as it was made — <strong style={{ color: "var(--text-secondary)" }}>{log.counted_in} in</strong>,{" "}
+                 <strong style={{ color: "var(--text-secondary)" }}>{log.counted_out} out</strong>, and{" "}
+                 <strong style={{ color: "var(--text-secondary)" }}>{log.repeats_not_counted}</strong> the same person again, not counted.</>}
+          </p>
+        </div>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{open ? "Hide" : "Show"}</span>
+      </button>
+
+      {open && !nothing && (
+        <div style={{ borderTop: `1px solid ${BORDER}` }}>
+          {/* The tally first: this is the answer to "are you duplicating people". */}
+          <div className="px-5 py-3 grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", background: "var(--bg-inset)" }}>
+            {[
+              { label: "Counted in", value: log.counted_in },
+              { label: "Counted out", value: log.counted_out },
+              { label: "Repeats turned away", value: log.repeats_not_counted },
+              { label: "Too unclear to call", value: log.unclear },
+            ].map((x) => (
+              <div key={x.label}>
+                <p style={{ fontSize: 11, color: "var(--text-muted)" }}>{x.label}</p>
+                <p className="font-semibold tabular-nums" style={{ fontSize: 16, color: "var(--text-primary)" }}>{x.value.toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+          <ul className="max-h-80 overflow-y-auto">
+            {log.events.map((e, i) => {
+              const w = WORDS[e.kind] ?? { text: e.kind, colour: "var(--text-tertiary)", Icon: HelpCircle };
+              return (
+                <li key={`${e.at}-${i}`} className="px-5 py-2 flex items-center gap-3"
+                  style={{ borderTop: i ? `1px solid ${BORDER}` : undefined, fontSize: 13 }}>
+                  <w.Icon size={13} style={{ color: w.colour, flexShrink: 0 }} />
+                  <span className="tabular-nums" style={{ color: "var(--text-tertiary)", fontSize: 12, width: 78, flexShrink: 0 }}>{time(e.at)}</span>
+                  <span style={{ color: "var(--text-secondary)" }} className="min-w-0 flex-1">{w.text}</span>
+                  <span style={{ color: "var(--text-faint)", fontSize: 11 }} className="truncate">{e.camera}</span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="px-5 py-3" style={{ fontSize: 11, color: "var(--text-faint)", borderTop: `1px solid ${BORDER}` }}>
+            A decision is made about fifteen seconds after someone leaves the camera&apos;s view, which is how long Kyro waits
+            in case they are only behind whoever came through next. &quot;Same person again&quot; means Kyro recognised them —
+            by their coat and build, or their face when face matching is on — and had already counted them that way in this
+            service. Everyone is forgotten when the service ends.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}

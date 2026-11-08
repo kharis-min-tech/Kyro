@@ -464,6 +464,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       const reports: CameraReport[] = list.map((c) => ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
         entries: c.tracker.entries, exits: c.tracker.exits,
+        // Every decision this camera made at the door since the last report,
+        // so the website can show what was counted and what wasn't.
+        events: c.tracker.drainEvents(),
         ...(c.faces?.length ? { faces: c.faces, faces_age_s: (Date.now() - c.facesAt) / 1000 } : {}),
         status: c.error || Date.now() - c.countedAt > 60_000 ? "error" : "online",
         error: c.error ?? (c.countedAt ? null : "Starting…"),

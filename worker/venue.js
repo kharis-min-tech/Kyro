@@ -55,6 +55,8 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 // flickers on and off and the total jumps about. Over-subtraction from a code
 // that outlives the person is prevented by the clamp in venueTotal(), not here.
 const FACE_FRESH_MS = 10_000;
+/** How many door decisions are kept per camera for the "what was counted" panel. */
+const DOOR_LOG_KEEP = 200;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
@@ -83,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-e52d586be00f";
+const VENUE_CODE = "venue-47a6b0c19a43";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -261,6 +263,8 @@ export class VenueHub extends DurableObject {
     // Face matching (only while switched on): camera_id → { at, codes: Float32Array[] }.
     // Kept in memory only, for under a minute — never written to storage.
     this.faceCodes = new Map();
+    /** camera → the last few door decisions, for the "what was counted" panel. */
+    this.doorLog = new Map();
     // Who is signed in right now: username → deviceId → { name, role, device, at }.
     // Memory only — if this restarts, everyone's next heartbeat rebuilds it
     // within half a minute, and nothing is worth storing.
@@ -377,6 +381,9 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
       if (p === "/api/live/movement" && request.method === "GET") return json(this.movementByDay(url));
+      // "What did you actually count?" — every decision the door cameras made
+      // in the last little while, so it can be checked against the door.
+      if (p === "/api/live/door-log" && request.method === "GET") return json(await this.doorLogFor());
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
       if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
@@ -561,6 +568,17 @@ export class VenueHub extends DurableObject {
       if (Array.isArray(c.questions) && c.questions.length) newQuestions.push(...c.questions.slice(0, 10).map((q) => cleanQuestion(q, camera_id)).filter(Boolean));
       if (Array.isArray(c.faces) && faceOn) {
         this.faceCodes.set(camera_id, { at: now - Math.min(30, Number(c.faces_age_s) || 0) * 1000, codes: c.faces.slice(0, 250).map(unpackFace).filter(Boolean) });
+      }
+      // What this camera decided at the door, kept briefly so somebody can
+      // check Kyro against what they can see with their own eyes. A time and
+      // one word each — nothing about who anyone is.
+      if (Array.isArray(c.events) && c.events.length) {
+        const log = this.doorLog.get(camera_id) ?? [];
+        for (const e of c.events.slice(-30)) {
+          const kind = ["in", "out", "again-in", "again-out", "unclear"].includes(e.kind) ? e.kind : null;
+          if (kind) log.push({ at: num(e.at, 0, Date.now() + 60_000) || now, kind });
+        }
+        this.doorLog.set(camera_id, log.slice(-DOOR_LOG_KEEP));
       }
       if (Array.isArray(c.seats)) {
         // Its own key, and its own try/catch: seat colours are cosmetic, the count is not.
@@ -800,6 +818,32 @@ export class VenueHub extends DurableObject {
   }
 
   isOnline(l) { return !!l && Date.now() - l.updated_at < OFFLINE_AFTER_MS && l.status !== "offline"; }
+
+  /**
+   * Every decision the door cameras made recently, newest first, with the
+   * camera's name — and a tally of what it adds up to, including how many
+   * repeats were turned away. "I don't know what you're counting" deserves an
+   * answer that can be held up against the door itself.
+   */
+  async doorLogFor() {
+    const cams = await this.get("cameras", {});
+    const events = [];
+    for (const [camera_id, log] of this.doorLog) {
+      const name = cams[camera_id]?.name || camera_id;
+      for (const e of log) events.push({ camera: name, camera_id, at: new Date(e.at).toISOString(), kind: e.kind });
+    }
+    events.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    const count = (k) => events.filter((e) => e.kind === k).length;
+    return {
+      events: events.slice(0, 200),
+      counted_in: count("in"), counted_out: count("out"),
+      // Somebody Kyro recognised who was already counted that way in this
+      // service: the usher holding the door, counted once.
+      repeats_not_counted: count("again-in") + count("again-out"),
+      // At the door, and went back the way they came.
+      unclear: count("unclear"),
+    };
+  }
 
   async venueTotal() {
     const cams = (await this.cameraList()).filter((c) => c.location !== "queue");

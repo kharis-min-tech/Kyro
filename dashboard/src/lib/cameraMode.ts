@@ -169,6 +169,8 @@ export interface CameraReport {
   entries: number; exits: number;
   /** Face codes, only while face matching is switched on. Never a picture. */
   faces?: string[]; faces_age_s?: number;
+  /** What this camera decided at the door since the last report, for showing. */
+  events?: { at: number; kind: string }[];
 }
 
 export type Zone = [number, number, number, number];

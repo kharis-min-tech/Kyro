@@ -321,8 +321,25 @@ interface Known {
   at: number;
 }
 
+/**
+ * One decision, in plain terms, so somebody standing at the door can check
+ * Kyro against what they can see with their own eyes.
+ *
+ *   in        — counted as somebody coming in
+ *   out       — counted as somebody going out
+ *   again-in  — recognised: already counted in during this service, so not
+ *               counted again (the usher holding the door)
+ *   again-out — the same, going out
+ *   unclear   — they were at the door and went back the way they came, or
+ *               moved too little to say which way; counted as neither
+ */
+export interface DoorEvent { at: number; kind: "in" | "out" | "again-in" | "again-out" | "unclear" }
+const MOST_EVENTS = 60;
+
 export class PersonTracker {
   private tracks: Track[] = [];
+  /** The last few decisions, for showing on the website. Never kept long. */
+  private events: DoorEvent[] = [];
   /** People seen earlier in this service. Emptied when it ends. */
   private known: Known[] = [];
   private nextId = 1;
@@ -471,11 +488,15 @@ export class PersonTracker {
           // Counted, unless this is somebody Kyro already counted this way —
           // the usher holding the door. See MOST_REMEMBERED.
           if (went === true) {
-            if (!t.countedIn) { this.entries++; t.countedIn = true; }
+            if (!t.countedIn) { this.entries++; t.countedIn = true; this.note(now, "in"); }
+            else this.note(now, "again-in");
           } else if (went === false) {
-            if (!t.countedOut) { this.exits++; t.countedOut = true; }
+            if (!t.countedOut) { this.exits++; t.countedOut = true; this.note(now, "out"); }
+            else this.note(now, "again-out");
+          } else {
+            // They stood by the door and went back the way they came.
+            this.note(now, "unclear");
           }
-          // null = they stood by the door and went back the way they came.
           t.tallied = true;
         }
         if (gone < DOOR_GRACE_MS) return true;
@@ -490,6 +511,18 @@ export class PersonTracker {
     });
 
     return this.tracks.filter((t) => t.counted && t.missing === 0).length;
+  }
+
+  private note(at: number, kind: DoorEvent["kind"]): void {
+    this.events.push({ at, kind });
+    if (this.events.length > MOST_EVENTS) this.events.splice(0, this.events.length - MOST_EVENTS);
+  }
+
+  /** The decisions since this was last asked. Taking them clears them. */
+  drainEvents(): DoorEvent[] {
+    const out = this.events;
+    this.events = [];
+    return out;
   }
 
   /**
