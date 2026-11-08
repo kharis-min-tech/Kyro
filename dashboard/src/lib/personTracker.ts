@@ -62,7 +62,21 @@ const GRACE_MS = 45_000;
  * whoever is next through it, or turning back to say goodbye, while still
  * reporting a departure quickly enough to watch a room empty.
  */
-const DOOR_GRACE_MS = 12_000;
+const DOOR_GRACE_MS = 5 * 60_000;
+/**
+ * How long "they came back near where they were" is still believable.
+ *
+ * Position is weak evidence of identity at a doorway, because everybody walks
+ * through the same patch of picture. Over a few seconds it is sound: that
+ * really is the person who was just there. Over minutes it is not — the next
+ * person through the same door looks exactly as convincing, and merging them
+ * loses a departure that did happen.
+ *
+ * So a track can wait out the whole grace, but only a face may claim it back
+ * after this. A face is evidence about the person; a position is evidence
+ * about the door.
+ */
+const RETURN_BY_PLACE_MS = 15_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;
@@ -201,6 +215,11 @@ export class PersonTracker {
     // Best overlaps first, so two people close together don't swap identities.
     const pairs: { t: number; b: number; score: number }[] = [];
     this.tracks.forEach((t, ti) => boxes.forEach((b, bi) => {
+      // Overlapping where someone used to be only means "the same person" for
+      // as long as that is believable — see RETURN_BY_PLACE_MS. A track that
+      // has been missing for a minute would otherwise swallow the next person
+      // to walk through the same doorway, and their departure with them.
+      if (now - t.lastSeen > RETURN_BY_PLACE_MS) return;
       const score = iou(t.box, b);
       if (score >= SAME_PERSON_IOU) pairs.push({ t: ti, b: bi, score });
     }));
@@ -244,6 +263,8 @@ export class PersonTracker {
         let best = RETURN_WITHIN_WIDTHS;
         this.tracks.forEach((t, ti) => {
           if (takenTrack.has(ti) || t.missing === 0) return;
+          // Only recently. See RETURN_BY_PLACE_MS.
+          if (now - t.lastSeen > RETURN_BY_PLACE_MS) return;
           const d = apart(t.box, b);
           const sizes = (t.box[3] - t.box[1]) / Math.max(1, b[3] - b[1]);
           if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
