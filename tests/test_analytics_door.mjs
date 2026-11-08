@@ -63,11 +63,17 @@ const min = 60_000;
     door: { camera_id: "door", location: "entrance", zone_capacity: 0 },
   };
   const out = await run({ rows, cams });
-  ok("the day's attendance is the door's, not the room's view",
-     out.summary.all_time_peak === 200 - 10, `peak ${out.summary.all_time_peak}`);
-  ok("and the page is told where it came from", out.summary.from_door === true);
-  ok("the room camera's corner is not added to it",
-     out.history[0].attendance === 190, `got ${out.history[0].attendance}`);
+  // The day's attendance is still what the cameras saw. I had this replaced by
+  // the door's net — everyone in less everyone out — until an afternoon when
+  // about 900 people were in the building and the door camera, too slow to
+  // follow anyone through a doorway, made it 106. A figure from one camera
+  // does not get to overwrite the rest.
+  ok("the day's attendance is what the cameras saw",
+     out.summary.all_time_peak > 0 && out.summary.all_time_peak < 100,
+     `peak ${out.summary.all_time_peak}`);
+  ok("and the door's own figure is carried alongside it",
+     out.history[0].door_attendance === 190, `got ${out.history[0].door_attendance}`);
+  ok("the page is told a door camera is there", out.summary.from_door === true);
 }
 
 // 2. No camera on a door: unchanged — what the cameras could see.
@@ -93,7 +99,7 @@ const min = 60_000;
   const cams = { door: { camera_id: "door", location: "entrance", zone_capacity: 0 } };
   const out = await run({ rows, cams });
   ok("a counter that started again keeps the morning's figure",
-     out.summary.all_time_peak === 100 + 20, `peak ${out.summary.all_time_peak}`);
+     out.history[0].door_attendance === 100 + 20, `got ${out.history[0].door_attendance}`);
 }
 
 // 4. More people out than in (a counter that only saw the end of a service)
@@ -104,7 +110,7 @@ const min = 60_000;
   const cams = { door: { camera_id: "door", location: "entrance", zone_capacity: 0 } };
   const out = await run({ rows, cams });
   ok("a day that only saw people leave is not a negative attendance",
-     (out.summary.all_time_peak ?? 0) === 0, `peak ${out.summary.all_time_peak}`);
+     (out.history[0]?.door_attendance ?? 0) === 0, `got ${out.history[0]?.door_attendance}`);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. Analytics and the live page answer the same question.");

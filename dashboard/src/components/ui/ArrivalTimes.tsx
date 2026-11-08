@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -86,6 +86,13 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   sessionFrom?: number | null;
   /** Start the figures again from zero, for a new session. Omit to hide the button. */
   onFreshStart?: () => Promise<void> | void;
+  /**
+   * What each camera counted on its own, so one camera's figure never stands
+   * in for the building's without saying so. On an afternoon with about 900
+   * people in, the room camera said 843 and the doorway camera said 106 —
+   * which is the single most useful thing this card can show.
+   */
+  byCamera?: { name: string; where: string; arrived: number; left: number }[];
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -298,6 +305,30 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               value={summary.halfArrivedBy ? fmtTime(summary.halfArrivedBy) : "—"}
               sub={summary.firstArrival ? `first at ${fmtTime(summary.firstArrival)}` : undefined} />
           </div>
+
+          {/* Camera by camera. Whichever total is right, both are here. */}
+          {byCamera && byCamera.length > 1 && (
+            <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
+              <p className="px-3 py-2" style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-inset)" }}>
+                What each camera counted on its own — they measure different things, and the difference between them is
+                worth knowing
+              </p>
+              <table className="w-full" style={{ fontSize: 13 }}>
+                <tbody>
+                  {byCamera.map((c) => (
+                    <tr key={c.name} style={{ borderTop: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}>
+                      <td className="px-3 py-1.5">
+                        {c.name}
+                        <span style={{ color: "var(--text-faint)", fontSize: 11 }}> · {c.where}</span>
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: ARRIVE }}>{c.arrived.toLocaleString()} in</td>
+                      <td className="px-3 py-1.5 text-right tabular-nums" style={{ color: LEAVE }}>{c.left.toLocaleString()} out</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {view === "table" ? (
             <div className="overflow-x-auto rounded-xl" style={{ border: `1px solid ${BORDER}` }}>

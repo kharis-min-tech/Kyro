@@ -16,9 +16,9 @@ import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { DoorLog } from "@/components/ui/DoorLog";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
-import { demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
+import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
-import { aggregateEdgeHistory, edgeCounterSeries, edgeVenueApi, useEdgeSnapshot, type EdgeHistoryPoint } from "@/lib/edgeVenue";
+import { aggregateEdgeHistory, edgeCounterSeries, edgeCounterSeriesByCamera, edgeVenueApi, useEdgeSnapshot, type EdgeHistoryPoint } from "@/lib/edgeVenue";
 import type { ZoneLive } from "@/types";
 
 // Live mode on the Cloudflare build: counts come from /api/live/venue (polled
@@ -1018,6 +1018,8 @@ export default function AttendancePage() {
   // them up by accident.
   const [arrivalSeriesAll, setArrivalSeriesAll] = useState<CounterPoint[][] | null>(null);
   const [arrivalEmpty, setArrivalEmpty]   = useState("Loading…");
+  // What each camera counted on its own. Never hidden behind one total again.
+  const [arrivalByCamera, setArrivalByCamera] = useState<{ name: string; where: string; arrived: number; left: number }[]>([]);
   // Bumped after a fresh start so the day's readings are re-fetched at once,
   // rather than up to two minutes later.
   const [arrivalTick, setArrivalTick] = useState(0);
@@ -1031,14 +1033,18 @@ export default function AttendancePage() {
       return;
     }
     if (edge) {
-      // Arrivals and departures come from the DOOR, when there is a camera on
-      // one. A room camera's "entries" is not arrivals: it counts every person
-      // it notices, and over a couple of hours of people standing up, turning
-      // round and being hidden behind each other it notices the same
-      // congregation again and again. That is what made this figure climb all
-      // afternoon — 811, 824, 831 — with nobody new coming in.
+      // Every camera that counts people, door or room.
+      //
+      // I narrowed this to the door cameras, reasoning that a room camera's
+      // "entries" counts people it becomes sure of rather than people
+      // arriving. That reasoning may still be right — but the figure it threw
+      // away was 843 on an afternoon when about 900 people were in the
+      // building, and the door camera's was 106. Removing the number that
+      // matched the building, in favour of one from a camera that is known to
+      // be too slow to follow anyone through a doorway, was the wrong call.
+      // Both are shown instead, camera by camera, underneath.
       const doors = cameras.filter((c) => c.location === "entrance").map((c) => c.camera_id);
-      const ids = new Set(doors.length ? doors : cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
+      const ids = new Set(cameras.filter((c) => c.location !== "queue").map((c) => c.camera_id));
       if (ids.size === 0) { setArrivalSeries(null); setArrivalSeriesAll(null); setArrivalEmpty("No cameras connected yet."); return; }
       let cancelled = false;
       const load = () => edgeVenueApi.history(toLocalDateStr(selectedDate), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")
@@ -1047,11 +1053,18 @@ export default function AttendancePage() {
           const mine = rows.filter((r) => ids.has(r.camera_id));
           setArrivalSeries(edgeCounterSeries(mine));
           setArrivalSeriesAll(edgeCounterSeries(mine, true));
-          setArrivalEmpty(isToday_
-            ? (doors.length
-                ? "Nobody counted in or out at the entrance yet. Only the entrance camera's count is used here — a room camera notices the same people over and over, which is not the same thing as somebody arriving."
-                : "No one has come in yet today.")
-            : "No entries were recorded on this day.");
+          // Each camera's own figures, named, so the room's and the door's can
+          // be read against each other instead of blurred into one number.
+          setArrivalByCamera(edgeCounterSeriesByCamera(mine, true).map((c) => {
+            const cam = cameras.find((x) => x.camera_id === c.camera_id);
+            const sum = bucketArrivals([c.points], 60);
+            return {
+              name: cam?.name ?? c.camera_id,
+              where: cam?.location === "entrance" ? "on the entrance" : "on the room",
+              arrived: sum.totalArrived, left: sum.totalLeft,
+            };
+          }).sort((a, b) => b.arrived - a.arrived));
+          setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
         })
         .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });
       load();
@@ -1460,7 +1473,8 @@ export default function AttendancePage() {
               <ArrivalTimes series={arrivalSeries} unverifiedSeries={arrivalSeriesAll}
                 emptyMessage={arrivalEmpty} isSample={userChoseDemo()}
                 sessionFrom={sessionFrom}
-                onFreshStart={edge && !userChoseDemo() ? startFresh : undefined} />
+                onFreshStart={edge && !userChoseDemo() ? startFresh : undefined}
+                byCamera={arrivalByCamera} />
             )}
 
             {/* Every decision the entrance made, in words — so the figures

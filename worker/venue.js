@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-123978225ed0";
+const VENUE_CODE = "venue-859732989333";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -1078,7 +1078,7 @@ export class VenueHub extends DurableObject {
     let known = false, peak = 0, peakHour = null;
     for (const r of rows) {
       if (fmt.format(new Date(r.ts)) !== date) continue;
-      const movementCam = doorIds.size === 0 || doorIds.has(r.camera_id);
+
       last.set(r.camera_id, { current: r.current || 0, ts: r.ts });
       let total = 0;
       for (const [k, v] of last) {
@@ -1088,7 +1088,7 @@ export class VenueHub extends DurableObject {
       const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
       if (total > busiest[hour]) busiest[hour] = total;
       if (total > peak) { peak = total; peakHour = hour; }
-      if (movementCam && r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
+      if (r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
     }
     return {
       date, in_out_known: known, peak, peak_hour: peakHour,
@@ -1251,6 +1251,7 @@ export class VenueHub extends DurableObject {
     const doorIds = new Set(Object.values(cams).filter((c) => c.location === "entrance").map((c) => c.camera_id));
     const hasDoors = doorIds.size > 0 && (!camera || doorIds.has(camera));
     const doorRun = new Map();   // camera → running arrivals and departures today
+    let doorNet = 0;             // people in the building by the door's count
     const byDay = new Map();   // date → { peak, capacity, at }
     const arrivals = new Array(24).fill(0);
     const departures = new Array(24).fill(0);
@@ -1264,14 +1265,17 @@ export class VenueHub extends DurableObject {
       const d = fmt.format(new Date(r.ts));
       if (d !== day) { day = d; last = new Map(); counters.clear(); doorRun.clear(); }
       last.set(r.camera_id, { current: r.current || 0, capacity: r.capacity || 0, ts: r.ts });
-      let total = 0, cap = 0;
+      let rooms = 0, all = 0, cap = 0, roomCams = 0;
       for (const [k, v] of last) {
         if (r.ts - v.ts > STALE) { last.delete(k); continue; }
-        // A doorway camera's own view — people in the doorway — is not part of
-        // how many are in the building, and adding it counted them twice.
-        if (!(hasDoors && doorIds.has(k))) total += v.current;
+        all += v.current;
         cap += v.capacity;
+        // A doorway camera's own view is people standing in a doorway, which
+        // is not part of how many are in the building — unless a doorway
+        // camera is all there is, in which case it is all we have.
+        if (!doorIds.has(k)) { rooms += v.current; roomCams++; }
       }
+      let total = roomCams ? rooms : all;
       if (doorIds.has(r.camera_id)) {
         // Running totals, so only the step between readings is people moving;
         // a counter that goes backwards means counting started again, and the
@@ -1283,23 +1287,30 @@ export class VenueHub extends DurableObject {
         run.lastIn = rin; run.lastOut = rout;
         doorRun.set(r.camera_id, run);
       }
+      // The door's net — everyone in less everyone out — is offered as its own
+      // figure rather than replacing this one. It is the better measure when
+      // the door camera is keeping up, and far the worse when it isn't: on an
+      // afternoon with about 900 people in the building it said 106.
       if (hasDoors) {
         let net = 0;
         for (const run of doorRun.values()) net += run.in - run.out;
-        total = Math.max(0, net);
+        doorNet = Math.max(0, net);
       }
-      if (r.ts >= IN_OUT_TRUSTED_FROM && (!hasDoors || doorIds.has(r.camera_id))) {
+      if (r.ts >= IN_OUT_TRUSTED_FROM) {
         const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
         if (countedMovement(counters, r, arrivals, departures, hour) && d !== lastMovementDay) {
           lastMovementDay = d; movementDays++;
         }
       }
       const cur = byDay.get(d);
-      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts });
+      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts, door: doorNet });
+      else if (doorNet > (cur.door || 0)) cur.door = doorNet;
     }
     // A day where the cameras never saw anyone (e.g. a quick test) isn't a service.
     const history = [...byDay.entries()].filter(([, v]) => v.peak > 0).sort().map(([d, v]) => ({
       timestamp: new Date(v.at).toISOString(), date: d, attendance: v.peak,
+      // What the door made of the same day, for comparison. Never instead of.
+      door_attendance: v.door || 0,
       occupancy_pct: v.capacity ? Math.round((v.peak / v.capacity) * 1000) / 10 : 0,
     }));
     const n = history.length;

@@ -297,6 +297,31 @@ export function aggregateEdgeHistory(rows: EdgeHistoryPoint[], capacities: Recor
  *
  * A withheld reading is left out, not counted as none.
  */
+/**
+ * The same, but keeping each camera's name against its figures.
+ *
+ * Which camera a number came from turned out to matter more than anything: on
+ * an afternoon with about 900 people in the building, the room camera's count
+ * said 843 and the doorway camera's said 106. Showing one total hides that
+ * completely — and picking the "better" one for somebody is how a real figure
+ * gets thrown away.
+ */
+export function edgeCounterSeriesByCamera(
+  rows: EdgeHistoryPoint[],
+  unverified = false,
+): { camera_id: string; points: { t: number; entries: number; exits: number }[] }[] {
+  const by: Record<string, { t: number; entries: number; exits: number }[]> = {};
+  for (const r of rows) {
+    const withheld = r.in_out_known === false || r.total_entries === null || r.total_exits === null;
+    if (withheld && !unverified) continue;
+    const entries = withheld ? r.raw_entries : r.total_entries;
+    const exits = withheld ? r.raw_exits : r.total_exits;
+    if (entries === undefined || entries === null || exits === undefined || exits === null) continue;
+    (by[r.camera_id] ??= []).push({ t: Date.parse(r.timestamp), entries, exits });
+  }
+  return Object.entries(by).map(([camera_id, points]) => ({ camera_id, points: points.sort((a, b) => a.t - b.t) }));
+}
+
 export function edgeCounterSeries(
   rows: EdgeHistoryPoint[],
   /** Include readings Kyro won't stand behind. Only for a view that says so. */

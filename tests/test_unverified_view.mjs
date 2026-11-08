@@ -27,7 +27,8 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "kyro-unver-"));
 const src = fs.readFileSync(path.join(root, "dashboard/src/lib/edgeVenue.ts"), "utf8");
 
 // Lift edgeCounterSeries out — the rest of that file is React and hooks.
-const from = src.indexOf("export function edgeCounterSeries");
+// The exact one — there is now an edgeCounterSeriesByCamera above it.
+const from = src.indexOf("export function edgeCounterSeries(");
 const body = src.slice(from, src.indexOf("\n}", src.indexOf("return Object.values(by)", from)) + 2)
   .replace(/: EdgeHistoryPoint\[\]/, "")
   .replace(/\): \{ t: number; entries: number; exits: number \}\[\]\[\] \{/, ") {")
