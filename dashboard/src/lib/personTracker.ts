@@ -49,8 +49,20 @@ const GRACE_MS = 45_000;
  * people pass through in a couple of seconds, so that long a wait means the
  * morning's arrivals only appear three quarters of a minute after they
  * happened — and during a rush, barely at all.
+ *
+ * But it cannot be too short either, and this is the whole of the protection
+ * against counting one person twice. While someone's track is still alive they
+ * can be recognised on their way back into view — by face if faces are being
+ * read, otherwise by reappearing near where they were, at the same size — and
+ * they carry on as the same person. Once the track is let go, the same person
+ * stepping back into view is a stranger, and leaving again is a second
+ * departure that never happened.
+ *
+ * Twelve seconds covers someone pausing in the doorway, being hidden behind
+ * whoever is next through it, or turning back to say goodbye, while still
+ * reporting a departure quickly enough to watch a room empty.
  */
-const DOOR_GRACE_MS = 6_000;
+const DOOR_GRACE_MS = 12_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;
