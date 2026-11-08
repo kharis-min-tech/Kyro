@@ -177,24 +177,34 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
   const { edge } = useContext(EdgeLiveContext);
-  const isBrowserCam = cameraId.startsWith("web-") || (streamUrl?.startsWith("webcam://") ?? false);
+  // Is THIS browser the one counting this camera? If so it has the live
+  // picture and should show it. On any other device — a phone, or a second
+  // computer — it hasn't, and the live picture cannot travel: the video never
+  // leaves the computer it is plugged into. What does travel is the still
+  // picture that computer sends Kyro every twenty seconds, so that is what
+  // everyone else sees. Without this a phone showed "Not counting" beside a
+  // camera that was counting perfectly well.
+  const counting = useCounting();
+  const mine = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName);
+  const liveHere = mine.key ? counting?.streamFor(mine.key) ?? null : null;
   // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
-  // We skip this for browser cameras — the edge box doesn't know about them.
-  const snap = useEdgeSnapshot(cameraId, edge && !isBrowserCam, 20_000);
+  const snap = useEdgeSnapshot(cameraId, edge && !liveHere, 20_000);
 
-  // Browser camera — open MediaDevices locally and render the live feed
-  // regardless of edge/demo/backend state, since the stream lives on the
-  // user's device, not the server.
-  if (isBrowserCam && streamUrl) {
-    return <BrowserCameraStream streamUrl={streamUrl} cameraId={cameraId} zoneName={zoneName} />;
+  if (liveHere) {
+    return <BrowserCameraStream streamUrl={streamUrl ?? ""} cameraId={cameraId} zoneName={zoneName} />;
   }
 
   if (edge) {
     if (!snap.url) {
+      const browserCam = cameraId.startsWith("web-") || (streamUrl?.startsWith("webcam://") ?? false);
       return (
         <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ background: "var(--bg-inset)" }}>
           <Video size={28} className="text-gray-700" />
-          <span className="text-xs text-gray-600 px-4 text-center">No picture yet — it appears as soon as the camera computer is on</span>
+          <span className="text-xs text-gray-600 px-4 text-center">
+            {browserCam
+              ? "No picture yet — this camera is plugged into another computer, and a still arrives every 20 seconds once it is counting"
+              : "No picture yet — it appears as soon as the camera computer is on"}
+          </span>
         </div>
       );
     }
