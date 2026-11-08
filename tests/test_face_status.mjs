@@ -78,5 +78,30 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
   ok("and wiped when it ends", /Face matching data belongs to the service: wiped as soon as it ends\.\s*\n\s*this\.faceCodes\.clear\(\);/.test(worker));
 }
 
+// 5. Reading faces often enough to be worth having.
+//
+//    Faces were read once every four seconds, for everybody in the picture.
+//    At a doorway, where face matching is the whole point — people step out
+//    and come back and must not be counted as arriving twice — someone
+//    crosses in a second or two, so most people were never looked at once.
+//    Switched on, and never read anybody.
+{
+  ok("a doorway camera reads faces much more often",
+     /const DOOR_FACES_EVERY_MS = 1_200;/.test(ctx)
+     && /c\.isDoor \? DOOR_FACES_EVERY_MS : FACES_EVERY_MS/.test(ctx));
+  ok("rooms are unchanged", /const FACES_EVERY_MS = 4_000;/.test(ctx));
+  // Which is only affordable because the cost is capped.
+  ok("only the nearest few faces are read", /const MOST_FACES_AT_ONCE = 3;/.test(ctx)
+     && /\.slice\(0, MOST_FACES_AT_ONCE\)/.test(ctx));
+  ok("the nearest are chosen by how big they are", /size: p\.box\[3\] - p\.box\[1\]/.test(ctx));
+  // And only if the codes come back against the right people. A list in the
+  // wrong order would hand people each other's faces, which is worse than no
+  // faces at all: it would merge two strangers into one person.
+  ok("codes are lined up with the people they belong to",
+     /const codes: \(Float32Array \| null\)\[\] = c\.people\.map\(\(\) => null\);/.test(ctx)
+     && /nearest\.forEach\(\(person, k\) => \{ codes\[person\] = read\[k\] \?\? null; \}\);/.test(ctx));
+  ok("and nothing is read when nobody is there", /if \(!c\.people\.length\) return null;/.test(ctx));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. On says whether it is working.");
 process.exit(fails ? 1 : 0);

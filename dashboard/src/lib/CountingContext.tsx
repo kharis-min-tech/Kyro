@@ -39,7 +39,29 @@ const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the websi
 const FRESH_KEY = "kyro_counts_fresh_from"; // the fresh start this browser has applied
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
-const FACES_EVERY_MS = 4_000;     // reading faces is costly; counting comes first
+/**
+ * How often faces are read, per camera.
+ *
+ * Four seconds is fine for a room, where people sit still and there is all
+ * morning to recognise them. It is useless at a doorway, which is the one
+ * place face matching is for: people cross in a second or two, so most of them
+ * were never looked at once. "Switched on" and "never read anybody" at the
+ * same time.
+ */
+const FACES_EVERY_MS = 4_000;
+const DOOR_FACES_EVERY_MS = 1_200;
+/**
+ * And at most this many people each time.
+ *
+ * Reading a face costs two AI runs, so a doorway full of people cost twenty —
+ * which is why it was throttled to once every four seconds in the first place.
+ * Capping it keeps the cost the same whether two people or twenty are in the
+ * picture, and lets it run often enough to be worth having.
+ *
+ * The biggest people in the picture are chosen: biggest means nearest, and
+ * nearest is where a face is large enough to read at all.
+ */
+const MOST_FACES_AT_ONCE = 3;
 
 /** A face code in the form the website expects: 128 half-size numbers, base64. */
 function packFace(v: Float32Array): string {
@@ -320,10 +342,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     }
   }, [refreshViews]);
 
-  /** Face codes for this camera's people, every few seconds while switched on. */
+  /** Face codes for this camera's people, every second or few while switched on. */
   const faceCodes = useCallback(async (c: Cam, px: ImageData): Promise<(Float32Array | null)[] | null> => {
     if (!faceOnRef.current) { c.faces = null; return null; }
-    if (Date.now() - c.facesAt < FACES_EVERY_MS) return null;
+    if (Date.now() - c.facesAt < (c.isDoor ? DOOR_FACES_EVERY_MS : FACES_EVERY_MS)) return null;
+    if (!c.people.length) return null;
     if (!faceEngine.current) {
       if (faceLoading.current) return null;
       faceLoading.current = true;
@@ -341,7 +364,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       if (!faceEngine.current) return null;
     }
     c.facesAt = Date.now();
-    const codes = await faceEngine.current.codesFor(px, c.people.map((p) => p.box));
+    // The nearest few only — see MOST_FACES_AT_ONCE. Their places are kept so
+    // the codes come back lined up with the people they belong to; handing the
+    // tracker a list in the wrong order would give people each other's faces.
+    const nearest = c.people
+      .map((p, i) => ({ i, size: p.box[3] - p.box[1] }))
+      .sort((a, b) => b.size - a.size)
+      .slice(0, MOST_FACES_AT_ONCE)
+      .map((x) => x.i);
+    const read = await faceEngine.current.codesFor(px, nearest.map((i) => c.people[i].box));
+    const codes: (Float32Array | null)[] = c.people.map(() => null);
+    nearest.forEach((person, k) => { codes[person] = read[k] ?? null; });
     c.faces = codes.filter(Boolean).map((v) => packFace(v as Float32Array));
     return codes;
   }, []);
