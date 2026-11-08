@@ -60,13 +60,24 @@ const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought
 /**
  * In/out recorded before this moment can't be trusted and is never charted.
  *
+ * Two reasons, in order.
+ *
  * Until the tracking fix went live (commit 89292f9, 4 Nov 2026 18:33 UTC) a
  * person merely flickering out of the AI's view was read as leaving and
- * arriving again — one person sitting still produced ten arrivals. The rows are
- * kept, because the people counts in them are fine; only their arrivals and
- * departures are withheld.
+ * arriving again — one person sitting still produced ten arrivals.
+ *
+ * And until 8 Nov 2026 a camera watching a doorway still counted the way a
+ * camera watching a room does: appearing meant arriving, disappearing meant
+ * leaving. Everybody passing a door does both, whichever way they are walking,
+ * so arrivals climbed all morning while a room emptied and departures appeared
+ * out of nowhere — "53 people left" from a room holding twenty. Counting by
+ * the direction someone walked only began at the moment below, and nothing
+ * before it is a measurement of anyone going in or out.
+ *
+ * The rows are kept, because the people counts in them are fine; only their
+ * arrivals and departures are withheld.
  */
-const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-04T18:33:54Z");
+const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
