@@ -97,5 +97,32 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
   ok("a doorway camera asks for it", /countPeople\(engine\.current, px, useTiles \? undefined : 1, c\.isDoor\)/.test(ctx));
 }
 
+// 6. Nothing deletes a reading except being asked to, in so many words.
+{
+  const deletes = [...worker.matchAll(/UPDATE history SET deleted_at = \?|DELETE FROM history/g)].length;
+  ok("only a handful of places can mark a reading deleted", deletes <= 3, `found ${deletes}`);
+  ok("deleting a day is one of them, and says so",
+     /async deleteDay\(date, tz, user\)/.test(worker));
+  ok("deleting a service only takes counts when explicitly asked",
+     /if \(alsoCounts\) this\.ctx\.storage\.sql\.exec\("UPDATE history SET deleted_at/.test(worker));
+  ok("and what was deleted can be brought back",
+     /UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL/.test(worker));
+  // Nothing in the counting, reporting or charting paths touches it.
+  const report = worker.slice(worker.indexOf("async report("), worker.indexOf("movedFrom("));
+  ok("reporting counts never deletes anything", !/deleted_at = /.test(report));
+}
+
+// 7. The figures can be taken away and kept, so no change of mine can move
+//    them again.
+{
+  ok("every reading behind the chart can be downloaded", /const downloadArrivals = async \(\) => \{/.test(page));
+  ok("camera by camera, with where each one points",
+     /time,camera,where,people_seen_now,came_in_running_total,went_out_running_total,verified/.test(page));
+  ok("including the readings Kyro withholds, marked as such",
+     /r\.in_out_known === false \? "no" : "yes"/.test(page));
+  const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
+  ok("and there is a button for it", /Save the numbers/.test(card));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Every camera's figure is kept, and named.");
 process.exit(fails ? 1 : 0);

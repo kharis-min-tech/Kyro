@@ -1003,6 +1003,36 @@ export default function AttendancePage() {
   // Only relevant to the day it happened on. Looking back at last Sunday, the
   // figures are that whole day's, and the card shouldn't claim otherwise.
   const sessionFrom = freshAt && toLocalDateStr(new Date(freshAt)) === toLocalDateStr(selectedDate) ? freshAt : null;
+  /**
+   * Every reading behind the arrival figures, as a file she keeps.
+   *
+   * These numbers have moved about all afternoon as I changed which cameras
+   * fed them, and that is exactly the wrong way for a church's attendance
+   * record to behave. Nothing is ever deleted from the database, but "it's
+   * still in there" is no comfort while the screen says something different.
+   * A file on her own computer cannot be changed by anything I do.
+   */
+  const downloadArrivals = async () => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const date = toLocalDateStr(selectedDate);
+    const rows = await edgeVenueApi.history(date, tz);
+    const name = (id: string) => cameras.find((c) => c.camera_id === id)?.name ?? id;
+    const where = (id: string) => cameras.find((c) => c.camera_id === id)?.location ?? "";
+    const lines = [
+      "time,camera,where,people_seen_now,came_in_running_total,went_out_running_total,verified",
+      ...rows.map((r) => [
+        r.timestamp, `"${name(r.camera_id).replace(/"/g, '""')}"`, where(r.camera_id), r.attendance,
+        r.total_entries ?? r.raw_entries ?? "", r.total_exits ?? r.raw_exits ?? "",
+        r.in_out_known === false ? "no" : "yes",
+      ].join(",")),
+    ];
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\n")], { type: "text/csv" }));
+    a.download = `kyro-in-out-${date}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
   const startFresh = async () => {
     await edgeVenueApi.freshStart();
     const vt = await edgeVenueApi.venue().catch(() => null);
@@ -1474,7 +1504,8 @@ export default function AttendancePage() {
                 emptyMessage={arrivalEmpty} isSample={userChoseDemo()}
                 sessionFrom={sessionFrom}
                 onFreshStart={edge && !userChoseDemo() ? startFresh : undefined}
-                byCamera={arrivalByCamera} />
+                byCamera={arrivalByCamera}
+                onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined} />
             )}
 
             {/* Every decision the entrance made, in words — so the figures

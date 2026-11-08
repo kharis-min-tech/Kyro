@@ -14,7 +14,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Clock, Table2, BarChart3, AlertTriangle, RotateCcw } from "lucide-react";
+import { Clock, Table2, BarChart3, AlertTriangle, RotateCcw, Download } from "lucide-react";
 import { bucketArrivals, sinceFreshStart, type CounterPoint, type Slot } from "@/lib/arrivals";
 
 const CARD   = "var(--bg-card)";
@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -93,6 +93,12 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * which is the single most useful thing this card can show.
    */
   byCamera?: { name: string; where: string; arrived: number; left: number }[];
+  /**
+   * Every reading behind these figures, for downloading. A number on a screen
+   * that can change when somebody changes the software is not something a
+   * church can keep; a file on their own computer is.
+   */
+  onDownload?: () => void;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -188,6 +194,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}
               title="The arrivals and departures start again from zero for a new session. Every reading is kept.">
               <RotateCcw size={12} /> {freshing ? "Starting fresh…" : "Start fresh"}
+            </button>
+          )}
+          {onDownload && (
+            <button type="button" onClick={onDownload}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium"
+              style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}
+              title="Every reading behind these figures, camera by camera, as a spreadsheet file you keep.">
+              <Download size={12} /> Save the numbers
             </button>
           )}
           {hasData && (
