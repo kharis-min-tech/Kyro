@@ -53,6 +53,27 @@ function saveLocalAddedCameras(cams: Camera[]) {
   try { localStorage.setItem(mdeKey("added"), JSON.stringify(cams)); } catch {}
 }
 
+/**
+ * Is this camera one that lives only in this browser?
+ *
+ * It used to be answered by the id starting with "web-". That looked safe:
+ * addCamera() gives a camera it saves here an id like web-m3k2x-4f1a. But a
+ * camera registered by Camera Mode gets `<device id>:<key>`, and a Camera Mode
+ * device's id ALSO starts with "web-". So every camera counting in this
+ * browser looked like one of ours.
+ *
+ * The cost was silent: renaming such a camera, giving it a zone, setting its
+ * seats, or marking it as facing the entrance all wrote to this browser's own
+ * storage and never reached Kyro — so the change held until the next refresh
+ * and then vanished, with no error to explain it.
+ *
+ * Ask the list instead of the name.
+ */
+function isOurs(cameraId: string): boolean {
+  return loadLocalAddedCameras().some((c) => c.camera_id === cameraId);
+}
+
+
 function loadDemoCameras(): Camera[] {
   // Seed the fake DEMO_CAMERAS only when the user explicitly picked Demo.
   // In Live mode without a backend, start from an empty base — the operator
@@ -157,10 +178,9 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   const updateCamera = useCallback(async (cameraId: string, fields: Partial<Camera>) => {
     setCameras((prev) => prev.map((c) => c.camera_id === cameraId ? { ...c, ...fields } : c));
-    // Browser cameras live in local storage — persist edits there so a
-    // rename or capacity change survives a reload. Prefix "web-" matches
-    // what addCamera() assigns.
-    if (cameraId.startsWith("web-")) {
+    // Cameras this browser saved for itself live in local storage — persist
+    // edits there so a rename or capacity change survives a reload.
+    if (isOurs(cameraId)) {
       const saved = loadLocalAddedCameras();
       const idx = saved.findIndex((c) => c.camera_id === cameraId);
       if (idx >= 0) {
@@ -296,8 +316,8 @@ export function CameraProvider({ children }: { children: ReactNode }) {
 
   const deleteCamera = useCallback(async (cameraId: string) => {
     setCameras((prev) => prev.filter((c) => c.camera_id !== cameraId));
-    // Browser cameras — remove from local storage only.
-    if (cameraId.startsWith("web-")) {
+    // Cameras this browser saved for itself — remove from local storage only.
+    if (isOurs(cameraId)) {
       const saved = loadLocalAddedCameras().filter((c) => c.camera_id !== cameraId);
       saveLocalAddedCameras(saved);
       return;
