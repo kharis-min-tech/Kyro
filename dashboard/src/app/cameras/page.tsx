@@ -277,7 +277,12 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
               <div className="flex items-center gap-2 mb-1 text-xs flex-wrap">
                 <span className={`inline-block w-2 h-2 rounded-full ${cam.is_active ? (edgeCam.error_reason ? "bg-amber-400" : "bg-green-500") : "bg-gray-600"}`} />
                 <span className={cam.is_active ? "text-gray-300" : "text-gray-500"}>
-                  {cam.is_active ? (edgeCam.error_reason ? "Needs attention" : "Online") : "Offline"}
+                  {cam.is_active
+                    ? (edgeCam.error_reason ? "Needs attention" : "Online")
+                    /* "Offline" is wrong for a camera plugged into this computer:
+                       it is sitting there showing a picture. It just isn't
+                       counting. */
+                    : edgeCam.kind === "web" ? "Not counting" : "Offline"}
                 </span>
                 {edgeCam.error_reason && <span className="text-amber-400 break-words">· {edgeCam.error_reason}</span>}
               </div>

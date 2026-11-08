@@ -650,7 +650,12 @@ export class VenueHub extends DurableObject {
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
         hidden: !!c.hidden, pending: !!c.pending, ignore_zones: c.ignore_zones ?? [], device_name: devices[c.device_id]?.name ?? "",
         // Plugged in right now (its computer mentioned it in the last 30 s)?
-        present: Date.now() - (this.seenAt.get(c.camera_id) ?? 0) < 30_000, fps: live[c.camera_id]?.fps ?? 0, error_reason: live[c.camera_id]?.error_reason ?? null,
+        present: Date.now() - (this.seenAt.get(c.camera_id) ?? 0) < 30_000, fps: live[c.camera_id]?.fps ?? 0,
+        // Only a camera that is actually reporting has anything to say about
+        // itself. Keeping the last words of a camera that has since gone quiet
+        // leaves old text — "Starting…" — sitting beside a camera that stopped
+        // reporting minutes ago. venueTotal() already drops it; this didn't.
+        error_reason: this.isOnline(live[c.camera_id]) ? live[c.camera_id]?.error_reason ?? null : null,
       }));
   }
 
