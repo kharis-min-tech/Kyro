@@ -83,7 +83,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-7ff981bc65ee";
+const VENUE_CODE = "venue-e52d586be00f";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -1182,7 +1182,8 @@ export class VenueHub extends DurableObject {
     const lastTs = rows.length ? rows[rows.length - 1].ts : 0;
     const now = Object.entries(live)
       .filter(([id, l]) => (!camera || id === camera) && cams[id] && !cams[id].hidden && !cams[id].pending && this.isOnline(l) && l.updated_at > lastTs)
-      .map(([id, l]) => ({ camera_id: id, ts: l.updated_at, current: l.current, capacity: cams[id].zone_capacity || 0 }))
+      .map(([id, l]) => ({ camera_id: id, ts: l.updated_at, current: l.current, capacity: cams[id].zone_capacity || 0,
+        entries: l.entries || 0, exits: l.exits || 0 }))
       .sort((a, b) => a.ts - b.ts);
     rows.push(...now);
     const fmt = this.dateFmt(tz);
@@ -1190,6 +1191,14 @@ export class VenueHub extends DurableObject {
     try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
     catch { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", hour: "numeric", hourCycle: "h23" }); }
     const STALE = 3 * 60_000;  // a camera that stopped reporting no longer counts towards the total
+    // A camera on the doorway answers "how many are in the building" far
+    // better than a camera on the room, which can only report its own view —
+    // a corner of a wide hall. With one on the door, the day's attendance is
+    // everyone who came in less everyone who went out, the same figure the
+    // live page shows. Without one it is what the cameras could see, as before.
+    const doorIds = new Set(Object.values(cams).filter((c) => c.location === "entrance").map((c) => c.camera_id));
+    const hasDoors = doorIds.size > 0 && (!camera || doorIds.has(camera));
+    const doorRun = new Map();   // camera → running arrivals and departures today
     const byDay = new Map();   // date → { peak, capacity, at }
     const arrivals = new Array(24).fill(0);
     const departures = new Array(24).fill(0);
@@ -1201,12 +1210,31 @@ export class VenueHub extends DurableObject {
     const counters = new Map();
     for (const r of rows) {
       const d = fmt.format(new Date(r.ts));
-      if (d !== day) { day = d; last = new Map(); counters.clear(); }
+      if (d !== day) { day = d; last = new Map(); counters.clear(); doorRun.clear(); }
       last.set(r.camera_id, { current: r.current || 0, capacity: r.capacity || 0, ts: r.ts });
       let total = 0, cap = 0;
       for (const [k, v] of last) {
         if (r.ts - v.ts > STALE) { last.delete(k); continue; }
-        total += v.current; cap += v.capacity;
+        // A doorway camera's own view — people in the doorway — is not part of
+        // how many are in the building, and adding it counted them twice.
+        if (!(hasDoors && doorIds.has(k))) total += v.current;
+        cap += v.capacity;
+      }
+      if (doorIds.has(r.camera_id)) {
+        // Running totals, so only the step between readings is people moving;
+        // a counter that goes backwards means counting started again, and the
+        // new reading is the step. Same rule the arrival chart uses.
+        const run = doorRun.get(r.camera_id) ?? { lastIn: null, lastOut: null, in: 0, out: 0 };
+        const rin = r.entries || 0, rout = r.exits || 0;
+        if (run.lastIn !== null) run.in += rin >= run.lastIn ? rin - run.lastIn : rin;
+        if (run.lastOut !== null) run.out += rout >= run.lastOut ? rout - run.lastOut : rout;
+        run.lastIn = rin; run.lastOut = rout;
+        doorRun.set(r.camera_id, run);
+      }
+      if (hasDoors) {
+        let net = 0;
+        for (const run of doorRun.values()) net += run.in - run.out;
+        total = Math.max(0, net);
       }
       if (r.ts >= IN_OUT_TRUSTED_FROM) {
         const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
@@ -1229,6 +1257,8 @@ export class VenueHub extends DurableObject {
       exits: departures[hour], avg_exits: Math.round((departures[hour] / m) * 10) / 10,
     }));
     const summary = {
+      // Where the attendance figures came from, so the page can say.
+      from_door: hasDoors,
       // How many of these days have movement Kyro can stand behind.
       movement_days: movementDays, movement_known_from: new Date(IN_OUT_TRUSTED_FROM).toISOString(),
       camera_id: camera || "all", total_sessions: n,

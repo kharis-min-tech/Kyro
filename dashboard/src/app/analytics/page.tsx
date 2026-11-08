@@ -623,6 +623,17 @@ export default function AnalyticsPage() {
                 <Stat label="Avg occupancy" value={`${summary.avg_occupancy_pct}%`} sub="Of seat capacity" icon={BarChart2} accent="#818cf8"/>
               </div>
             )}
+            {/* Where these numbers come from. A camera on the door answers
+                "how many are in the building" far better than a camera on the
+                room, which can only report its own corner of a wide hall — and
+                until now Analytics used the room's view while the live page
+                used the door's, so the two disagreed. */}
+            {summary && (summary as { from_door?: boolean }).from_door && (
+              <p style={{ fontSize: 12, color: "var(--text-tertiary)" }}>
+                Attendance is counted at the entrance: everyone who came in, less everyone who went out.
+                {summary.avg_occupancy_pct === 0 && " Occupancy stays at 0% until the rooms have their number of seats set, on the Cameras page."}
+              </p>
+            )}
             {selectedDay && (
               <DayDetail point={selectedDay} allData={history} onClose={()=>setSelectedDay(null)}/>
             )}
