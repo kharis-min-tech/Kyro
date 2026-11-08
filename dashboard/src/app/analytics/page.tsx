@@ -168,6 +168,10 @@ function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]
   const anyMovement = data.some((d) => d.count > 0 || (d.exits ?? 0) > 0);
   const max  = Math.max(...data.map((d) => Math.max(d.count, d.exits ?? 0)), 1);
   const peak = data.reduce((a, b) => (a.count > b.count ? a : b));
+  // The chart is an average per hour, so adding the hours up gives an average
+  // day — not a running total of everyone who has ever come in.
+  const totalIn = data.reduce((n, b) => n + (b.count || 0), 0);
+  const totalOut = data.reduce((n, b) => n + (b.exits ?? 0), 0);
   return (
     <div className="rounded-2xl p-5" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
       <div className="flex items-start justify-between mb-4 gap-3">
@@ -186,7 +190,23 @@ function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]
             </span>
           </div>
         </div>
-        <div className="text-xs shrink-0" style={{ color: "#6b7280" }}>Busiest: <span className="text-white font-semibold">{peak.hour}:00</span></div>
+        {/* The totals. The chart is an average per hour, so these are what an
+            average day looks like end to end — which is the number most people
+            come to this card for, and it wasn't anywhere on it. */}
+        <div className="shrink-0 flex items-start gap-4">
+          <div>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Arrived</p>
+            <p className="text-lg font-bold tabular-nums" style={{ color: "#818cf8" }}>{totalIn.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Left</p>
+            <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }}>{totalOut.toLocaleString()}</p>
+          </div>
+          <div>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Busiest</p>
+            <p className="text-lg font-bold tabular-nums text-white">{peak.hour}:00</p>
+          </div>
+        </div>
       </div>
       {!anyMovement ? (
         <p className="text-xs leading-relaxed py-4" style={{ color: "#6b7280" }}>
@@ -213,7 +233,9 @@ function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]
           </div>
           {movementDays !== undefined && (
             <p className="text-[10px] mt-2" style={{ color: "#4b5563" }}>
-              From {movementDays} {movementDays === 1 ? "day" : "days"} Kyro could follow people. Earlier days are left out.
+              On an average day: {totalIn.toLocaleString()} arrived, {totalOut.toLocaleString()} left
+              {movementDays > 1 && <> — about {(totalIn * movementDays).toLocaleString()} and {(totalOut * movementDays).toLocaleString()} across all {movementDays} days</>}.
+              {" "}From {movementDays} {movementDays === 1 ? "day" : "days"} Kyro could follow people. Earlier days are left out.
             </p>
           )}
         </>
