@@ -58,6 +58,28 @@ const box = (left, top, w, h) => [left, top, left + w, top + h];
   ok("and the other way round for right", wentIn(leftSide, rightSide, "right") === true);
 }
 
+// 3b. Her entrance camera: seen through a doorway, the walk in view is short
+//     and someone already out in the lobby barely changes size. Height alone
+//     said "can't tell" for all of them, so the camera reported nobody in and
+//     nobody out while a room emptied. Their feet still say which way they went.
+{
+  // Walking away: barely any change in height, but the feet rise up the picture.
+  const near = box(300, 240, 60, 150);         // feet at 390
+  const away = box(300, 180, 55, 140);         // feet at 320 — risen most of a body
+  ok("height alone could not call this", Math.abs(140 / 150 - 1) < 0.12);
+  ok("but walking away is still counted as going out", wentIn(near, away, "closer") === false);
+  ok("and the other way round is coming in", wentIn(away, near, "closer") === true);
+  ok("the setting still flips it", wentIn(near, away, "away") === true);
+}
+
+// 3c. Someone milling about in the lobby, not going through the door, must
+//     still count as nothing — the whole point of being strict.
+{
+  const stood = box(300, 240, 60, 150);
+  const shuffled = box(316, 248, 61, 152);     // a step sideways and a sway
+  ok("milling about in the lobby counts as neither", wentIn(stood, shuffled, "closer") === null);
+}
+
 // 4. Somebody standing in the doorway talking is neither, and must not be
 //    counted at all. This is the one that inflates a morning's figures.
 {

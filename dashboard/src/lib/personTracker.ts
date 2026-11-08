@@ -88,8 +88,25 @@ interface Track {
  */
 export type Inward = "closer" | "away" | "left" | "right";
 
-/** Movement smaller than this is someone shifting their weight, not walking. */
-const MOVED_ENOUGH = 0.25;   // of their own width, or a quarter again in size
+/** Sideways movement smaller than this is shifting weight, not walking. */
+const MOVED_ENOUGH = 0.25;        // of their own width
+/** A change in height smaller than this doesn't say which way someone walked. */
+const SIZE_ENOUGH = 0.12;
+/**
+ * How far someone's feet must travel up or down the picture, as a share of
+ * their own height, before that says which way they went.
+ *
+ * Height alone is not enough through a doorway. Seen through a door the walk
+ * in view can be short, and someone already out in the lobby when Kyro first
+ * spots them barely changes size at all — so every direction came back "can't
+ * tell" and the camera reported nobody in and nobody out while a room emptied.
+ *
+ * Where someone's feet are is the stronger signal in a view like that: walk
+ * away from a camera and your feet rise up the picture, walk towards it and
+ * they come down. Measured against their own height so it holds whether they
+ * are near or far.
+ */
+const FEET_ENOUGH = 0.35;
 
 /**
  * Which way one person went, or null if they didn't really go anywhere.
@@ -120,9 +137,20 @@ export function wentIn(
   // Walking towards the camera makes a person taller in the picture. Height is
   // steadier than width, which changes with how someone is standing.
   const grew = h(last) / h(first);
-  if (grew > 1 - MOVED_ENOUGH && grew < 1 + MOVED_ENOUGH) return null;
-  const cameCloser = grew > 1;
-  return inward === "closer" ? cameCloser : !cameCloser;
+  if (Math.abs(grew - 1) >= SIZE_ENOUGH) {
+    return inward === "closer" ? grew > 1 : grew < 1;
+  }
+
+  // Too small a change in height to call. Where their feet went still says it:
+  // walking away lifts them up the picture, walking towards it brings them
+  // down. Positive here means the feet rose, so they walked away.
+  const rose = (first[3] - last[3]) / Math.max(1, (h(first) + h(last)) / 2);
+  if (Math.abs(rose) >= FEET_ENOUGH) {
+    const cameCloser = rose < 0;
+    return inward === "closer" ? cameCloser : !cameCloser;
+  }
+
+  return null;
 }
 
 /** Centre-to-centre distance, in multiples of the wider box's width. */
