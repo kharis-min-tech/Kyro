@@ -27,6 +27,8 @@ import { loadOrt } from "@/lib/countEngine";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 
 const ON_KEY = "kyro_counting_on";          // keep counting after a reload
+// An open camera with no picture for this long is worth telling someone about.
+const NO_PICTURE_MS = 15_000;
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
 const REPORT_EVERY_MS = 5_000;
 const PICTURE_EVERY_MS = 20_000;
@@ -54,6 +56,9 @@ interface Cam {
   stream: MediaStream | null; video: HTMLVideoElement | null; grabCanvas: HTMLCanvasElement;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
   countedAt: number; secondsPerCount: number; error: string | null; lastPicture: number;
+  /** When this camera last gave a picture, or first failed to. A camera can be
+   *  open and still send nothing — a black tile that never explains itself. */
+  noPictureSince: number;
   // Splitting the picture into tiles costs five AI runs instead of one. It only
   // finds people too small to see in the whole picture — useless on a webcam
   // with someone close up, where it made each count five times slower. So try
@@ -147,7 +152,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
-          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0,
+          countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0,
           needsTiles: true, sinceTileCheck: 0, tracker: new PersonTracker(), faces: null, facesAt: 0,
         };
         cams.current.set(key, c);
@@ -197,7 +202,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         if (!running.current) break;
         if (!c.stream || !c.video || !engine.current) continue;
         const px = grab(c.video, c.grabCanvas);
-        if (!px) continue;
+        if (!px) {
+          // The camera is open but has no picture to give. This used to be
+          // skipped in silence, so the tile stayed black on "Starting…" with
+          // nothing to act on. Say so once it has gone on long enough to mean
+          // something.
+          if (!c.noPictureSince) c.noPictureSince = Date.now();
+          else if (Date.now() - c.noPictureSince > NO_PICTURE_MS) {
+            c.error = "This camera is open but sending no picture. Unplug it, plug it back in, and press Start counting.";
+          }
+          continue;
+        }
+        c.noPictureSince = 0;
         const t0 = performance.now();
         try {
           // Check every 10th count whether tiles are earning their keep.

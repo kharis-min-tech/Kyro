@@ -177,7 +177,9 @@ export function CameraProvider({ children }: { children: ReactNode }) {
         zone_capacity: f.zone_capacity ?? undefined,
         zone_order:    f.zone_order    ?? undefined,
         // The Cameras page sends location: undefined for "Indoor (has seats)".
-        location:      "location" in f ? (f.location === "queue" ? "queue" : "indoor") : undefined,
+        location:      "location" in f
+          ? (f.location === "queue" || f.location === "entrance" ? f.location : "indoor")
+          : undefined,
         hidden:        f.hidden,
       });
       return;

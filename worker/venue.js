@@ -712,7 +712,7 @@ export class VenueHub extends DurableObject {
       const running = this.isOnline(l);
       const current = running ? l.current || 0 : 0;
       return {
-        camera_id: c.camera_id, zone_name: c.zone_name || c.name, camera_name: c.name,
+        camera_id: c.camera_id, zone_name: c.zone_name || c.name, camera_name: c.name, location: c.location || "indoor",
         current, peak: l.peak || 0, entries: l.entries || 0, exits: l.exits || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
@@ -722,29 +722,48 @@ export class VenueHub extends DurableObject {
         in_out: (l.fps || 0) >= MIN_FPS_FOR_IN_OUT,
       };
     });
+    // A camera on the door and a camera on the room are doing two different
+    // jobs. The door one says who came and went; the room one says how many
+    // are there now. Adding the door's people to the room's is counting the
+    // same person twice — once on the way in, once sitting down.
+    const doorZones = zones.filter((z) => z.location === "entrance");
+    const roomZones = zones.filter((z) => z.location !== "entrance");
     // Cameras watching the same room are one room, not two — see roomTotals.
-    const rooms = roomTotals(zones);
+    const rooms = roomTotals(roomZones);
+    const doors = roomTotals(doorZones);
     const sum = (k) => rooms.reduce((n, r) => n + (r[k] || 0), 0);
+    const sumDoors = (k) => doors.reduce((n, r) => n + (r[k] || 0), 0);
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
-    const running = zones.filter((z) => z.is_running);
+    const running = roomZones.filter((z) => z.is_running);
     let twice = (await this.privacy()).face_matching && (await this.get("service_live", null)) ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
     // Overlap inside one room is already gone; only people seen in two
     // different rooms at once are left to take out, and never more than the
     // smaller rooms hold.
     const counts = rooms.map((r) => r.current || 0).sort((a, b) => b - a);
     twice = Math.min(twice, counts.slice(1).reduce((a, b) => a + b, 0));
-    const trustInOut = zones.some((z) => z.is_running && z.in_out);
+    // A door camera watches a doorway, so its arrivals and departures are the
+    // real ones. Only when there is no door camera do we fall back to what the
+    // room cameras think, which is far shakier — someone stepping out of shot
+    // looks like a departure.
+    const hasDoor = doorZones.length > 0;
+    const inOutZones = hasDoor ? doorZones : roomZones;
+    const trustInOut = inOutZones.some((z) => z.is_running && z.in_out);
+    const entries = hasDoor ? sumDoors("entries") : sum("entries");
+    const exits = hasDoor ? sumDoors("exits") : sum("exits");
     return {
       seen_on_two_cameras: twice,
       in_out_available: trustInOut,
       total_current: Math.max(0, sum("current") - twice), total_peak: sum("peak"),
-      total_entries: trustInOut ? sum("entries") : null, total_exits: trustInOut ? sum("exits") : null,
+      total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
+      // Whether a camera is actually watching the door, so the page can say
+      // where the arrivals and departures came from.
+      in_out_from_door: hasDoor,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((Math.max(0, sum("current") - twice) / cap) * 1000) / 10 : 0,
       zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
       // How many rooms those cameras add up to, so the page can say when two
       // of them are watching the same one.
-      rooms_total: rooms.length,
+      rooms_total: rooms.length, doors_total: doors.length,
     };
   }
 
@@ -1752,7 +1771,11 @@ export class VenueHub extends DurableObject {
     if (body.zone_name !== undefined) c.zone_name = clean(body.zone_name, 60) || c.zone_name;
     if (body.zone_capacity !== undefined) c.zone_capacity = num(body.zone_capacity, 0, 100000);
     if (body.zone_order !== undefined) c.zone_order = num(body.zone_order, 0, 1000);
-    if (body.location !== undefined) c.location = body.location === "queue" ? "queue" : "indoor";
+    if (body.location !== undefined) {
+      // "entrance" is a camera on the door: it counts people coming in and
+      // going out, and must never be added to how many are in the room.
+      c.location = ["queue", "entrance"].includes(body.location) ? body.location : "indoor";
+    }
     if (body.hidden !== undefined) { c.hidden = !!body.hidden; c.pending = false; }   // "Yes, add it" / "No"
     if (body.ignore_zones !== undefined) c.ignore_zones = cleanZones(body.ignore_zones);
     await this.ctx.storage.put("cameras", cams);

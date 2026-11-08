@@ -123,7 +123,7 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
         name:          draft.name.trim()      || cam.name,
         zone_name:     draft.zone_name.trim() || cam.name,
         stream_url:    draft.stream_url.trim(),
-        zone_capacity: draft.location === "queue" ? 0 : (Number(draft.zone_capacity) || 0),
+        zone_capacity: ["queue", "entrance"].includes(draft.location) ? 0 : (Number(draft.zone_capacity) || 0),
         location:      draft.location || undefined,
       });
       setEditing(false);
@@ -199,12 +199,13 @@ function CameraCard({ cam, onUpdated, onUpdate, onDelete, canManage, edge = fals
                 <label className="text-xs text-gray-400">Camera type</label>
                 <select value={draft.location} onChange={(e) => setDraft((p) => ({ ...p, location: e.target.value }))}
                   className="bg-gray-800 border border-gray-700 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                  <option value="">Indoor (has seats)</option>
+                  <option value="">Facing the room — counts how many are in it</option>
+                  <option value="entrance">Facing the entrance — counts people in and out</option>
                   <option value="queue">Outdoor / queue (no seats)</option>
                 </select>
               </div>
             </div>
-            {draft.location !== "queue" && (
+            {draft.location !== "queue" && draft.location !== "entrance" && (
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-gray-400">Seat capacity</label>
                 <input type="number" min="0" value={draft.zone_capacity}
@@ -1599,7 +1600,7 @@ export default function CamerasPage() {
   // More than one camera, every one in a zone of its own: either they really
   // are separate rooms, or everyone is being counted once per camera.
   const sameRoomWarning = (() => {
-    const counting = cameras.filter((c) => !isQueueCamera(c));
+    const counting = cameras.filter((c) => !isQueueCamera(c) && c.location !== "entrance");
     if (counting.length < 2) return 0;
     const zones = new Set(counting.map((c) => (c.zone_name || c.name || "").trim().toLowerCase()));
     return zones.size === counting.length ? counting.length : 0;
