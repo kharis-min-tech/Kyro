@@ -1049,7 +1049,7 @@ export default function AttendancePage() {
   const [arrivalSeriesAll, setArrivalSeriesAll] = useState<CounterPoint[][] | null>(null);
   const [arrivalEmpty, setArrivalEmpty]   = useState("Loading…");
   // What each camera counted on its own. Never hidden behind one total again.
-  const [arrivalByCamera, setArrivalByCamera] = useState<{ name: string; where: string; arrived: number; left: number }[]>([]);
+  const [arrivalByCamera, setArrivalByCamera] = useState<{ name: string; where: string; points: CounterPoint[]; pointsAll: CounterPoint[] }[]>([]);
   // Bumped after a fresh start so the day's readings are re-fetched at once,
   // rather than up to two minutes later.
   const [arrivalTick, setArrivalTick] = useState(0);
@@ -1083,17 +1083,19 @@ export default function AttendancePage() {
           const mine = rows.filter((r) => ids.has(r.camera_id));
           setArrivalSeries(edgeCounterSeries(mine));
           setArrivalSeriesAll(edgeCounterSeries(mine, true));
-          // Each camera's own figures, named, so the room's and the door's can
-          // be read against each other instead of blurred into one number.
+          // Each camera's readings, named, so the room's and the door's can be
+          // read against each other. The card adds them up itself, over the
+          // same stretch of the day it is showing — see cameraTotals there.
+          const verified = edgeCounterSeriesByCamera(mine);
           setArrivalByCamera(edgeCounterSeriesByCamera(mine, true).map((c) => {
             const cam = cameras.find((x) => x.camera_id === c.camera_id);
-            const sum = bucketArrivals([c.points], 60);
             return {
               name: cam?.name ?? c.camera_id,
               where: cam?.location === "entrance" ? "on the entrance" : "on the room",
-              arrived: sum.totalArrived, left: sum.totalLeft,
+              points: verified.find((v) => v.camera_id === c.camera_id)?.points ?? [],
+              pointsAll: c.points,
             };
-          }).sort((a, b) => b.arrived - a.arrived));
+          }));
           setArrivalEmpty(isToday_ ? "No one has come in yet today." : "No entries were recorded on this day.");
         })
         .catch(() => { if (!cancelled) setArrivalEmpty("Couldn't load arrival times just now."); });

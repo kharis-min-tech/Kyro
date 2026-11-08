@@ -92,7 +92,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * people in, the room camera said 843 and the doorway camera said 106 —
    * which is the single most useful thing this card can show.
    */
-  byCamera?: { name: string; where: string; arrived: number; left: number }[];
+  byCamera?: { name: string; where: string; points: CounterPoint[]; pointsAll: CounterPoint[] }[];
   /**
    * Every reading behind these figures, for downloading. A number on a screen
    * that can change when somebody changes the software is not something a
@@ -132,6 +132,18 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
     [picked, showingSession, sessionFrom],
   );
   const summary = useMemo(() => bucketArrivals(shown ?? [], minutes), [shown, minutes]);
+  // Each camera's figures, worked out exactly as the totals above are: same
+  // stretch of the day, same choice about unverified readings. They were
+  // computed separately before, over the whole day and including readings the
+  // totals leave out — so the tile said 1,206 and the table said 1,881 for the
+  // same camera on the same card. A breakdown that doesn't add up to the thing
+  // it breaks down is worse than no breakdown.
+  const cameraTotals = useMemo(() => (byCamera ?? []).map((c) => {
+    const pts = unverified ? c.pointsAll : c.points;
+    const windowed = showingSession ? sinceFreshStart([pts], sessionFrom!) : [pts];
+    const sum = bucketArrivals(windowed, minutes);
+    return { name: c.name, where: c.where, arrived: sum.totalArrived, left: sum.totalLeft };
+  }).sort((a, b) => b.arrived - a.arrived), [byCamera, unverified, showingSession, sessionFrom, minutes]);
   const { slots, peakArrival, peakDeparture } = summary;
   const hasData = slots.length > 0;
 
@@ -321,15 +333,15 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
           </div>
 
           {/* Camera by camera. Whichever total is right, both are here. */}
-          {byCamera && byCamera.length > 1 && (
+          {cameraTotals.length > 1 && (
             <div className="rounded-xl overflow-hidden" style={{ border: `1px solid ${BORDER}` }}>
               <p className="px-3 py-2" style={{ fontSize: 11, color: "var(--text-muted)", background: "var(--bg-inset)" }}>
-                What each camera counted on its own — they measure different things, and the difference between them is
-                worth knowing
+                What each camera counted on its own, over the same stretch as the figures above — they measure different
+                things, and the difference between them is worth knowing
               </p>
               <table className="w-full" style={{ fontSize: 13 }}>
                 <tbody>
-                  {byCamera.map((c) => (
+                  {cameraTotals.map((c) => (
                     <tr key={c.name} style={{ borderTop: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}>
                       <td className="px-3 py-1.5">
                         {c.name}

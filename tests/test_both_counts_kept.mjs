@@ -50,14 +50,24 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("and handed to the card", /byCamera=\{arrivalByCamera\}/.test(page));
 }
 
-// 2. The card shows them camera by camera, saying which is on the door.
+// 2. The card shows them camera by camera, saying which is on the door — and
+//    adds them up the same way it adds up the totals above them. They were
+//    worked out separately, over the whole day and including readings the
+//    totals leave out, so the tile said 1,206 and the table said 1,881 for the
+//    same camera on the same card. A breakdown that doesn't add up to the
+//    thing it breaks down is worse than no breakdown.
 {
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
   ok("the breakdown is shown when there is more than one camera",
-     /byCamera && byCamera\.length > 1/.test(card));
+     /cameraTotals\.length > 1/.test(card));
   ok("it says where each camera is pointed", /on the entrance/.test(page) && /on the room/.test(page));
-  ok("and says the two measure different things",
-     /they measure different things/.test(card));
+  ok("and says the two measure different things", /they measure different\s+things/.test(card));
+  // The same three choices as the totals: verified or not, this session or the
+  // whole day, and the same slot size.
+  ok("it follows the unverified switch", /const pts = unverified \? c\.pointsAll : c\.points;/.test(card));
+  ok("and the session window", /showingSession \? sinceFreshStart\(\[pts\], sessionFrom!\) : \[pts\]/.test(card));
+  ok("and counts them with the same rule", /const sum = bucketArrivals\(windowed, minutes\);/.test(card));
+  ok("the page hands over readings, not totals", /points: verified\.find/.test(page) && /pointsAll: c\.points,/.test(page));
 }
 
 // 3. Analytics keeps what the cameras saw, and offers the door's net beside
