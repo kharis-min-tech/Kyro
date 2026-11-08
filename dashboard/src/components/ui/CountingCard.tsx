@@ -44,7 +44,14 @@ export function CountingCard() {
             )}
             <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>
               {on
-                ? "You can move around Kyro freely — counting carries on. It only stops if you close this Kyro tab."
+                /* "It only stops if you close this tab" was not true. Every
+                   browser slows a tab right down once it is not the one being
+                   looked at — timers drop to about once a minute — so counting
+                   all but stops behind another tab or another app, and the
+                   pictures other devices see stop arriving. Moving between
+                   Kyro's own pages is fine; leaving Kyro on screen is not
+                   optional. */
+                ? "You can move around Kyro freely — counting carries on. Keep this tab the one on screen, though: every browser slows a tab right down once you switch to another tab or app, and counting slows with it."
                 : needsPermission
                 ? "Your browser hasn't let Kyro use the camera yet. That first tap is the browser's rule — after it, counting starts by itself whenever a camera is plugged in."
                 : "Plug your camera into this computer — straight in, or a wireless transmitter's receiver through a capture card. Counting starts by itself."}

@@ -172,6 +172,16 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
   );
 }
 
+/** "12 seconds ago" in a couple of words, for a picture's age. */
+function ago(ms: number): string {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s}s ago`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  return `${h} hr ago`;
+}
+
 function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; streamUrl?: string; zoneName?: string }) {
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
@@ -208,8 +218,24 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
         </div>
       );
     }
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={snap.url} alt="latest camera picture" className="w-full h-full object-cover" draggable={false} />;
+    // A still that stops being replaced looks exactly like a working camera
+    // showing a very quiet room. Saying when it was taken is the difference
+    // between "nothing is happening" and "nothing is arriving".
+    const age = snap.takenAt ? Date.now() - Date.parse(snap.takenAt) : 0;
+    const stale = age > 90_000;
+    return (
+      <div className="w-full h-full relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={snap.url} alt="latest camera picture" className="w-full h-full object-cover" draggable={false}
+          style={stale ? { filter: "grayscale(0.7)" } : undefined} />
+        {snap.takenAt && !snap.live && (
+          <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full"
+            style={{ background: stale ? "rgba(245,158,11,0.9)" : "rgba(0,0,0,0.6)", color: "#fff", fontSize: 10, fontWeight: 600 }}>
+            {stale ? `Last picture ${ago(age)} — not arriving` : `Picture from ${ago(age)}`}
+          </div>
+        )}
+      </div>
+    );
   }
 
   if (inDemoMode()) {
