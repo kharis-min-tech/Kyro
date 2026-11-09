@@ -194,7 +194,8 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   ok("there is a cap on how many people are remembered", /const MOST_REMEMBERED = \d+;/.test(src));
   ok("and the oldest are dropped first",
      /this\.known\.splice\(0, this\.known\.length - MOST_REMEMBERED\)/.test(src));
-  ok("nobody is remembered who was never counted", /if \(!t\.countedIn && !t\.countedOut\) return;/.test(src));
+  ok("nobody is remembered who was never counted",
+     /if \(!t\.countedIn && !t\.countedOut && !t\.uniqued\) return;/.test(src));
   ok("a fresh start counts everybody again", /this\.known = \[\];\s*\n\s*for \(const t of this\.tracks\) \{ t\.countedIn = false; t\.countedOut = false; \}/.test(src));
 
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");

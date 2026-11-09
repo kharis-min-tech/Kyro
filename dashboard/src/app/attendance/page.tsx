@@ -1547,6 +1547,7 @@ export default function AttendancePage() {
                 onFreshStart={edge && !userChoseDemo() ? startFresh : undefined}
                 byCamera={arrivalByCamera}
                 onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined}
+                peopleSeen={edge && isToday ? (venueTotal as { people_seen?: number } | null)?.people_seen ?? null : null}
                 doorMode={doorMode} doorModeBy={doorModeBy}
                 onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}

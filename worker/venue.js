@@ -85,7 +85,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-dc724efdcdea";
+const VENUE_CODE = "venue-8e3f1044ff6d";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -166,6 +166,7 @@ function roomTotals(zones) {
         zone_name: z.zone_name, cameras: 1,
         current: z.current || 0, peak: z.peak || 0,
         entries: z.entries || 0, exits: z.exits || 0, capacity: z.capacity || 0,
+        people: z.people || 0,
         // The same two figures before a fresh start was taken off them. How
         // many people are in the building is everyone who has come in today
         // less everyone who has gone out, which is not a thing a session's
@@ -182,6 +183,9 @@ function roomTotals(zones) {
       r.exits = take(r.exits, z.exits);
       r.entries_all = take(r.entries_all, z.entries_all);
       r.exits_all = take(r.exits_all, z.exits_all);
+      // Two cameras on one room see the same congregation: the fullest view,
+      // never the sum, exactly as with everything else about a room.
+      r.people = take(r.people, z.people);
       // One room's seats are its seats, however many cameras watch them.
       r.capacity = take(r.capacity, z.capacity);
     }
@@ -577,16 +581,21 @@ export class VenueHub extends DurableObject {
       // headline came to read 18 with 1,271 arrivals on the card below it.
       // Only the step between two readings is people moving; a reading lower
       // than the last one means that counter started again.
-      const seen = counters[camera_id] ?? { in: 0, out: 0, lastIn: null, lastOut: null };
+      const seen = counters[camera_id] ?? { in: 0, out: 0, lastIn: null, lastOut: null, people: 0, lastPeople: null };
       const rIn = num(c.entries, 0, 10000000), rOut = num(c.exits, 0, 10000000);
+      const rPeople = num(c.people_seen, 0, 10000000);
       seen.in += seen.lastIn === null || rIn < seen.lastIn ? rIn : rIn - seen.lastIn;
       seen.out += seen.lastOut === null || rOut < seen.lastOut ? rOut : rOut - seen.lastOut;
-      seen.lastIn = rIn; seen.lastOut = rOut;
+      // Different people, added up the same way, so a reloaded browser's
+      // register starting again doesn't throw away the ones already counted.
+      seen.people = (seen.people || 0) +
+        (seen.lastPeople === null || rPeople < seen.lastPeople ? rPeople : rPeople - seen.lastPeople);
+      seen.lastIn = rIn; seen.lastOut = rOut; seen.lastPeople = rPeople;
       counters[camera_id] = seen;
       countersChanged = true;
       live[camera_id] = {
         current: num(c.current, 0, 100000), peak: num(c.peak, 0, 100000),
-        entries: seen.in, exits: seen.out,
+        entries: seen.in, exits: seen.out, people: seen.people || 0,
         status: ["online", "error", "offline"].includes(c.status) ? c.status : "online",
         error_reason: c.error ? clean(c.error, 120) : null, fps: Number(c.fps) || 0,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
@@ -893,6 +902,8 @@ export class VenueHub extends DurableObject {
         // Everything this camera has counted, whatever was asked of the
         // session figures. Used for "how many are in the building".
         entries_all: l.entries || 0, exits_all: l.exits || 0,
+        /** Different people this camera has seen this service, counted once each. */
+        people: l.people || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
         // In/out means following people between pictures, which needs the camera
@@ -995,6 +1006,15 @@ export class VenueHub extends DurableObject {
       in_out_available: trustInOut,
       // The one figure. Every page reads this.
       total_current: hereNow,
+      /**
+       * How many different people have been seen this service, counted once
+       * each — the attendance figure. Rooms are added together (a balcony is
+       * not the main floor); two cameras on one room take the fullest view.
+       * A doorway camera's own register is offered separately rather than
+       * added, since everyone it sees also walks into a room.
+       */
+      people_seen: sum("people"),
+      people_seen_at_door: sumDoors("people"),
       /** What the cameras can actually see right now — the floor. */
       seen_now: seenNow,
       /** Everyone counted in less everyone counted out, from whichever

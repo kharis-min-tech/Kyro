@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, peopleSeen }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -107,6 +107,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   onDoorMode?: (mode: "auto" | "in" | "out") => Promise<void> | void;
   /** Who said so, for the line that says it is still on. */
   doorModeBy?: string;
+  /** Different people seen this service, counted once each. */
+  peopleSeen?: number | null;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -365,6 +367,19 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 here before, as small print under "Half had arrived by" and
                 "First arrivals" — which is no place for the number most people
                 open this card to find. */}
+            {typeof peopleSeen === "number" && (
+              /* The figure a church actually wants: different people, counted
+                 once each. First, because everything beside it counts
+                 crossings — and one person who steps out for a phone call
+                 crosses four times. */
+              <div className="rounded-xl px-3 py-2.5 min-w-0" style={{ background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.35)" }}>
+                <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Different people, this service</p>
+                <p className="font-semibold" style={{ fontSize: 20, color: "#4f46e5", marginTop: 2 }}>{peopleSeen.toLocaleString()}</p>
+                <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.35 }}>
+                  Counted once each, however often they move, stand up or come back
+                </p>
+              </div>
+            )}
             <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={summary.totalArrived.toLocaleString()}
               sub={`${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />

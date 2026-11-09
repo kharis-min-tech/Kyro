@@ -225,6 +225,10 @@ interface Track {
   /** Already counted walking in, and already counted walking out. */
   countedIn: boolean;
   countedOut: boolean;
+  /** Somebody Kyro had seen before — not a new person for the unique count. */
+  returning: boolean;
+  /** Already added to the count of different people seen. */
+  uniqued: boolean;
 }
 
 /**
@@ -323,6 +327,8 @@ interface Known {
   face: Float32Array | null;
   countedIn: boolean;
   countedOut: boolean;
+  /** Already one of the different people seen, so coming back adds nobody. */
+  uniqued: boolean;
   at: number;
 }
 
@@ -350,6 +356,30 @@ export class PersonTracker {
   private nextId = 1;
   entries = 0;
   exits = 0;
+  /**
+   * How many DIFFERENT people this camera has seen since the service began.
+   *
+   * The number a church actually wants, and the one nothing was answering.
+   * "Entries" on a room camera counts every person it becomes sure of — the
+   * same congregation, over and over, all service. "Entries" on a doorway
+   * camera counts crossings, and one person who steps out for a phone call
+   * crosses four times.
+   *
+   * This counts people. Somebody is added once, the first time Kyro is sure of
+   * them, and never again — not when they move seats, not when they stand up,
+   * not when they come back from the car park — for as long as it can
+   * recognise them: by face while face matching is on, otherwise by where they
+   * were a moment ago and what they are wearing.
+   *
+   * It is a floor, not a certainty. Every person Kyro fails to recognise is
+   * one person counted twice, and a hall of similar dark coats with nobody
+   * facing the camera is hard. It cannot be too LOW for the same reason, which
+   * makes it the safer kind of wrong: it will not report 1,538 people at a
+   * service of 900.
+   *
+   * Forgotten with everybody else when the service ends.
+   */
+  people = 0;
   /**
    * Set for a camera watching a doorway. Everyone passing a door both appears
    * and disappears, so appearing cannot mean "arrived" — only the direction
@@ -380,7 +410,7 @@ export class PersonTracker {
 
   /** null for a camera watching a room; a direction for one watching a door. */
   watchesDoorway(inward: Inward | null, assume: "in" | "out" | null = null): void {
-    if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; this.known = []; }
+    if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; this.people = 0; this.known = []; }
     // Changing what is assumed must not reset anything: it is a change of
     // what Kyro is being told, not a new camera.
     this.assume = assume;
@@ -421,6 +451,7 @@ export class PersonTracker {
       if (looks?.[b]) tr.look = looks[b];
       tr.score = Math.min(confirmAt + 2, tr.score + 1);
       if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) this.entries++; }
+      this.countPerson(tr);
     }
 
     // Mark the misses BEFORE adding new tracks, or a brand-new one is counted
@@ -501,12 +532,14 @@ export class PersonTracker {
         // then in — which nets to the truth, rather than to a departure that
         // never ended.
         if (t.tallied) { t.tallied = false; t.firstBox = b; }
+        t.returning = true;   // recognised, so never a new person
         t.score = Math.min(confirmAt + 2, t.score + 1);
         if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) this.entries++; }
+        this.countPerson(t);
         return;
       }
       this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false,
-        ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
+        uniqued: false, ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
       if (!t.counted && t.score <= 0) return false;      // never convinced it was a person
@@ -549,6 +582,16 @@ export class PersonTracker {
     return this.tracks.filter((t) => t.counted && t.missing === 0).length;
   }
 
+  /**
+   * One more different person — once, and only for somebody Kyro has not seen
+   * before. See `people`.
+   */
+  private countPerson(t: Track): void {
+    if (t.uniqued || !t.counted) return;
+    t.uniqued = true;
+    if (!t.returning) this.people++;
+  }
+
   private note(at: number, kind: DoorEvent["kind"]): void {
     this.events.push({ at, kind });
     if (this.events.length > MOST_EVENTS) this.events.splice(0, this.events.length - MOST_EVENTS);
@@ -567,8 +610,11 @@ export class PersonTracker {
    */
   private remember(t: Track): void {
     if (!t.look && !t.face) return;                    // nothing to recognise them by
-    if (!t.countedIn && !t.countedOut) return;         // nothing worth remembering either
-    this.known.push({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, at: t.lastSeen });
+    // Worth remembering if they were counted at a door, or counted as one of
+    // the different people seen — otherwise there is nothing to protect.
+    if (!t.countedIn && !t.countedOut && !t.uniqued) return;
+    this.known.push({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut,
+      uniqued: t.uniqued, at: t.lastSeen });
     if (this.known.length > MOST_REMEMBERED) this.known.splice(0, this.known.length - MOST_REMEMBERED);
   }
 
@@ -579,16 +625,16 @@ export class PersonTracker {
    * only when one person fits clearly better than everyone else — in a hall of
    * dark coats the honest answer is no, and a stranger is counted.
    */
-  private recall(face: Float32Array | null, look: Look | null, now: number): { countedIn: boolean; countedOut: boolean } {
-    const no = { countedIn: false, countedOut: false };
+  private recall(face: Float32Array | null, look: Look | null, now: number): { countedIn: boolean; countedOut: boolean; returning: boolean } {
+    const no = { countedIn: false, countedOut: false, returning: false };
     // Everybody who might be this person: those whose track has been let go,
     // and those whose track is still here but too old to carry on — a track
     // isn't tidied away until the end of this count, and the usher coming back
     // half an hour later would otherwise find an empty memory and be counted
     // again.
-    const stale = this.tracks.filter((t) => now - t.lastSeen > RETURN_BY_LOOK_MS && (t.countedIn || t.countedOut));
+    const stale = this.tracks.filter((t) => now - t.lastSeen > RETURN_BY_LOOK_MS && (t.countedIn || t.countedOut || t.uniqued));
     const pool: Known[] = [...this.known,
-      ...stale.map((t) => ({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, at: t.lastSeen }))];
+      ...stale.map((t) => ({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, uniqued: t.uniqued, at: t.lastSeen }))];
     let at = -1;
     if (face) {
       let best = SAME_FACE;
@@ -621,7 +667,7 @@ export class PersonTracker {
     // They are a live person again; they go back into the remembered list when
     // their track is next let go.
     if (at < this.known.length) this.known.splice(at, 1);
-    return { countedIn: pool[at].countedIn, countedOut: pool[at].countedOut };
+    return { countedIn: pool[at].countedIn, countedOut: pool[at].countedOut, returning: pool[at].uniqued };
   }
 
   /**
@@ -634,6 +680,7 @@ export class PersonTracker {
    */
   forgetPeople(): void {
     this.known = [];
+    this.people = 0;
     // Including the people still standing in the doorway: in the next service
     // they are new again, and their first crossing counts.
     for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }
@@ -641,7 +688,7 @@ export class PersonTracker {
 
   /** New day, or counting restarted. */
   reset(): void {
-    this.tracks = []; this.entries = 0; this.exits = 0; this.known = [];
+    this.tracks = []; this.entries = 0; this.exits = 0; this.people = 0; this.known = [];
   }
 
   /**
@@ -655,7 +702,7 @@ export class PersonTracker {
    * running totals begin again.
    */
   resetCounts(): void {
-    this.entries = 0; this.exits = 0;
+    this.entries = 0; this.exits = 0; this.people = 0;
     // A new session counts everybody again, including the people already here.
     this.known = [];
     for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }

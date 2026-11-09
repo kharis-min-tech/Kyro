@@ -467,6 +467,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       const reports: CameraReport[] = list.map((c) => ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
         entries: c.tracker.entries, exits: c.tracker.exits,
+        // Different people, counted once each — see PersonTracker.people.
+        people_seen: c.tracker.people,
         // Every decision this camera made at the door since the last report,
         // so the website can show what was counted and what wasn't.
         events: c.tracker.drainEvents(),

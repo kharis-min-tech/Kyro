@@ -180,6 +180,8 @@ export interface CameraReport {
   fps: number; width: number; height: number;
   /** People who arrived and left, from following them between counts. */
   entries: number; exits: number;
+  /** How many DIFFERENT people this camera has seen this service. */
+  people_seen?: number;
   /** Face codes, only while face matching is switched on. Never a picture. */
   faces?: string[]; faces_age_s?: number;
   /** What this camera decided at the door since the last report, for showing. */
