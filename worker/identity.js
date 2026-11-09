@@ -216,6 +216,14 @@ export class IdentityRegistry {
     // moment, however alike they look.
     const claimed = new Set();
 
+    // Links from a camera's own track to an identity are only useful while
+    // that track is alive. Left alone they grow for every track any camera
+    // ever made — a doorway camera makes thousands in a morning — and a
+    // service must not get heavier as it goes on.
+    if (this.byTrack.size > 2000) {
+      for (const [k, v] of this.byTrack) if (now - v.at > TRACK_LINK_MS) this.byTrack.delete(k);
+    }
+
     // Pass one: anyone this camera is already following keeps their identity.
     // This is both the strongest evidence and the cheapest, and it is what
     // makes "one person seen five hundred times" cost nothing.
@@ -360,16 +368,35 @@ export class IdentityRegistry {
    * service and dies with the process. The cost is that a restart loses the
    * strongest signal for people already seen, which is the right way round.
    */
-  snapshot() {
-    return {
+  snapshot(maxBytes = 0) {
+    const base = (looksEach) => ({
       service: this.service,
       nextId: this.nextId,
       stats: this.stats,
-      people: [...this.people.values()].map((p) => ({
-        id: p.id, firstAt: p.firstAt, lastAt: p.lastAt, seen: p.seen, uncertain: p.uncertain,
-        cameras: [...p.cameras], lastCamera: p.lastCamera, looks: p.looks,
-      })),
-    };
+      people: [...this.people.values()]
+        .sort((a, b) => a.lastAt - b.lastAt)           // oldest first, so they lose theirs first
+        .map((p) => ({
+          id: p.id, firstAt: p.firstAt, lastAt: p.lastAt, seen: p.seen, uncertain: p.uncertain,
+          cameras: [...p.cameras], lastCamera: p.lastCamera,
+          looks: looksEach > 0 ? p.looks.slice(-looksEach) : [],
+        })),
+    });
+    if (!maxBytes) return base(SAMPLES);
+    // Trim until it fits where it has to be kept. Fewer readings each first;
+    // then the people seen longest ago lose their readings altogether. Nobody
+    // is ever dropped from the register — losing a person loses attendance,
+    // losing their coat only costs the chance of recognising it later.
+    for (const each of [SAMPLES, 3, 2, 1]) {
+      const snap = base(each);
+      if (JSON.stringify(snap).length <= maxBytes) return snap;
+    }
+    const snap = base(1);
+    while (JSON.stringify(snap).length > maxBytes) {
+      const next = snap.people.find((p) => p.looks.length);
+      if (!next) break;                                 // nothing left to give
+      next.looks = [];
+    }
+    return snap;
   }
 
   restore(snap) {

@@ -14,6 +14,7 @@
  *
  *   node tests/test_identity_registry.mjs
  */
+import fs from "node:fs";
 import { IdentityRegistry, alikeLook } from "../worker/identity.js";
 
 let fails = 0;
@@ -383,6 +384,70 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
     for (let f = 0; f < 3; f++) { t += 400; after.observe("room", [{ track: 7000 + who, look: wobble(person(50 + who), f), face: face(50 + who) }], t); }
   }
   ok("and seeing them again adds nobody", after.size === 20, `got ${after.size}`);
+}
+
+// ── The three things that only break after an hour ──────────────────────────
+//
+// Found by re-reading the build rather than by anything going wrong, which is
+// the only way these ever are: each one works perfectly for the first few
+// minutes and fails during a service.
+
+// A. The saved register has to fit where it is kept. A stored value is capped
+//    at 128 KB; nine hundred people with five appearance readings each is far
+//    more. Written as-is it throws, the throw is swallowed, and the register
+//    is silently never saved — so a restart mid-service starts the
+//    congregation again from nobody, which is the exact thing saving it
+//    prevents.
+{
+  const r = reg();
+  let t = 0;
+  for (let who = 1; who <= 900; who++) {
+    for (let f = 0; f < 3; f++) { t += 50; r.observe("room", [{ track: who, look: wobble(person(who), f), face: null }], t); }
+  }
+  const big = JSON.stringify(r.snapshot()).length;
+  const fitted = r.snapshot(110_000);
+  const small = JSON.stringify(fitted).length;
+  ok("a full register of nine hundred would not fit", big > 110_000, `${big} bytes`);
+  ok("and the saved one does", small <= 110_000, `${small} bytes`);
+  ok("with nobody dropped from it", fitted.people.length === r.size, `${fitted.people.length} of ${r.size}`);
+  // The people seen most recently keep their readings: they are the ones
+  // likely to be seen again.
+  const withLooks = fitted.people.filter((p) => p.looks.length);
+  ok("and the people seen most recently keep theirs", withLooks.length > 0);
+  const newest = fitted.people[fitted.people.length - 1];
+  ok("the very last person seen certainly does", newest.looks.length > 0);
+  // And it still works when restored.
+  const back = reg();
+  back.restore(fitted);
+  ok("a restart from the trimmed copy keeps everyone", back.size === r.size, `${back.size}`);
+}
+
+// B. The links from a camera's own track ids to identities grew for ever. A
+//    doorway camera makes thousands of tracks in a morning, and a service
+//    must not get heavier as it goes on.
+{
+  const r = reg();
+  let t = 0;
+  for (let i = 0; i < 4000; i++) {
+    t += 1000;
+    r.observe("door", [{ track: i, look: wobble(person(i % 50), i % 3), face: null }], t);
+  }
+  ok("old track links are let go", r.byTrack.size <= 2100, `${r.byTrack.size} links`);
+  // …without losing anybody from the register itself.
+  ok("and nobody is lost from the register", r.size > 0);
+}
+
+// C. Two computers each with a camera called "usb-0" must not feed each
+//    other's sightings into one person. The registry is given whole camera
+//    names; this is the check that the caller builds them from the COMPUTER
+//    the report came from, not from what the report says about itself.
+{
+  const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
+  ok("a camera's name comes from the computer that reported it",
+     /const camera_id = `\$\{device\.id\}:\$\{key\}`;/.test(worker));
+  ok("and an unknown camera is ignored rather than guessed at",
+     /if \(!cams\[camera_id\] \|\| cams\[camera_id\]\.hidden \|\| cams\[camera_id\]\.pending\) continue;/.test(worker));
+  ok("the register is saved at a size that fits", /this\.register\.snapshot\(SAFE_VALUE_BYTES\)/.test(worker));
 }
 
 // ── Cost ────────────────────────────────────────────────────────────────────

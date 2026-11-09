@@ -88,7 +88,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-005bd31bdab5";
+const VENUE_CODE = "venue-4862e562f08b";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -665,7 +665,7 @@ export class VenueHub extends DurableObject {
     if (countersChanged) await this.ctx.storage.put("counters", counters);
     // The register of people. Every camera's observations meet here, which is
     // the only place they can be compared with each other.
-    try { await this.rememberPeople(body, cams, now); }
+    try { await this.rememberPeople(device, body, cams, now); }
     catch (e) { console.log("register failed", e && e.message); }
     const devices = await this.get("devices", {});
     if (devices[device.id]) {
@@ -747,7 +747,7 @@ export class VenueHub extends DurableObject {
    * recognise people but never invent them), and writing the register down
    * now and then so a restart doesn't lose the congregation.
    */
-  async rememberPeople(body, cams, now) {
+  async rememberPeople(device, body, cams, now) {
     const live = await this.get("service_live", null);
     const service = live?.id ?? null;
     if (!this.register) {
@@ -773,9 +773,15 @@ export class VenueHub extends DurableObject {
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
       if (!key || !Array.isArray(c.seen) || !c.seen.length) continue;
-      const camera_id = `${body.device_id ?? ""}${body.device_id ? ":" : ""}${key}`;
-      const id = cams[camera_id] ? camera_id : Object.keys(cams).find((k) => k.endsWith(`:${key}`));
-      if (!id || cams[id]?.hidden || cams[id]?.pending) continue;
+      // The camera's full name is the COMPUTER's id and the camera's key.
+      // I first built it from a device_id in the report body, which isn't
+      // there — the computer is identified by its token, not by what it says
+      // about itself. The fallback would then have matched on the key alone,
+      // and two computers each with a "usb-0" would have fed one another's
+      // sightings into the same person.
+      const camera_id = `${device.id}:${key}`;
+      if (!cams[camera_id] || cams[camera_id].hidden || cams[camera_id].pending) continue;
+      const id = camera_id;
       const obs = c.seen.slice(0, 40).map((x) => ({
         track: Number(x.t) || 0,
         look: Array.isArray(x.l) && x.l.length === 8 ? x.l.map(Number) : null,
@@ -790,7 +796,17 @@ export class VenueHub extends DurableObject {
       this.registerSavedAt = now;
       // snapshot() leaves every face code behind on purpose: biometric data
       // stays in memory and dies with the process that holds it.
-      await this.ctx.storage.put("register", this.register.snapshot());
+      //
+      // A stored value is capped at 128 KB, and nine hundred people with five
+      // appearance readings each is far more than that. Written as-is it
+      // would throw, be swallowed by the caller's try/catch, and the register
+      // would silently never be saved at all — so a restart mid-service would
+      // start the congregation again from nobody, which is the exact failure
+      // this is here to prevent. So it is trimmed until it fits: fewer
+      // readings each first, then the oldest people lose their readings
+      // altogether. They stay in the register and stay counted; they just
+      // can't be recognised by appearance afterwards.
+      await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
     }
   }
 
