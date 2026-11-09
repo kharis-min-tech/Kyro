@@ -110,7 +110,12 @@ const settle = (tr, boxes, t, faces, times = 4) => {
      /seen\.people = \(seen\.people \|\| 0\) \+/.test(worker)
      && /seen\.lastPeople === null \|\| rPeople < seen\.lastPeople \? rPeople : rPeople - seen\.lastPeople/.test(worker));
   ok("two cameras on one room take the fullest view", /r\.people = take\(r\.people, z\.people\);/.test(worker));
-  ok("and the venue adds its rooms up", /people_seen: sum\("people"\),/.test(worker));
+  // The attendance figure is the SIZE OF THE REGISTER — not a counter kept
+  // beside it, which is how two numbers for one thing start disagreeing. Each
+  // camera's own tally is still published for comparison, never added up.
+  ok("attendance is the register itself", /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
+  ok("and the page is told which it is", /people_from_register: !!this\.register\?\.size,/.test(worker));
+  ok("each camera's own tally is kept for comparison", /people_seen_by_camera: sum\("people"\),/.test(worker));
   ok("a doorway's own register is offered, not added", /people_seen_at_door: sumDoors\("people"\),/.test(worker));
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
   ok("and the page leads with it", /Different people, this service/.test(card));

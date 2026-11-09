@@ -469,6 +469,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         entries: c.tracker.entries, exits: c.tracker.exits,
         // Different people, counted once each — see PersonTracker.people.
         people_seen: c.tracker.people,
+        // Everyone this camera is following, for the website's register of
+        // people. A look is eight small numbers; a face only travels while
+        // face matching is switched on, and is a list of numbers either way —
+        // never a picture. See worker/identity.js.
+        seen: c.tracker.seenNow().slice(0, 40).map((x) => ({
+          t: x.track,
+          l: x.look ? [x.look.top[0], x.look.top[1], x.look.top[2],
+                       x.look.bottom[0], x.look.bottom[1], x.look.bottom[2],
+                       x.look.shape, x.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
+          f: faceOnRef.current && x.face ? packFace(x.face) : null,
+        })),
         // Every decision this camera made at the door since the last report,
         // so the website can show what was counted and what wasn't.
         events: c.tracker.drainEvents(),

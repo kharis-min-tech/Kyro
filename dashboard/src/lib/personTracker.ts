@@ -597,6 +597,24 @@ export class PersonTracker {
     if (this.events.length > MOST_EVENTS) this.events.splice(0, this.events.length - MOST_EVENTS);
   }
 
+  /**
+   * Everyone this camera is following right now, for the register of people
+   * that the website keeps across every camera.
+   *
+   * A camera's own track id means nothing anywhere else — camera 1's "person
+   * 3" and camera 2's "person 3" are different people — so it is sent as what
+   * it is: this camera's name for them, which the website uses to recognise a
+   * track it has already identified, and nothing more.
+   *
+   * Only people Kyro is actually sure of. A box it was never convinced by
+   * never becomes somebody in the register.
+   */
+  seenNow(): { track: number; look: Look | null; face: Float32Array | null }[] {
+    return this.tracks
+      .filter((t) => t.counted && t.missing === 0)
+      .map((t) => ({ track: t.id, look: t.look, face: t.face }));
+  }
+
   /** The decisions since this was last asked. Taking them clears them. */
   drainEvents(): DoorEvent[] {
     const out = this.events;

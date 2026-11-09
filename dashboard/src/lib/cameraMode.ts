@@ -182,6 +182,9 @@ export interface CameraReport {
   entries: number; exits: number;
   /** How many DIFFERENT people this camera has seen this service. */
   people_seen?: number;
+  /** Everyone it is following: this camera's own id for them, an appearance
+   *  reading, and a face code while face matching is on. Never a picture. */
+  seen?: { t: number; l: number[] | null; f: string | null }[];
   /** Face codes, only while face matching is switched on. Never a picture. */
   faces?: string[]; faces_age_s?: number;
   /** What this camera decided at the door since the last report, for showing. */

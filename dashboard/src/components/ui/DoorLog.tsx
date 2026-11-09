@@ -33,6 +33,73 @@ const WORDS: Record<string, { text: string; colour: string; Icon: typeof ArrowUp
 
 const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" });
 
+interface Identity {
+  unique_people: number; active_tracks: number; seen_on_more_than_one_camera: number;
+  uncertain_matches: number; with_a_face: number; matched_by_track: number;
+  matched_by_face: number; matched_by_look: number; flagged_matches: number;
+  rejected_as_impossible: number; ruled_out_by_face: number; created: number;
+}
+
+/**
+ * How the register of people is doing.
+ *
+ * For whoever is asked whether the number can be trusted — never for ushers,
+ * who need one number. No faces, no pictures, nothing about who anybody is:
+ * counts, and how each match was made.
+ */
+export function IdentityHealth() {
+  const [d, setD] = useState<Identity | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => edgeFetch<Identity>("/api/live/identity")
+      .then((r) => { if (alive) setD(r); }).catch(() => {});
+    load();
+    const t = setInterval(() => { if (!document.hidden) load(); }, 10_000);
+    return () => { alive = false; clearInterval(t); };
+  }, []);
+  if (!d || !d.unique_people) return null;
+  const rows: [string, number, string][] = [
+    ["Different people", d.unique_people, "the attendance figure — the size of the register"],
+    ["Being followed right now", d.active_tracks, "people a camera currently has in view"],
+    ["Seen by more than one camera", d.seen_on_more_than_one_camera, "counted once, not twice"],
+    ["Recognised by their face", d.matched_by_face, "sightings matched to somebody already known"],
+    ["Recognised by appearance", d.matched_by_look, "coat, build and height, when no face was readable"],
+    ["Ruled out by their face", d.ruled_out_by_face, "looked alike, but plainly not the same person"],
+    ["Ruled out as impossible", d.rejected_as_impossible, "could not have crossed the building that fast"],
+    ["Matches Kyro isn't sure of", d.uncertain_matches, "attached to somebody, and flagged rather than hidden"],
+  ];
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}` }}>
+      <button onClick={() => setOpen((v) => !v)} className="w-full px-5 py-4 flex items-center justify-between gap-3 text-left">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>How the counting is doing</p>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
+            {d.unique_people.toLocaleString()} different people · {d.uncertain_matches} match{d.uncertain_matches === 1 ? "" : "es"} flagged as uncertain
+          </p>
+        </div>
+        <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{open ? "Hide" : "Show"}</span>
+      </button>
+      {open && (
+        <table className="w-full" style={{ fontSize: 13, borderTop: `1px solid ${BORDER}` }}>
+          <tbody>
+            {rows.map(([label, value, why]) => (
+              <tr key={label} style={{ borderTop: `1px solid ${BORDER}` }}>
+                <td className="px-5 py-2" style={{ color: "var(--text-secondary)" }}>
+                  {label}<span style={{ color: "var(--text-faint)", fontSize: 11 }}> · {why}</span>
+                </td>
+                <td className="px-5 py-2 text-right tabular-nums font-semibold" style={{ color: "var(--text-primary)" }}>
+                  {value.toLocaleString()}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 export function DoorLog() {
   const [log, setLog] = useState<DoorLog | null>(null);
   const [err, setErr] = useState<string | null>(null);

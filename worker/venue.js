@@ -10,6 +10,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { notifyCount } from "./index.js";
+import { IdentityRegistry } from "./identity.js";
 
 const enc = new TextEncoder();
 const json = (body, status = 200) =>
@@ -57,6 +58,8 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
 const FACE_FRESH_MS = 10_000;
 /** How many door decisions are kept per camera for the "what was counted" panel. */
 const DOOR_LOG_KEEP = 200;
+/** How often the register of people is written down, so a restart keeps it. */
+const REGISTER_SAVE_MS = 30_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
@@ -85,7 +88,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-8e3f1044ff6d";
+const VENUE_CODE = "venue-005bd31bdab5";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -267,6 +270,15 @@ export class VenueHub extends DurableObject {
     // Face matching (only while switched on): camera_id → { at, codes: Float32Array[] }.
     // Kept in memory only, for under a minute — never written to storage.
     this.faceCodes = new Map();
+    /**
+     * Who is in the building: one entry per person, for one service, shared by
+     * every camera. This is where the attendance figure comes from — see
+     * worker/identity.js. Built on the first report and restored from storage
+     * after a restart, so the process being replaced mid-service does not
+     * start the congregation again from nobody.
+     */
+    this.register = null;
+    this.registerSavedAt = 0;
     /** camera → the last few door decisions, for the "what was counted" panel. */
     this.doorLog = new Map();
     // Who is signed in right now: username → deviceId → { name, role, device, at }.
@@ -396,6 +408,12 @@ export class VenueHub extends DurableObject {
       // "What did you actually count?" — every decision the door cameras made
       // in the last little while, so it can be checked against the door.
       if (p === "/api/live/door-log" && request.method === "GET") return json(await this.doorLogFor());
+      // How the register of people is doing: counts and confidences, never a
+      // face, a picture or anything about who anybody is.
+      if (p === "/api/live/identity" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json(this.register ? this.register.diagnostics() : { unique_people: 0, service: null });
+      }
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
       if (svc && svc[2] === "keep" && request.method === "POST") return this.keepService(svc[1], user);
@@ -645,6 +663,10 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.delete("face_error");
     }
     if (countersChanged) await this.ctx.storage.put("counters", counters);
+    // The register of people. Every camera's observations meet here, which is
+    // the only place they can be compared with each other.
+    try { await this.rememberPeople(body, cams, now); }
+    catch (e) { console.log("register failed", e && e.message); }
     const devices = await this.get("devices", {});
     if (devices[device.id]) {
       devices[device.id].last_seen = new Date(now).toISOString();
@@ -715,6 +737,61 @@ export class VenueHub extends DurableObject {
       // make Kyro a record of people rather than a count of them.
       service: (await this.get("service_live", null))?.id ?? null,
       report_every_s: 2, snapshot_every_s: 20 });
+  }
+
+  /**
+   * Add what the cameras have just seen to the register of people.
+   *
+   * Everything that makes this safe is in identity.js; this is the plumbing:
+   * which service we are in, which camera is on a doorway (a doorway may
+   * recognise people but never invent them), and writing the register down
+   * now and then so a restart doesn't lose the congregation.
+   */
+  async rememberPeople(body, cams, now) {
+    const live = await this.get("service_live", null);
+    const service = live?.id ?? null;
+    if (!this.register) {
+      this.register = new IdentityRegistry({
+        zoneOf: (id) => (cams[id]?.zone_name || cams[id]?.name || id),
+        createsIdentities: (id) => cams[id]?.location !== "entrance",
+      });
+      const saved = await this.get("register", null);
+      if (saved && saved.service === service) this.register.restore(saved);
+      else this.register.startService(service);
+    }
+    // A different service — or none — means a different congregation. The
+    // register is destroyed, faces and all, exactly as the face data is.
+    if (this.register.service !== service) {
+      this.register.startService(service);
+      await this.ctx.storage.delete("register");
+    }
+    // Nothing is recorded outside a service: a register of people needs a
+    // reason to exist, and "somebody left a camera running" is not one.
+    if (!service) return;
+
+    const faceOk = (await this.privacy()).face_matching;
+    for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
+      const key = clean(c.key, 80);
+      if (!key || !Array.isArray(c.seen) || !c.seen.length) continue;
+      const camera_id = `${body.device_id ?? ""}${body.device_id ? ":" : ""}${key}`;
+      const id = cams[camera_id] ? camera_id : Object.keys(cams).find((k) => k.endsWith(`:${key}`));
+      if (!id || cams[id]?.hidden || cams[id]?.pending) continue;
+      const obs = c.seen.slice(0, 40).map((x) => ({
+        track: Number(x.t) || 0,
+        look: Array.isArray(x.l) && x.l.length === 8 ? x.l.map(Number) : null,
+        // A face only ever enters the register while face matching is switched
+        // on, whatever a camera computer sends.
+        face: faceOk && typeof x.f === "string" ? unpackFace(x.f) : null,
+      })).filter((x) => x.look || x.face);
+      if (obs.length) this.register.observe(id, obs, now);
+    }
+
+    if (now - this.registerSavedAt >= REGISTER_SAVE_MS) {
+      this.registerSavedAt = now;
+      // snapshot() leaves every face code behind on purpose: biometric data
+      // stays in memory and dies with the process that holds it.
+      await this.ctx.storage.put("register", this.register.snapshot());
+    }
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -1013,7 +1090,17 @@ export class VenueHub extends DurableObject {
        * A doorway camera's own register is offered separately rather than
        * added, since everyone it sees also walks into a room.
        */
-      people_seen: sum("people"),
+      /**
+       * Attendance: how many different people have been seen this service, one
+       * entry each, from the register every camera feeds (worker/identity.js).
+       * Not a counter — the size of the register itself, so it cannot drift
+       * away from the people it is made of.
+       */
+      people_seen: this.register?.size ?? sum("people"),
+      /** Whether that came from the register or from the cameras' own tallies. */
+      people_from_register: !!this.register?.size,
+      /** Each camera's own tally, kept for comparison. Never added together. */
+      people_seen_by_camera: sum("people"),
       people_seen_at_door: sumDoors("people"),
       /** What the cameras can actually see right now — the floor. */
       seen_now: seenNow,

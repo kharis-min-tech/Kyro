@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
-import { DoorLog } from "@/components/ui/DoorLog";
+import { DoorLog, IdentityHealth } from "@/components/ui/DoorLog";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
@@ -1555,6 +1555,7 @@ export default function AttendancePage() {
             {/* Every decision the entrance made, in words — so the figures
                 above can be checked against the door itself. */}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <DoorLog />}
+            {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <IdentityHealth />}
 
             {/* Zone overview cards */}
             <div className="rounded-2xl p-5" style={{ background: CARD, border: `1px solid ${BORDER}` }}>

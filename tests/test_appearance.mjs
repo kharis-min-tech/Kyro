@@ -216,17 +216,32 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   ok("and recent", /const RETURN_BY_LOOK_MS = /.test(src));
 }
 
-// 8. Nothing about a look leaves the browser. It is not in what the camera
-//    computer sends, and there is nothing to store.
+// 8. What leaves the browser.
+//
+//    This changed, and it is worth being exact about. Appearance readings used
+//    to stay in the browser entirely. They now travel to the website, because
+//    the register of people lives there — it is the only place one camera's
+//    sighting can be compared with another's, which is the whole of
+//    cross-camera identity.
+//
+//    What travels is eight numbers: two colours as a share of the light, two
+//    brightnesses, a shape and a height. Never a picture, never a crop of
+//    anybody, nothing that could be turned back into one. A face code travels
+//    only while face matching is switched on, as it already did, and the
+//    website refuses to put one in the register otherwise.
 {
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   const reports = ctx.slice(ctx.indexOf("const reports: CameraReport[]"), ctx.indexOf("try {", ctx.indexOf("const reports")));
-  ok("looks are not sent with the counts", !/look/i.test(reports), reports.slice(0, 200));
-  const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), "utf8");
-  const iface = cam.slice(cam.indexOf("export interface CameraReport"), cam.indexOf("export type Zone"));
-  ok("and there is no room for them in a report", !/look/i.test(iface));
+  ok("what is sent is numbers, not a picture",
+     /l: x\.look \? \[x\.look\.top\[0\]/.test(reports) && !/canvas|toDataURL|jpeg|image/i.test(reports));
+  ok("a face only travels while face matching is on", /f: faceOnRef\.current && x\.face \? packFace/.test(reports));
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
-  ok("the website has no idea they exist", !/\blooks?\b/i.test(worker.slice(worker.indexOf("async report("), worker.indexOf("movedFrom("))));
+  ok("and the website refuses to register one otherwise",
+     /face: faceOk && typeof x\.f === "string" \? unpackFace\(x\.f\) : null,/.test(worker));
+  ok("faces are never written to storage", /leaves every face code behind on purpose/.test(worker));
+  const identity = fs.readFileSync(path.join(root, "worker/identity.js"), "utf8");
+  const snap = identity.slice(identity.indexOf("  snapshot() {"), identity.indexOf("  restore(snap)"));
+  ok("the saved register holds no face data", !/faces:/.test(snap), snap.slice(0, 160));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });
