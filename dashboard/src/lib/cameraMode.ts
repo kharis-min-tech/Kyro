@@ -7,7 +7,7 @@
 import { edgeFetch } from "@/lib/edgeAuth";
 import type { Person } from "@/lib/peopleDetector";
 import type { Inward } from "@/lib/personTracker";
-import { startEngine, countWith } from "@/lib/countEngine";
+import { startEngine, countWith, seatingWith } from "@/lib/countEngine";
 export { MODELS } from "@/lib/countEngine";
 
 const DEVICE_KEY = "kyro_camera_mode_device";
@@ -27,6 +27,8 @@ export interface Engine {
    * hall.
    */
   count(px: ImageData, tiles?: number, fast?: boolean): Promise<Person[]>;
+  /** Chairs, benches and sofas, for finding the seats. One look, no tiles. */
+  seating(px: ImageData): Promise<Person[]>;
 }
 
 const ENGINE_KEY = "kyro_engine_kind";
@@ -35,7 +37,9 @@ function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<
   let prefer: "accurate" | "light" | undefined;
   try { const v = localStorage.getItem(ENGINE_KEY); if (v === "accurate" || v === "light") prefer = v; } catch { /* fine without it */ }
   return startEngine(onProgress, prefer, (kind) => { try { localStorage.setItem(ENGINE_KEY, kind); } catch { /* fine */ } })
-    .then((e) => ({ kind: e.kind, backend: e.backend, count: (px, tiles, fast) => countWith(e, px, tiles, fast) }));
+    .then((e) => ({ kind: e.kind, backend: e.backend,
+      count: (px, tiles, fast) => countWith(e, px, tiles, fast),
+      seating: (px) => seatingWith(e, px) }));
 }
 
 export function loadEngine(onProgress: (pct: number, step: string) => void): Promise<Engine> {
@@ -60,6 +64,11 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
         ready = true;
         resolve({
           kind: m.kind, backend: m.backend,
+          seating: (px) => new Promise<Person[]>((ok, fail) => {
+            const id = nextId++;
+            waiting.set(id, { ok, fail });
+            worker.postMessage({ type: "count", id, seating: true, px: { data: px.data, width: px.width, height: px.height } });
+          }),
           count: (px, tiles, fast) => new Promise<Person[]>((ok, fail) => {
             const id = nextId++;
             waiting.set(id, { ok, fail });
@@ -215,6 +224,8 @@ export interface CameraReport {
   /** Everyone it is following: this camera's own id for them, an appearance
    *  reading, and a face code while face matching is on. Never a picture. */
   seen?: { t: number; l: number[] | null; f: string | null }[];
+  /** Which seats are taken: [seat id, state, seconds vacant, confidence]. */
+  seats?: [string, string, number, number][];
   /** Face codes, only while face matching is switched on. Never a picture. */
   faces?: string[]; faces_age_s?: number;
   /** What this camera decided at the door since the last report, for showing. */
@@ -268,6 +279,25 @@ export async function sendReport(
     // "auto", or an operator saying everybody at the door is arriving/leaving.
     doorMode: body.door_mode === "in" || body.door_mode === "out" ? body.door_mode : null,
   };
+}
+
+/**
+ * The seats Kyro has found on this camera, sent to the website.
+ *
+ * The same endpoint the installed camera computer has always used, so the
+ * website needs no new idea of where seats come from: it stores them as a
+ * layout called "Found by Kyro", keeps any reservations against seats that
+ * are still there, and sets the room's seat count from it.
+ */
+export async function sendSeats(key: string, seats: unknown[], stage: "top" | "bottom"): Promise<{ active?: boolean } | null> {
+  const dev = savedDevice();
+  if (!dev) return null;
+  const res = await fetch("/api/devices/auto-seats", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${dev.token}` },
+    body: JSON.stringify({ camera: key, seats, stage }),
+  });
+  return res.ok ? res.json().catch(() => null) : null;
 }
 
 export async function sendPicture(key: string, canvas: HTMLCanvasElement): Promise<void> {

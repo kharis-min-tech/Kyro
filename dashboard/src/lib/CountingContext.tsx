@@ -17,7 +17,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  loadEngine, listCameras, openCamera, cameraKey, grab, countPeople, savedDevice,
+  loadEngine, listCameras, openCamera, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
@@ -26,6 +26,7 @@ import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { PersonTracker } from "@/lib/personTracker";
 import { lookOf } from "@/lib/appearance";
+import { SeatFinder } from "@/lib/seatFinder";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
@@ -63,6 +64,8 @@ const DOOR_FACES_EVERY_MS = 1_200;
  * nearest is where a face is large enough to read at all.
  */
 const MOST_FACES_AT_ONCE = 3;
+/** How often the seats Kyro has found are sent to the website. They don't move. */
+const SEATS_EVERY_MS = 60_000;
 
 /** A face code in the form the website expects: 128 half-size numbers, base64. */
 function packFace(v: Float32Array): string {
@@ -101,6 +104,10 @@ interface Cam {
   needsTiles: boolean; sinceTileCheck: number;
   /** Watching a doorway. It gets more turns, and never splits the picture. */
   isDoor: boolean;
+  /** Finds this camera's seats by itself. Only ever for a camera on a room. */
+  seatFinder: SeatFinder;
+  /** When its seat list was last sent to the website. */
+  seatsSentAt: number;
   tracker: PersonTracker;      // follows people between counts → arrived / left
   faces: string[] | null;      // face codes to send, when face matching is on
   facesAt: number;
@@ -204,7 +211,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(), faces: null, facesAt: 0,
+          seatFinder: new SeatFinder(key), seatsSentAt: 0,
         };
+        // What this camera has already worked out about its seats, from last
+        // time. Seats don't move; starting again every reload would mean
+        // never finding them.
+        try { c.seatFinder.load(localStorage.getItem(`kyro_seats_${key}`)); } catch { /* fine without it */ }
         cams.current.set(key, c);
       }
       const wanted = !offRef.current.includes(key);
@@ -330,6 +342,21 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // AI, a sample of the pixels already in hand) and lets Kyro
           // recognise someone who stepped out of view, without reading faces.
           // Never stored, never sent: it lives on the track and dies with it.
+          // Finding the seats: where people are now, and every few minutes a
+          // look for empty chairs. Both are free of the counting — the chair
+          // look is one extra AI run every five minutes, and only on a camera
+          // watching a room, never on a doorway.
+          if (!c.isDoor) {
+            const boxes = c.people.map((p) => p.box as [number, number, number, number]);
+            c.seatFinder.sawPeople(boxes, px.width, px.height, Date.now());
+            if (c.seatFinder.wantsChairs(Date.now()) && engine.current.seating) {
+              try {
+                const chairs = await engine.current.seating(px);
+                c.seatFinder.sawChairs(chairs.map((x) => x.box as [number, number, number, number]), px.width, px.height, Date.now());
+              } catch { c.seatFinder.chairsAt = Date.now(); }   // never stop counting over it
+            }
+            c.seatFinder.decide(Date.now());
+          }
           const looks = c.people.map((p) => lookOf(px, p.box as [number, number, number, number]));
           c.tracker.update(c.people, Date.now(), codes ?? undefined, looks);
           c.count = c.steady.add(c.people.length);
@@ -479,6 +506,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         entries: c.tracker.entries, exits: c.tracker.exits,
         // Different people, counted once each — see PersonTracker.people.
         people_seen: c.tracker.people,
+        // Which of this camera's seats are taken. A seat id and a person id
+        // are different things: somebody who sits in five chairs during a
+        // service is five seats and one person in the attendance register.
+        ...(c.isDoor ? {} : { seats: c.seatFinder.occupancy(
+          c.people.map((p) => p.box as [number, number, number, number]),
+          c.video?.videoWidth || 1280, c.video?.videoHeight || 720, Date.now()) }),
         // Everyone this camera is following, for the website's register of
         // people. A look is eight small numbers; a face only travels while
         // face matching is switched on, and is a list of numbers either way —
@@ -540,6 +573,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           offRef.current = [...offRef.current, ...newlyOff];
           try { localStorage.setItem(OFF_KEY, JSON.stringify(offRef.current)); } catch {}
           await syncCameras();
+        }
+        // The seat list itself, when it has changed and not too often. The
+        // same endpoint the installed camera computer uses, so the website
+        // needs no new idea of where seats come from.
+        for (const c of list) {
+          if (c.isDoor || Date.now() - c.seatsSentAt < SEATS_EVERY_MS) continue;
+          const seats = c.seatFinder.seats();
+          if (!seats.length) continue;
+          c.seatsSentAt = Date.now();
+          try { localStorage.setItem(`kyro_seats_${c.key}`, c.seatFinder.save()); } catch { /* fine without it */ }
+          sendSeats(c.key, seats, c.seatFinder.stage).catch(() => { c.seatsSentAt = 0; });
         }
         for (const c of list) {
           if (Date.now() - c.lastPicture >= PICTURE_EVERY_MS && c.countedAt) {

@@ -73,12 +73,27 @@ function toTensor(px: Pixels, sx: number, sy: number, sw: number, sh: number, S:
   return { tensor: t, r, ox, oy };
 }
 
-/** Raw YOLO output → person boxes in picture coordinates. */
-function decode(out: Float32Array, r: number, ox: number, oy: number, sx: number, sy: number, minScore: number): Person[] {
-  const n = out.length / 84;  // 8400 candidates; row 4 = "person" score
+/**
+ * Which rows of the model's output are worth reading.
+ *
+ * The model is trained on eighty kinds of object and reports all of them, in
+ * one run, every time. Kyro read row 4 — "person" — and threw the other
+ * seventy-nine away. Three of them are seats: bench, chair and sofa, the same
+ * three the camera computer uses to find seating automatically. Reading them
+ * costs no extra AI work whatsoever; they have been produced and discarded on
+ * every count Kyro has ever done.
+ *
+ * Row = 4 + the object's number, because the first four rows are the box.
+ */
+export const PERSON_ROW = 4;
+export const SEATING_ROWS = [4 + 13, 4 + 56, 4 + 57];   // bench, chair, sofa
+
+/** Raw YOLO output → boxes in picture coordinates, from one row of it. */
+function decodeRow(out: Float32Array, row: number, r: number, ox: number, oy: number, sx: number, sy: number, minScore: number): Person[] {
+  const n = out.length / 84;  // 8400 candidates
   const found: Person[] = [];
   for (let i = 0; i < n; i++) {
-    const score = out[4 * n + i];
+    const score = out[row * n + i];
     if (score < minScore) continue;
     const cx = out[i], cy = out[n + i], w = out[2 * n + i], h = out[3 * n + i];
     found.push({
@@ -90,6 +105,23 @@ function decode(out: Float32Array, r: number, ox: number, oy: number, sx: number
     });
   }
   return nms(found, 0.6);
+}
+
+function decode(out: Float32Array, r: number, ox: number, oy: number, sx: number, sy: number, minScore: number): Person[] {
+  return decodeRow(out, PERSON_ROW, r, ox, oy, sx, sy, minScore);
+}
+
+/**
+ * Chairs, benches and sofas in the same output — for finding the seats.
+ *
+ * Deliberately a separate call on a result Kyro already has, so that nothing
+ * about counting people changes: the person boxes come from exactly the same
+ * place they always did.
+ */
+export function decodeSeating(out: Float32Array, r: number, ox: number, oy: number, sx: number, sy: number, minScore = 0.35): Person[] {
+  const all: Person[] = [];
+  for (const row of SEATING_ROWS) all.push(...decodeRow(out, row, r, ox, oy, sx, sy, minScore));
+  return nms(all, 0.45);
 }
 
 const area = (b: Person["box"]) => Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
@@ -114,6 +146,19 @@ function tileGrid(px: Pixels, tiles: DetectOptions["tiles"], size: number): numb
   const longest = Math.max(px.width, px.height);
   if (longest > size * 4) return 3;          // 4K
   return longest > size * 1.25 ? 2 : 1;
+}
+
+/**
+ * Chairs, benches and sofas in one look at the whole picture.
+ *
+ * One AI run, no tiles: finding furniture is a bonus and must never take time
+ * from counting people. It is asked for every few minutes, not every count —
+ * chairs do not move about.
+ */
+export async function detectSeating(px: Pixels, run: RunModel, opts: DetectOptions = {}): Promise<Person[]> {
+  const size = opts.size ?? MODEL_SIZE;
+  const { tensor, r, ox, oy } = toTensor(px, 0, 0, px.width, px.height, size);
+  return decodeSeating(await run(tensor), r, ox, oy, 0, 0, opts.minScore ?? 0.35);
 }
 
 export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOptions = {}): Promise<Person[]> {

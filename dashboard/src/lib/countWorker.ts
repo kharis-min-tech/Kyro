@@ -4,7 +4,7 @@
  * picture the page sends, off the page's own thread, so the camera pictures
  * and buttons never freeze while it works.
  */
-import { startEngine, countWith, ensureFast, type LocalEngine } from "@/lib/countEngine";
+import { startEngine, countWith, seatingWith, ensureFast, type LocalEngine } from "@/lib/countEngine";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let engine: LocalEngine | null = null;
@@ -33,7 +33,11 @@ ctx.onmessage = async (ev: MessageEvent) => {
         fastLoading = true;
         ensureFast(engine).catch(() => {}).finally(() => { fastLoading = false; });
       }
-      const people = await countWith(engine, m.px, m.tiles, m.fast);
+      // Chairs, benches and sofas instead of people: the same model, one look,
+      // asked for every few minutes so the seats can be found automatically.
+      const people = m.seating
+        ? await seatingWith(engine, m.px)
+        : await countWith(engine, m.px, m.tiles, m.fast);
       ctx.postMessage({ type: "result", id: m.id, people });
     } catch (e) {
       ctx.postMessage({ type: "count-error", id: m.id, message: e instanceof Error ? e.message : String(e) });

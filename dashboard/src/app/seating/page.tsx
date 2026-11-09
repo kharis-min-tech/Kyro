@@ -969,8 +969,15 @@ function CameraSeatView({ camera }: { camera: Camera }) {
             )}
           </div>
           <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-            These cameras count the people in the room — seat-by-seat detection isn&apos;t available from them.
-            {!edgeRunning && " The count updates when Camera Mode or the camera computer is running for this room."}
+            {/* This used to say seat-by-seat detection wasn't available from these cameras. It is now:
+                the counting AI already reports chairs, benches and sofas on every single count — Kyro
+                simply read the "person" row of its answer and threw the rest away. See lib/seatFinder.ts. */}
+            <strong style={{ color: "var(--text-secondary)" }}>Kyro is looking for this room&apos;s seats by itself.</strong>{" "}
+            It finds them two ways: the chairs, benches and sofas the AI recognises — checked every few
+            minutes, and best before anyone arrives — and the places people actually sit, which is anywhere
+            somebody stays put for a minute and a half. The map appears here as soon as it has found some;
+            on a full room that is usually during the first part of a service.
+            {!edgeRunning && " None of it happens while the counting computer is off, which is why this room says Offline."}
           </p>
           {edgeRunning === false && edgeZone?.error_reason && (
             <p style={{ fontSize: 11, color: "#f59e0b" }}>{edgeZone.error_reason}</p>

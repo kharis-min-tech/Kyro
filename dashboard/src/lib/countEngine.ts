@@ -4,7 +4,7 @@
  * background worker (countWorker.ts), so counting never freezes the page; it
  * can also run on the page itself if the browser has no workers.
  */
-import { detectPeople, type Person, type Pixels, type RunModel } from "@/lib/peopleDetector";
+import { detectPeople, detectSeating, type Person, type Pixels, type RunModel } from "@/lib/peopleDetector";
 import { modelResponse, forgetOldModels } from "@/lib/modelCache";
 
 export const ORT_VERSION = "1.30.0";
@@ -221,6 +221,11 @@ export async function startEngine(
 export function countWith(engine: LocalEngine, px: Pixels, tiles?: number, fast?: boolean): Promise<Person[]> {
   const use = fast && engine.fast ? engine.fast : engine;
   return detectPeople(px, use.run, { tiles: tiles ?? use.tiles, size: use.size });
+}
+
+/** Chairs, benches and sofas — one look, for finding the seats. */
+export function seatingWith(engine: LocalEngine, px: Pixels): Promise<Person[]> {
+  return detectSeating(px, engine.run, { size: engine.size });
 }
 
 /**
