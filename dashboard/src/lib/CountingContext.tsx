@@ -18,6 +18,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
   loadEngine, listCameras, openCamera, cameraKey, grab, countPeople, savedDevice,
+  COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
@@ -264,7 +265,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       for (const c of countOrder([...cams.current.values()])) {
         if (!running.current) break;
         if (!c.stream || !c.video || !engine.current) continue;
-        const px = grab(c.video, c.grabCanvas);
+        // A doorway camera takes a smaller picture still: it uses the quick
+        // AI, everyone it cares about is a step away, and looking twice as
+        // often matters more there than anything else. See COUNT_WIDTH.
+        const px = grab(c.video, c.grabCanvas, c.isDoor ? DOOR_WIDTH : COUNT_WIDTH);
         if (!px) {
           // The camera is open but has no picture to give. This used to be
           // skipped in silence, so the tile stayed black on "Starting…" with
@@ -343,7 +347,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // done. A flat 350 ms wasted more time than a count takes once tiling is
       // off (about 200 ms), which showed as the number lagging behind the room.
       const slowest = Math.max(0, ...[...cams.current.values()].map((c) => c.secondsPerCount * 1000));
-      await new Promise((r) => setTimeout(r, did ? Math.min(350, Math.max(50, slowest * 0.25)) : 500));
+      // A breather so the page stays responsive, in proportion to the work
+      // just done — but a tenth of a second at most when a camera is watching
+      // a doorway. People cross a door in under a second; a third of a second
+      // spent being polite is a third of the sightings there are to have.
+      const door = [...cams.current.values()].some((c) => c.isDoor && c.stream);
+      const rest = Math.max(door ? 20 : 50, slowest * (door ? 0.1 : 0.25));
+      await new Promise((r) => setTimeout(r, did ? Math.min(door ? 100 : 350, rest) : 500));
     }
   }, [refreshViews]);
 

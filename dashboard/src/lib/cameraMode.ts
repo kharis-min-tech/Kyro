@@ -99,15 +99,45 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
 
 // ─── Reading a camera ───────────────────────────────────────────────────────
 
-/** Grabs the current picture from a <video> as RGBA pixels. */
-export function grab(video: HTMLVideoElement, canvas: HTMLCanvasElement) {
-  const w = video.videoWidth, h = video.videoHeight;
-  if (!w || !h) return null;
+/**
+ * How wide a picture is worth taking, before the AI even looks at it.
+ *
+ * Kyro asks every camera for 1920×1080, because more pixels means people
+ * further away are still found. Then it took the whole two million of them off
+ * the video, four bytes each, and copied all eight megabytes to the counter —
+ * every single count. At three counts a second that is twenty-four megabytes a
+ * second of pure copying, and it is pure waste: the AI resizes the picture to
+ * 640 or 1280 square as its very first act, so nothing beyond that width was
+ * ever looked at.
+ *
+ * Taking the picture at the size the AI will use makes each count several
+ * times cheaper for the same answer — which at a doorway, where people cross
+ * in under a second, is the difference between seeing somebody twice and
+ * seeing them once.
+ *
+ * A little above the model's own size, so the resize has something to work
+ * with and faces are still readable.
+ */
+const COUNT_WIDTH = 1280;          // a camera on a room: the accurate AI's size
+const DOOR_WIDTH = 960;            // a doorway: the quick AI, and people are close
+
+/**
+ * Grabs the current picture from a <video> as RGBA pixels, no wider than
+ * `maxWidth` — see COUNT_WIDTH. Everything downstream works in fractions of
+ * the picture or in its own pixels, so nothing cares what size it is.
+ */
+export function grab(video: HTMLVideoElement, canvas: HTMLCanvasElement, maxWidth = COUNT_WIDTH) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+  const scale = Math.min(1, maxWidth / vw);
+  const w = Math.max(1, Math.round(vw * scale)), h = Math.max(1, Math.round(vh * scale));
   if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
   const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
   ctx.drawImage(video, 0, 0, w, h);
   return ctx.getImageData(0, 0, w, h);
 }
+
+export { COUNT_WIDTH, DOOR_WIDTH };
 
 /** `tiles` = 1 counts the whole picture in one look (five times faster, and
  *  loses nothing unless someone is too small to see without tiling). */
