@@ -182,6 +182,33 @@ export function openCamera(deviceId: string, step = 0): Promise<MediaStream> {
  */
 const SIZES: ([number, number] | null)[] = [[1920, 1080], [1280, 720], [640, 480], null];
 
+/**
+ * Open a camera, asking for less detail each time until one size actually
+ * works — and only then give up.
+ *
+ * Stepping down already existed for a camera that opens and then sends
+ * nothing. It did not exist for a camera that refuses to open at all, which
+ * is the same fault one step earlier: a second camera on a shared USB socket
+ * has no bandwidth left for 1920x1080, so the browser throws rather than
+ * hands back a black picture. Kyro asked once, at the largest size, failed,
+ * and said "Another program is using this camera" about a camera no program
+ * was using. 720p counts people perfectly well.
+ */
+export async function openCameraAnySize(deviceId: string): Promise<MediaStream> {
+  let last: unknown = new Error("No camera");
+  for (let step = 0; step < SIZES.length; step++) {
+    try {
+      return await openCamera(deviceId, step);
+    } catch (e) {
+      last = e;
+      // Not being allowed to use cameras at all is not a size problem, and
+      // asking four times only makes four identical refusals.
+      if (e instanceof Error && (e.name === "NotAllowedError" || e.name === "SecurityError")) break;
+    }
+  }
+  throw last;
+}
+
 const NOT_A_ROOM_CAMERA = /facetime|integrated|built-?in|truevision|iphone|ipad|desk view|virtual|obs/i;
 
 export async function listCameras(): Promise<MediaDeviceInfo[]> {

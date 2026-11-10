@@ -17,7 +17,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  loadEngine, listCameras, openCamera, cameraKey, grab, countPeople, savedDevice, sendSeats,
+  loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, type Engine, type CameraReport, type Zone,
 } from "@/lib/cameraMode";
@@ -241,12 +241,26 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       const wanted = !offRef.current.includes(key);
       if (wanted && !c.stream) {
         try {
-          c.stream = await openCamera(d.deviceId);
+          // Every size, largest first — not one try at 1920x1080. A second
+          // camera sharing a USB socket has no room for 1080p and the browser
+          // simply refuses; 720p opens straight away. See openCameraAnySize.
+          c.stream = await openCameraAnySize(d.deviceId);
           c.error = null;
+          c.tries = 0;
           c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c!.stream = null; c!.error = "Unplugged"; refreshViews(); });
         } catch (e) {
-          c.error = e instanceof Error && e.name === "NotReadableError"
-            ? "Another program is using this camera" : "Couldn't open this camera";
+          const name = e instanceof Error ? e.name : "";
+          c.error = name === "NotReadableError"
+            ? "This camera wouldn't open at any size. Either another program has it (Zoom, Teams, Photo Booth, FaceTime), or it is sharing a USB socket with another camera — give it a socket of its own."
+            : name === "NotAllowedError" || name === "SecurityError"
+            ? "The browser hasn't been allowed to use this camera. Click the camera icon in the address bar, choose Allow, then press Start counting."
+            : name === "OverconstrainedError"
+            ? "This camera wouldn't give a picture at any size Kyro can ask for. Try a different cable or USB socket."
+            : `Kyro couldn't open this camera${name ? ` (${name})` : ""}. Unplug it, plug it back in, and press Start counting.`;
+          // Say it out loud. A camera that never opens used to be left out of
+          // the report altogether, so it appeared nowhere on the website at
+          // all — which looks exactly like Kyro not noticing the camera.
+          say(c.label, "Couldn't open this camera", c.error);
         }
       } else if (!wanted && c.stream) {
         c.stream.getTracks().forEach((t) => t.stop()); c.stream = null;
@@ -286,7 +300,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       }
     }
     refreshViews();
-  }, [refreshViews]);
+  }, [refreshViews, say]);
 
   /** Cameras take turns; always the newest picture. */
   const countLoop = useCallback(async () => {
@@ -551,8 +565,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (phase !== "running" || demoRef.current) return;
     const tick = async () => {
-      const list = [...cams.current.values()].filter((c) => c.stream);
+      // Every camera this browser knows about, INCLUDING ones that wouldn't
+      // open. A camera left out of the report appears nowhere on the website,
+      // so a camera Kyro can see but cannot use was indistinguishable from a
+      // camera Kyro never noticed — and the one thing the operator needed was
+      // the reason. It reports with its reason and no figures.
+      const list = [...cams.current.values()];
       const reports: CameraReport[] = list.map((c) => {
+        if (!c.stream || !c.video) return {
+          key: c.key, label: c.label, current: 0, peak: c.peak,
+          entries: c.tracker.entries, exits: c.tracker.exits, people_seen: c.tracker.people,
+          status: "error", error: c.error ?? "This camera isn't open yet",
+          fps: 0, width: 0, height: 0, no_picture: true, counted_at: c.countedAt,
+        };
         // Who is in which seat, as this camera sees it. Worked out once and
         // used for both the seat states and the register, so the two cannot
         // disagree about where somebody is sitting.
@@ -647,7 +672,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // same endpoint the installed camera computer uses, so the website
         // needs no new idea of where seats come from.
         for (const c of list) {
-          if (c.isDoor || Date.now() - c.seatsSentAt < SEATS_EVERY_MS) continue;
+          if (!c.stream || c.isDoor || Date.now() - c.seatsSentAt < SEATS_EVERY_MS) continue;
           const seats = c.seatFinder.seats();
           if (!seats.length) continue;
           c.seatsSentAt = Date.now();
@@ -659,7 +684,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           });
         }
         for (const c of list) {
-          if (Date.now() - c.lastPicture >= PICTURE_EVERY_MS && c.countedAt) {
+          if (c.stream && Date.now() - c.lastPicture >= PICTURE_EVERY_MS && c.countedAt) {
             c.lastPicture = Date.now();
             sendPicture(c.key, c.grabCanvas);
           }

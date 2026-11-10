@@ -1395,6 +1395,11 @@ export class VenueHub extends DurableObject {
     const zones = cams.map((c) => {
       const l = live[c.camera_id] || {};
       const running = this.isOnline(l);
+      // Reporting is not counting. A camera Kyro can see but cannot open now
+      // reports with its reason — which is the thing the operator needed —
+      // but it must not then be added to "cameras running", or a camera that
+      // has never opened makes the system look healthier than it is.
+      const counting = running && !(l.status === "error" && l.no_picture);
       const current = running ? l.current || 0 : 0;
       return {
         camera_id: c.camera_id, zone_name: c.zone_name || c.name, camera_name: c.name, location: c.location || "indoor",
@@ -1408,6 +1413,9 @@ export class VenueHub extends DurableObject {
         people: l.people || 0,
         capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
+        // Online AND actually producing a picture. is_running stays true so
+        // the reason above is still shown; this is what "running" counts.
+        is_counting: counting,
         // In/out means following people between pictures, which needs the camera
         // to be counting fast enough — otherwise someone merely flickering out of
         // view looks like a departure. A doorway camera needs to be quicker
@@ -1491,7 +1499,23 @@ export class VenueHub extends DurableObject {
       : null;
     const roomNet = Math.max(0, sum("entries") - sum("exits"));
     const countedNet = doorNet ?? roomNet;
-    const hereNow = Math.max(seenNow, countedNet);
+    // A ceiling nobody can argue with: there cannot be more people in the
+    // building than there are DIFFERENT people seen all service.
+    //
+    // "Counted in, less counted out" from ROOM cameras has no doorway to
+    // watch, so one person stepping out of shot and back is an arrival every
+    // single time. One person in front of one camera read 4, then 5, while
+    // the same page said the cameras could see 1. The register
+    // (worker/identity.js) is the only thing here that knows those were all
+    // the same person, so it is the thing that caps it.
+    //
+    // The floor is still what the cameras can plainly see: if the register
+    // has somehow merged two people into one, the headline follows the room,
+    // not the register. A ceiling may lower a guess; it may never deny
+    // somebody standing in shot.
+    const everSeen = this.register?.size || 0;
+    const ceiling = everSeen ? Math.max(everSeen, seenNow) : Infinity;
+    const hereNow = Math.min(Math.max(seenNow, countedNet), ceiling);
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
@@ -1534,6 +1558,11 @@ export class VenueHub extends DurableObject {
       counted_net: countedNet,
       /** True when that sum came from a camera on a doorway rather than the room. */
       counted_net_from_door: doorNet !== null,
+      /** The arrivals sum came out higher than the number of different people
+       *  seen all service, so the register held the headline down. The page
+       *  says so rather than quietly showing a smaller number than the sum
+       *  printed next to it. */
+      counted_net_capped: countedNet > hereNow ? everSeen : null,
       total_peak: sum("peak"),
       total_entries: trustInOut ? entries : null, total_exits: trustInOut ? exits : null,
       // How many people are in the building, counted at the door: everyone who
@@ -1566,7 +1595,7 @@ export class VenueHub extends DurableObject {
       // as arriving twice, and the page should not pretend otherwise.
       face_matching: faceOn,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((hereNow / cap) * 1000) / 10 : 0,
-      zones, cameras_running: zones.filter((z) => z.is_running).length, cameras_total: zones.length,
+      zones, cameras_running: zones.filter((z) => z.is_counting).length, cameras_total: zones.length,
       // How many rooms those cameras add up to, so the page can say when two
       // of them are watching the same one.
       rooms_total: rooms.length, doors_total: doors.length,

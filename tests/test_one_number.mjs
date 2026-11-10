@@ -26,7 +26,11 @@ const src = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 // The rule, lifted out and run. `door` is the door's net when a door camera is
 // keeping up; otherwise the room cameras' own in-less-out is used, which is
 // where the arrival figures on the page come from.
-const hereNow = (seen, door, room = 0) => Math.max(seen, door ?? room);
+// `everSeen` is the register of different people (worker/identity.js). Nobody
+// can be in the building who has not been seen, so it is a ceiling — but never
+// one that denies somebody standing in shot. See tests/test_counted_once.mjs.
+const hereNow = (seen, door, room = 0, everSeen = 0) =>
+  Math.min(Math.max(seen, door ?? room), everSeen ? Math.max(everSeen, seen) : Infinity);
 
 // 1. It can never contradict what is plainly in shot. This is the failure
 //    that started it: nine people visible, headline reading 1.
@@ -67,7 +71,7 @@ const hereNow = (seen, door, room = 0) => Math.max(seen, door ?? room);
 // 4. The rule lives in the website, once, and the parts are published with it
 //    so the figure can always be taken apart.
 {
-  ok("the rule is in venueTotal", /const hereNow = Math\.max\(seenNow, countedNet\);/.test(src));
+  ok("the rule is in venueTotal", /const hereNow = Math\.min\(Math\.max\(seenNow, countedNet\), ceiling\);/.test(src));
   ok("and the sum behind it is published", /counted_net: countedNet,/.test(src));
   ok("every page reads the same field", /      total_current: hereNow,/.test(src));
   ok("what the cameras see is published too", /seen_now: seenNow,/.test(src));

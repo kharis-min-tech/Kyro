@@ -1276,12 +1276,18 @@ export default function AttendancePage() {
   const seenNow = (venueTotal as { seen_now?: number } | null)?.seen_now ?? venueTotal?.total_current ?? 0;
   const countedNet = (venueTotal as { counted_net?: number } | null)?.counted_net ?? 0;
   const netFromDoor = (venueTotal as { counted_net_from_door?: boolean } | null)?.counted_net_from_door ?? false;
+  // The arrivals sum came out higher than the number of different people seen
+  // all service, so the register held the headline down. Say so: a smaller
+  // headline than the sum printed beneath it is otherwise a mystery.
+  const cappedAt = (venueTotal as { counted_net_capped?: number | null } | null)?.counted_net_capped ?? null;
   const inBuilding = edge && isToday ? venueTotal?.in_building ?? null : null;
   // There IS a camera on the entrance, but its count isn't being used for the
   // headline. Rather than quietly showing a different figure under the same
   // title, say which camera and why.
   const doorZones = (venueTotal?.zones ?? []).filter((z) => z.location === "entrance");
-  const slowDoor = doorZones.find((z) => z.is_running && !z.in_out);
+  // Actually counting, not merely reporting: a camera that wouldn't open
+  // reports its reason, and "managing 0 counts a second" is not that reason.
+  const slowDoor = doorZones.find((z) => (z as { is_counting?: boolean }).is_counting !== false && z.is_running && !z.in_out);
   const doorExplained = edge && isToday && inBuilding === null && (venueTotal?.in_out_from_door ?? false);
   const displayTotal = headlineTotal({
     base: isToday ? metricNow : (historicalData?.total ?? 0),
@@ -1468,9 +1474,20 @@ export default function AttendancePage() {
                       <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>
                       {netFromDoor ? " at the entrance" : " by the room cameras"}. The cameras can see{" "}
                       <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong> right now
-                      {countedNet >= seenNow
+                      {cappedAt !== null
+                        ? "."
+                        : countedNet >= seenNow
                         ? "."
                         : ", which is more, so that is the figure — it can never be fewer than the people plainly in shot."}
+                      {cappedAt !== null && (
+                        <> Only{" "}
+                          <strong style={{ color: "var(--text-secondary)" }}>{cappedAt.toLocaleString()}</strong>
+                          {cappedAt === 1 ? " different person has" : " different people have"} been seen all service,
+                          so that is the figure. A camera on a room has no doorway to watch, so the same person
+                          stepping out of shot and back counts as arriving again — which is why that first number
+                          climbs.
+                        </>
+                      )}
                     </p>
                   )}
                   {showVsYesterday && isToday && (
