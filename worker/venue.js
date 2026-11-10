@@ -1809,10 +1809,23 @@ export class VenueHub extends DurableObject {
     // room cameras think, which is far shakier — someone stepping out of shot
     // looks like a departure.
     const hasDoor = doorZones.length > 0;
-    const inOutZones = hasDoor ? doorZones : roomZones;
-    const trustInOut = inOutZones.some((z) => z.is_running && z.in_out);
-    const entries = hasDoor ? sumDoors("entries") : sum("entries");
-    const exits = hasDoor ? sumDoors("exits") : sum("exits");
+    // Arrivals and departures mean people crossing a line, and only a camera
+    // on a doorway watches one.
+    //
+    // There used to be a fallback: with no door camera, the ROOM cameras'
+    // figures were used instead. They are not arrivals. A room camera's "in"
+    // is every person it became sure of and its "out" is every person it lost
+    // sight of, so one person at a desk made six in and five out without
+    // walking anywhere — and one tile read four out against two in, more
+    // people leaving than had ever arrived, which cannot happen anywhere.
+    //
+    // There is a real answer now and it is not a crossing count: the register
+    // knows how many different people have been seen and when each was last
+    // seen (worker/identity.js). So room cameras are no longer asked a
+    // question they cannot answer, and nothing stands in for the door.
+    const trustInOut = hasDoor && doorZones.some((z) => z.is_running && z.in_out);
+    const entries = sumDoors("entries");
+    const exits = sumDoors("exits");
     // Switched on is not the same as working. The face AI is a 10 MB download
     // that runs in whichever browser is counting, and if it fails to load that
     // browser carries on counting without it — quietly, which is right for the
@@ -1848,11 +1861,14 @@ export class VenueHub extends DurableObject {
     // where the arrival figures on the page come from. The headline and the
     // "came in / went out" card are then the same arithmetic on the same
     // readings, instead of two answers side by side.
-    const doorNet = hasDoor && trustInOut
+    const doorNet = trustInOut
       ? Math.max(0, sumDoors("entries_all") - sumDoors("exits_all"))
       : null;
-    const roomNet = Math.max(0, sum("entries") - sum("exits"));
-    const countedNet = doorNet ?? roomNet;
+    // No doorway: the register's own answer — everybody it knows who has been
+    // seen in the last few minutes. People, not crossings. See hereNow() in
+    // worker/identity.js, and LEFT_AFTER_MS for what "still here" means.
+    const registerNow = this.register ? this.register.hereNow(Date.now(), LEFT_AFTER_MS) : 0;
+    const countedNet = doorNet ?? registerNow;
     // A ceiling nobody can argue with: there cannot be more people in the
     // building than there are DIFFERENT people seen all service.
     //
@@ -1944,6 +1960,8 @@ export class VenueHub extends DurableObject {
       counted_net: countedNet,
       /** True when that sum came from a camera on a doorway rather than the room. */
       counted_net_from_door: doorNet !== null,
+      /** Where "how many are here" came from when the door didn't answer. */
+      counted_net_from_register: doorNet === null && registerNow > 0,
       /** The arrivals sum came out higher than the number of different people
        *  seen all service, so the register held the headline down. The page
        *  says so rather than quietly showing a smaller number than the sum

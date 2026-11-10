@@ -69,6 +69,20 @@ function useEdgeCameraLive(camera: Camera) {
     current: z?.current ?? 0,
     entries: z?.entries ?? 0,
     exits:   z?.exits ?? 0,
+    peak:    z?.peak ?? 0,
+    /**
+     * Whether this camera's in and out figures mean anything.
+     *
+     * Only a camera on a doorway watches a line for people to cross. A room
+     * camera's "in" is every person it became sure of and its "out" is every
+     * person it lost sight of — so a tile showed 6 in and 5 out for somebody
+     * sitting at a desk, and another showed 4 out against 2 in, which is more
+     * people leaving than ever arrived. Those are not arrivals and departures
+     * and they are no longer shown as if they were.
+     */
+    doorway: (z?.location ?? camera.location) === "entrance",
+    /** …and a doorway camera has to be quick enough to follow people through. */
+    following: z?.in_out ?? false,
     isLive:  z ? z.is_running : !!camera.is_active,
     error:   (z?.error_reason ?? ec.error_reason) || null,
   };
@@ -661,6 +675,13 @@ function CameraTile({
   const current  = edgeLive ? edgeLive.current : (data?.attendance.current ?? 0);
   const entries  = edgeLive ? edgeLive.entries : (data?.attendance.entries ?? 0);
   const exits    = edgeLive ? edgeLive.exits   : (data?.attendance.exits   ?? 0);
+  const peak     = edgeLive ? edgeLive.peak : (data?.attendance.peak ?? 0);
+  // In and out only where there is a line for people to cross, and only when
+  // the camera is quick enough to see them cross it. See useEdgeCameraLive.
+  const showInOut = edgeLive ? edgeLive.doorway && edgeLive.following : true;
+  const inOutWhyNot = edgeLive && edgeLive.doorway && !edgeLive.following
+    ? "This doorway camera isn't counting fast enough to follow people through it"
+    : "This camera watches a room, not a doorway, so it can't count people in and out";
   const isLive   = edgeLive ? edgeLive.isLive : inDemoMode() ? true : connected && !!data;
   const edgeError = edgeLive?.error ?? null;
   const capacity = camera.zone_capacity ?? 0;
@@ -863,21 +884,33 @@ function CameraTile({
           </div>
         )}
 
-        {/* Bottom row: entries/exits + space left */}
+        {/* Bottom row: what this camera can actually answer, + space left.
+            A room camera used to show "in" and "out" here. It has no doorway
+            to watch, so those were "people I became sure of" and "people I
+            lost sight of" wearing the words arrivals and departures: 6 in and
+            5 out for somebody at a desk, and 4 out against 2 in on a camera
+            nobody had been in front of. The most it saw at once is a figure
+            it can genuinely measure. */}
         <div className="flex items-center justify-between pt-0.5">
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-1.5">
-              <ArrowUpRight size={12} className="text-green-500" />
-              <span className="text-xs text-gray-400 tabular-nums">
-                <span className="text-green-400 font-medium">{entries.toLocaleString()}</span> in
+            {showInOut ? (<>
+              <div className="flex items-center gap-1.5">
+                <ArrowUpRight size={12} className="text-green-500" />
+                <span className="text-xs text-gray-400 tabular-nums">
+                  <span className="text-green-400 font-medium">{entries.toLocaleString()}</span> in
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <ArrowDownLeft size={12} className="text-red-400" />
+                <span className="text-xs text-gray-400 tabular-nums">
+                  <span className="text-red-400 font-medium">{exits.toLocaleString()}</span> out
+                </span>
+              </div>
+            </>) : (
+              <span className="text-xs text-gray-400 tabular-nums" title={inOutWhyNot}>
+                <span className="text-gray-300 font-medium">{peak.toLocaleString()}</span> most at once
               </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <ArrowDownLeft size={12} className="text-red-400" />
-              <span className="text-xs text-gray-400 tabular-nums">
-                <span className="text-red-400 font-medium">{exits.toLocaleString()}</span> out
-              </span>
-            </div>
+            )}
           </div>
           {seatsLeft !== null && capacity > 0 && (
             <span className="text-xs tabular-nums font-medium"
@@ -903,6 +936,8 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
   const current   = edgeLive ? edgeLive.current : (data?.attendance.current ?? 0);
   const entries   = edgeLive ? edgeLive.entries : (data?.attendance.entries ?? 0);
   const exits     = edgeLive ? edgeLive.exits   : (data?.attendance.exits ?? 0);
+  const peak      = edgeLive ? edgeLive.peak : (data?.attendance.peak ?? 0);
+  const showInOut = edgeLive ? edgeLive.doorway && edgeLive.following : true;
   const isLive    = edgeLive ? edgeLive.isLive : inDemoMode() ? true : connected && !!data;
   const capacity  = camera.zone_capacity ?? 0;
   const pct       = capacity > 0 ? Math.min(100, Math.round((current / capacity) * 100)) : null;
@@ -983,8 +1018,15 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
             { label: "In now",   value: current.toLocaleString(),   color: "text-white"  },
             { label: "Space left", value: seatsLeft !== null ? seatsLeft.toLocaleString() : "—",
               color: seatsLeft === 0 ? "text-red-400" : seatsLeft !== null && seatsLeft < 10 ? "text-amber-400" : "text-green-400" },
-            { label: "Entries",  value: entries.toLocaleString(),   color: "text-green-400" },
-            { label: "Exits",    value: exits.toLocaleString(),     color: "text-red-400"   },
+            // Same rule as the tile: "entries" and "exits" belong to a
+            // doorway. A room camera has none, and calling what it counts
+            // arrivals and departures is how 4 people "left" a camera that 2
+            // had ever walked past.
+            ...(showInOut
+              ? [{ label: "Entries", value: entries.toLocaleString(), color: "text-green-400" },
+                 { label: "Exits",   value: exits.toLocaleString(),   color: "text-red-400"   }]
+              : [{ label: "Most at once", value: peak.toLocaleString(), color: "text-white" },
+                 { label: "In / out", value: "—", color: "text-gray-600" }]),
           ].map((stat, i) => (
             <div key={stat.label}
               className="px-5 py-3 flex flex-col gap-0.5"

@@ -26,7 +26,15 @@ When a room reaches **80%** full, an amber **Rooms filling up** banner appears a
 
 ## Camera tiles
 
-Below the overview, each camera has a tile showing the live picture, **Live** or **Offline**, the count against capacity, seats left, and people **in** and **out**. Tiles show **FILLING UP** at 80% and **OVERCROWDED** at 90%.
+Below the overview, each camera has a tile showing the live picture, **Live** or **Offline**, the count against capacity and seats left. Tiles show **FILLING UP** at 80% and **OVERCROWDED** at 90%.
+
+::: warning Only a doorway camera shows "in" and "out"
+**In** and **out** mean people crossing a line, and only a camera on a doorway watches one. A camera pointed at a room has no line: what it can tell you is that it became sure of somebody, and later lost sight of them — which is not the same as them arriving and leaving. One person at a desk, stepping out of shot and back, produced *6 in · 5 out* without walking anywhere.
+
+So a room camera shows **most at once** instead, which it can genuinely measure. To get real arrivals and departures, set a camera's type to **Outdoor / queue** — or, for a door, point one at the entrance and mark it as such on the [Cameras](/pages/cameras) page.
+
+Arrivals and departures for the whole building don't need a doorway camera: Kyro works them out from the register of people instead, counting each person once. See [AI Count](/pages/ai-count).
+:::
 
 - **See one room bigger:** tap the expand icon at the bottom right of its tile. Close it with **<Icon name="close" label="close" />** or the Esc key.
 - **Picture stopped?** If a tile says **Stream lost — tap to retry**, tap it.

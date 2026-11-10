@@ -214,7 +214,22 @@ interface Track {
   score: number;               // rises when seen, falls when missed
   missing: number;
   lastSeen: number;            // when they were last actually seen
-  counted: boolean;            // already counted as someone who arrived
+  counted: boolean;            // confirmed to be a person, so part of "in the room now"
+  /**
+   * Counted as having ARRIVED in this session's tally.
+   *
+   * Separate from `counted`, which it used to share. `counted` means "Kyro is
+   * sure this is a person", and it is what the live figure is made of — so it
+   * cannot be cleared when a session's tallies start again without the count
+   * of people in the room blinking to nothing. But it was also the flag that
+   * let a departure be tallied, so after a reset the people still in shot
+   * could only ever subtract: a tile read 4 out against 2 in, which is more
+   * people leaving than ever arrived, and is not possible anywhere.
+   *
+   * Somebody already being watched when a session starts is in neither
+   * figure. They did not arrive during it, so they cannot leave during it.
+   */
+  arrived: boolean;
   face: Float32Array | null;   // their face code, when one could be read
   /** What they looked like: clothing colours, build, height. Never stored. */
   look: Look | null;
@@ -450,7 +465,7 @@ export class PersonTracker {
       if (faces?.[b]) tr.face = faces[b];
       if (looks?.[b]) tr.look = looks[b];
       tr.score = Math.min(confirmAt + 2, tr.score + 1);
-      if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) this.entries++; }
+      if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) { this.entries++; tr.arrived = true; } }
       this.countPerson(tr);
     }
 
@@ -534,11 +549,11 @@ export class PersonTracker {
         if (t.tallied) { t.tallied = false; t.firstBox = b; }
         t.returning = true;   // recognised, so never a new person
         t.score = Math.min(confirmAt + 2, t.score + 1);
-        if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) this.entries++; }
+        if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) { this.entries++; t.arrived = true; } }
         this.countPerson(t);
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, tallied: false,
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, arrived: false, tallied: false,
         uniqued: false, ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
@@ -574,7 +589,7 @@ export class PersonTracker {
       }
 
       if (gone < GRACE_MS) return true;
-      if (t.counted) this.exits++;   // a room: only people we'd counted as arriving can leave
+      if (t.arrived) this.exits++;   // a room: only people this session watched arrive can leave
       this.remember(t);
       return false;
     });
@@ -723,6 +738,10 @@ export class PersonTracker {
     this.entries = 0; this.exits = 0; this.people = 0;
     // A new session counts everybody again, including the people already here.
     this.known = [];
-    for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }
+    // Somebody already being followed did not arrive during this session, so
+    // they must not count as leaving it either — see `arrived`. `counted` is
+    // left alone: it is what "in the room now" is made of, and clearing it
+    // would blink the live figure to nothing.
+    for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; t.arrived = false; }
   }
 }

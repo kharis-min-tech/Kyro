@@ -196,7 +196,18 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
      /this\.known\.splice\(0, this\.known\.length - MOST_REMEMBERED\)/.test(src));
   ok("nobody is remembered who was never counted",
      /if \(!t\.countedIn && !t\.countedOut && !t\.uniqued\) return;/.test(src));
-  ok("a fresh start counts everybody again", /this\.known = \[\];\s*\n\s*for \(const t of this\.tracks\) \{ t\.countedIn = false; t\.countedOut = false; \}/.test(src));
+  ok("a fresh start counts everybody again at the door",
+     /this\.known = \[\];\s*\n(?:.*\n)*?\s*for \(const t of this\.tracks\) \{ t\.countedIn = false; t\.countedOut = false; t\.arrived = false; \}/.test(src));
+  // And in a room, somebody already in shot when the tallies start again is
+  // in NEITHER figure. They kept the flag that lets a departure be counted,
+  // so after a reset they could only subtract: a tile read 4 out against 2
+  // in, more people leaving than had ever arrived.
+  ok("but in a room they are in neither figure, not just one",
+     /if \(t\.arrived\) this\.exits\+\+;/.test(src)
+     && /\{ this\.entries\+\+; t\.arrived = true; \}/.test(src));
+  ok("and the live count never blinks to nothing to achieve it",
+     /counted: boolean;\s+\/\/ confirmed to be a person/.test(src)
+     && !/for \(const t of this\.tracks\) t\.counted = false;/.test(src));
 
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   ok("the end of a service reaches the counting browser",

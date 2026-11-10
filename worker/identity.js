@@ -725,6 +725,30 @@ export class IdentityRegistry {
    * trusting its people count as the answer would lose everybody it never
    * heard about.
    */
+  /**
+   * How many of the people on the register are still here.
+   *
+   * The honest answer to "how many are in the building" when there is no
+   * camera on a doorway. What used to stand in for it was a room camera's
+   * "everybody counted in, less everybody counted out" — and a room camera
+   * has no doorway to watch, so its "in" is every person it became sure of
+   * and its "out" is every person it lost sight of. One person at a desk
+   * produced six in and five out without ever walking anywhere, and one tile
+   * managed four out against two in: more people leaving than had ever
+   * arrived, which cannot happen anywhere.
+   *
+   * This counts people instead of crossings: everybody the register knows
+   * who has been seen in the last few minutes. Somebody behind a pillar is
+   * still here; somebody who left half an hour ago is not.
+   *
+   * @param within how long out of sight before somebody counts as gone
+   */
+  hereNow(now = Date.now(), within = 5 * 60_000) {
+    let n = 0;
+    for (const p of this.people.values()) if (now - p.lastAt <= within) n++;
+    return n;
+  }
+
   seenNow(cameraIds, now = Date.now(), within = CO_SEEN_MS) {
     let sightings = 0, people = 0;
     for (const p of this.people.values()) {
