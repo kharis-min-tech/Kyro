@@ -1048,8 +1048,8 @@ export default function AttendancePage() {
     if (vt) setVenueTotal(vt);
   };
 
-  const startFresh = async () => {
-    await edgeVenueApi.freshStart();
+  const startFresh = async (forgetPeople = false) => {
+    await edgeVenueApi.freshStart(forgetPeople);
     const vt = await edgeVenueApi.venue().catch(() => null);
     if (vt) setVenueTotal(vt);
     setArrivalTick((n) => n + 1);

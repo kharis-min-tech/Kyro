@@ -259,9 +259,15 @@ const reg = (zones = {}, doors = []) => new IdentityRegistry({
   const before = r.size;
   r.observe("room", [{ track: 1, look: wobble(person(16), 1), face: face(16) },
                      { track: 999, look: person(17), face: null }], (t += 500));
-  ok("15. a flicker is one identity, not a growing total", r.size === before + 1, `got ${r.size}`);
+  // Stronger than it used to be. A single stray reading no longer becomes a
+  // person AT ALL: a sighting that matches nobody has to keep not matching
+  // for several separate sightings before Kyro will call it somebody new.
+  // See NEW_PERSON_NO_FACE. A half-second of nonsense — a reflection, a coat
+  // over a chair — can no longer put somebody in a church's attendance
+  // figures for good.
+  ok("15. a flicker never becomes a person", r.size === before, `got ${r.size}`);
   for (let f = 0; f < 20; f++) { t += 500; r.observe("room", [{ track: 1, look: wobble(person(16), f), face: face(16) }], t); }
-  ok("15. and it stops there", r.size === before + 1, `got ${r.size}`);
+  ok("15. and it stops there", r.size === before, `got ${r.size}`);
 }
 
 // ── The two measurements ────────────────────────────────────────────────────
@@ -354,7 +360,9 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
   let t = 1000;
   r.observe("foyer", [{ track: 1, look: person(40), face: face(40) }], t);
   r.observe("foyer", [{ track: 1, look: person(40), face: face(40) }], (t += 500));
-  // The same face, half a second later, at the other end of the building.
+  // The same face, half a second later, at the other end of the building —
+  // and it keeps being there, so it is somebody else rather than a glimpse.
+  r.observe("hall", [{ track: 1, look: person(40), face: face(40) }], (t += 500));
   r.observe("hall", [{ track: 1, look: person(40), face: face(40) }], (t += 500));
   ok("somebody cannot be in two places at once", r.size === 2, `got ${r.size}`);
   ok("and that is recorded", r.diagnostics().rejected_as_impossible > 0);
@@ -362,6 +370,7 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
   const r2 = new IdentityRegistry({ zoneOf: (c) => (c === "foyer" ? "Foyer" : "Hall") });
   let u = 1000;
   r2.observe("foyer", [{ track: 1, look: person(40), face: face(40) }], u);
+  r2.observe("foyer", [{ track: 1, look: person(40), face: face(40) }], (u += 500));
   r2.observe("hall", [{ track: 1, look: person(40), face: face(40) }], (u += 30_000));
   ok("given half a minute to walk, it is the same person", r2.size === 1, `got ${r2.size}`);
 }
@@ -402,7 +411,9 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
   const r = reg();
   let t = 0;
   for (let who = 1; who <= 900; who++) {
-    for (let f = 0; f < 3; f++) { t += 50; r.observe("room", [{ track: who, look: wobble(person(who), f), face: null }], t); }
+    // Four sightings each: with no face to go on, that is what it takes to be
+    // called somebody new. See NEW_PERSON_NO_FACE.
+    for (let f = 0; f < 4; f++) { t += 50; r.observe("room", [{ track: who, look: wobble(person(who), f), face: null }], t); }
   }
   const big = JSON.stringify(r.snapshot()).length;
   const fitted = r.snapshot(110_000);
@@ -429,12 +440,20 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
   const r = reg();
   let t = 0;
   for (let i = 0; i < 4000; i++) {
-    t += 1000;
-    r.observe("door", [{ track: i, look: wobble(person(i % 50), i % 3), face: null }], t);
+    // Four sightings each, because a sighting with no face has to keep not
+    // matching anybody for that long before it is called somebody new.
+    for (let f = 0; f < 4; f++) {
+      t += 250;
+      r.observe("door", [{ track: i, look: wobble(person(i % 50), i % 3), face: null }], t);
+    }
   }
   ok("old track links are let go", r.byTrack.size <= 2100, `${r.byTrack.size} links`);
   // …without losing anybody from the register itself.
   ok("and nobody is lost from the register", r.size > 0);
+  // The list of sightings waiting to be accounted for is bounded the same
+  // way, and for the same reason: a morning of people crossing a doorway
+  // must not make the service heavier as it goes on.
+  ok("and the waiting list doesn't grow all morning", r.waiting.size <= 600, `${r.waiting.size} waiting`);
 }
 
 // C. Two computers each with a camera called "usb-0" must not feed each

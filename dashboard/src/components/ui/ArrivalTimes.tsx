@@ -85,7 +85,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    */
   sessionFrom?: number | null;
   /** Start the figures again from zero, for a new session. Omit to hide the button. */
-  onFreshStart?: () => Promise<void> | void;
+  onFreshStart?: (forgetPeople?: boolean) => Promise<void> | void;
   /**
    * What each camera counted on its own, so one camera's figure never stands
    * in for the building's without saying so. On an afternoon with about 900
@@ -298,17 +298,40 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               The counting computer starts its tally again within a few seconds; people already in the room stay counted
               as being there.
             </p>
+            {/* And the stronger one: when Kyro has got the register wrong —
+                somebody counted four times, a coat on a chair counted as a
+                person — there has to be a way to say so and begin again,
+                rather than waiting for the service to end. Nothing is
+                destroyed by it either; the record is put aside for 30 days,
+                the same as a deleted day. */}
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
+              If the <strong>people</strong> are wrong too — Kyro counted the same person more than once, or counted
+              something that isn&apos;t a person — the second button below also puts
+              <em> different people, this service</em> back to nobody and starts the register again. That record is put
+              aside for 30 days rather than destroyed.
+            </p>
             <div className="flex flex-wrap gap-2">
               <button type="button" disabled={freshing}
                 onClick={async () => {
                   setFreshing(true); setFreshErr(null);
-                  try { await onFreshStart!(); setWholeDay(false); setFreshAsking(false); }
+                  try { await onFreshStart!(false); setWholeDay(false); setFreshAsking(false); }
                   catch (e) { setFreshErr(e instanceof Error ? e.message : "Couldn't start fresh just now"); }
                   setFreshing(false);
                 }}
                 className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-60"
                 style={{ background: "#4f46e5" }}>
                 {freshing ? "Starting fresh…" : "Yes, start fresh"}
+              </button>
+              <button type="button" disabled={freshing}
+                onClick={async () => {
+                  setFreshing(true); setFreshErr(null);
+                  try { await onFreshStart!(true); setWholeDay(false); setFreshAsking(false); }
+                  catch (e) { setFreshErr(e instanceof Error ? e.message : "Couldn't start fresh just now"); }
+                  setFreshing(false);
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-60"
+                style={{ background: "rgba(249,115,22,0.15)", color: "#fb923c", border: "1px solid rgba(249,115,22,0.4)" }}>
+                {freshing ? "Starting again…" : "Start again from nobody"}
               </button>
               <button type="button" onClick={() => setFreshAsking(false)} disabled={freshing}
                 className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-60"

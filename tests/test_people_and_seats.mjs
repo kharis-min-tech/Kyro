@@ -209,8 +209,13 @@ const reg = (zones = {}) => new IdentityRegistry({ zoneOf: (c) => zones[c] ?? c 
   // One of them steps out and comes back on a new track. Without a face there
   // is nothing to recognise them by, so they are counted again — the honest
   // cost of refusing to merge. It must be ONE extra, not a collapse.
+  //
+  // Four sightings, because a sighting with no face has to keep not matching
+  // anybody for that long before Kyro will call it somebody new — see
+  // NEW_PERSON_NO_FACE. Fewer than that and they cost nothing at all, which
+  // is better still, but this is the case that has to be bounded.
   t += 3 * 60_000;
-  for (let f = 0; f < 3; f++) {
+  for (let f = 0; f < 4; f++) {
     t += 1000;
     r.observe("choir", [{ track: 900, look: wobble(robe(7), f), face: null, seat: "K7" }], t);
   }

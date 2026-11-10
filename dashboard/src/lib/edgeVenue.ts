@@ -91,7 +91,12 @@ export const edgeVenueApi = {
   daily: (days: number, tz: string, camera?: string) =>
     edgeFetch<EdgeDaily>(`/api/live/daily?days=${enc(String(days))}&tz=${enc(tz)}${camera ? `&camera=${enc(camera)}` : ""}`),
   /** Start the arrival / departure figures again from zero, for a new session. Deletes nothing. */
-  freshStart: () => edgeFetch<{ from: string }>("/api/live/counts/fresh", { method: "POST" }),
+  /** `forgetPeople` also puts the register of people back to nobody — for
+   *  when Kyro has got it wrong and the figures have to start again. Nothing
+   *  is destroyed; see freshStart in worker/venue.js. */
+  freshStart: (forgetPeople = false) =>
+    edgeFetch<{ from: string; forgot: number }>("/api/live/counts/fresh",
+      { method: "POST", body: JSON.stringify({ forget_people: forgetPeople }) }),
   /** Tell the doorway cameras that everybody crossing now is arriving, or leaving. */
   doorMode: (mode: "auto" | "in" | "out") =>
     edgeFetch<{ mode: string }>("/api/live/door-mode", { method: "POST", body: JSON.stringify({ mode }) }),

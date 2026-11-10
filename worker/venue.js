@@ -130,7 +130,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-647493d334bd";
+const VENUE_CODE = "venue-d12c63618f29";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -518,7 +518,10 @@ export class VenueHub extends DurableObject {
       }
       if (p === "/api/live/counts/fresh" && request.method === "POST") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can start the counts fresh" }, 403);
-        return json(await this.freshStart());
+        {
+          const b = await request.json().catch(() => ({}));
+          return json(await this.freshStart(Date.now(), !!b.forget_people));
+        }
       }
       if (p === "/api/live/services-deleted" && request.method === "GET") {
         // Tidied as it is read, so a service that has been deleted for more
@@ -2626,13 +2629,47 @@ export class VenueHub extends DurableObject {
    * in its next reply and puts its own tallies back to zero, keeping the people
    * it is already following so the "in the room now" figure doesn't blink.
    */
-  async freshStart(now = Date.now()) {
+  async freshStart(now = Date.now(), forgetPeople = false) {
     const counters = await this.get("counters", {});
     const base = {};
     for (const [id, c] of Object.entries(counters)) base[id] = { entries: c.in || 0, exits: c.out || 0 };
     await this.ctx.storage.put("count_base", base);
     await this.ctx.storage.put("count_from", now);
-    return { from: new Date(now).toISOString() };
+    if (!forgetPeople) return { from: new Date(now).toISOString(), forgot: 0 };
+
+    // "Start again from nobody."
+    //
+    // Asked for in so many words: "you know you can have the ability to
+    // change the data back to 0 if ever you made an error like this". When
+    // Kyro has got the register wrong — somebody counted four times, a coat
+    // on a chair counted as a person — there has to be a way to say so and
+    // begin again, without waiting for the service to end.
+    //
+    // Nothing is destroyed. The rows are marked deleted, exactly as a deleted
+    // day is, and are really removed only after DELETED_KEPT_DAYS. Deciding
+    // which of a church's own numbers to delete outright is not Kyro's to
+    // make, and least of all quietly.
+    const service = (await this.get("service_live", null))?.id ?? null;
+    let forgot = 0;
+    try {
+      if (service) {
+        forgot = this.ctx.storage.sql.exec(
+          "SELECT COUNT(*) AS n FROM people WHERE deleted_at IS NULL AND service = ?", service).toArray()[0]?.n ?? 0;
+        this.ctx.storage.sql.exec("UPDATE people SET deleted_at = ? WHERE deleted_at IS NULL AND service = ?", now, service);
+      }
+    } catch (e) {
+      await this.wrong("Register of people", "Couldn't put the register of people back to nobody", e && e.message);
+    }
+    if (this.register) this.register.startService(service);
+    await this.ctx.storage.delete("register");
+    this.peopleSavedAt = 0;
+    this.peopleSavedFor = null;
+    this.movementCache = null;
+    // What was put aside and when, so it is never a silent deletion.
+    const log = await this.get("people_resets", []);
+    log.unshift({ at: new Date(now).toISOString(), service, people: forgot });
+    await this.ctx.storage.put("people_resets", log.slice(0, 50));
+    return { from: new Date(now).toISOString(), forgot };
   }
 
   async startServiceNow() {

@@ -167,7 +167,12 @@ const day = [[...morning, ...afternoon]];
   ok("there is a way to say yes", /Yes, start fresh/.test(card));
   ok("and a way to say no", /Cancel/.test(card));
   ok("only the yes actually starts fresh",
-     /onFreshStart!\(\)/.test(card) && !/onClick=\{async \(\) => \{\s*setFreshing\(true\); setFreshErr\(null\);\s*try \{ await onFreshStart\(\)/.test(card));
+     /onFreshStart!\(false\)/.test(card) && !/onClick=\{async \(\) => \{\s*setFreshing\(true\); setFreshErr\(null\);\s*try \{ await onFreshStart\(\)/.test(card));
+  // And a second, separate yes for the stronger one: putting the register of
+  // people back to nobody, for when Kyro has counted the same person more
+  // than once. Never the same button as the ordinary fresh start.
+  ok("forgetting everyone is its own button", /onFreshStart!\(true\)/.test(card)
+     && /Start again from nobody/.test(card));
 
   const services = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
   ok("the Services page asks too", /setConfirmFresh\(true\)/.test(services)

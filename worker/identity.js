@@ -138,6 +138,49 @@ export const SEAT_FRESH_MS = 60_000;
 export const CO_SEEN_MS = 6_000;
 /** A camera's own track stays attached to its identity for this long. */
 export const TRACK_LINK_MS = 5 * 60_000;
+/**
+ * How many separate sightings a face Kyro cannot place has to make before it
+ * is called a NEW person.
+ *
+ * A camera reports every five seconds; a face is read every four, for the
+ * nearest three people, and only when a face is actually turned towards the
+ * lens. So the first sighting of somebody walking back into shot routinely
+ * arrives with no face at all — nothing to match on but the colour of their
+ * coat, which on its own is not enough to be sure, and rightly so.
+ *
+ * Creating a person at that moment is the mistake. One person stepping out
+ * of the room and back became four, then seven: each return was a sighting
+ * with no face, no match, and a new entry in the register — and by the time
+ * the face arrived a second later it matched the person just invented.
+ *
+ * So a sighting that matches nobody waits. It is a person in the room
+ * immediately (see seenNow), and a different person in the register only
+ * once it has been seen for this long and still cannot be accounted for —
+ * by which time there has been a face to go on, if there was ever going to
+ * be one.
+ *
+ * It also means a half-second of nonsense — a reflection, a coat over a
+ * chair, a detection that flickers once — can no longer put somebody in a
+ * church's attendance figures for good.
+ */
+export const NEW_PERSON_WITH_FACE = 2;
+/**
+ * And this many when there has never been a face to go on.
+ *
+ * Appearance is weak evidence in both directions. It is not enough to say
+ * "this is the same person", which is why LOOK_ALONE is set as high as it
+ * is — and it is not enough to say "this is a DIFFERENT person" either,
+ * which is the half nobody had written down. One sighting of a coat that
+ * didn't quite match anybody was turning into a new entry in a church's
+ * attendance figures.
+ *
+ * Counted in sightings rather than seconds on purpose: a sighting is one
+ * separate chance to recognise somebody, which is the thing being counted.
+ * A camera reports every five seconds, so this is around twenty.
+ */
+export const NEW_PERSON_NO_FACE = 4;
+/** A sighting that stopped coming before it earned a place in the register. */
+export const WAITING_STALE_MS = 60_000;
 /** Faces and appearances kept per identity, so one bad reading can't define them. */
 export const SAMPLES = 5;
 /** Nobody crosses a building in less than this, so two cameras that don't
@@ -234,8 +277,16 @@ export class IdentityRegistry {
      * nothing about seats can add to it or take from it.
      */
     this.seats = new Map();       // "camera#seat" → person id
+    /**
+     * Sightings nobody can account for yet — not people, not nobody.
+     *
+     * "camera#track" → { first, seen }. See NEW_PERSON_MS. They count as
+     * being in the room from the moment they are seen; they only enter the
+     * register once Kyro has had time to find out who they are.
+     */
+    this.waiting = new Map();
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0 };
     this.service = null;
   }
 
@@ -251,8 +302,9 @@ export class IdentityRegistry {
     this.people.clear();
     this.byTrack.clear();
     this.seats.clear();
+    this.waiting.clear();
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0 };
   }
 
   /**
@@ -311,6 +363,56 @@ export class IdentityRegistry {
 
   /** Which identity this observation belongs to, making a new one if nobody fits. */
   identify(cameraId, o, now, claimed) {
+    const wkey = `${cameraId}#${o.track}`;
+
+    // What Kyro knows about this sighting — not just what arrived a moment
+    // ago. A sighting that matched nobody last time is still being followed,
+    // and everything seen of it since is evidence about who it is.
+    //
+    // This is what was being thrown away. A person walking back in was seen
+    // once with a face and once without; the second sighting was matched on
+    // the coat alone, because the face from five seconds earlier was sitting
+    // in the waiting list unread.
+    let w = this.waiting.get(wkey);
+    if (w) {
+      w.last = now;
+      w.seen++;
+      if (o.look) keep(w.looks, o.look);
+      if (o.face) { w.faces++; keep(w.faceCodes, o.face); }
+      if (o.seat) w.seat = o.seat;
+    }
+    /** Every face read of this sighting, newest last. */
+    const faceReads = w && w.faceCodes.length ? w.faceCodes : o.face ? [o.face] : [];
+    /** Every appearance reading of it. */
+    const lookReads = w && w.looks.length ? w.looks : o.look ? [o.look] : [];
+    const seat = o.seat ?? w?.seat ?? null;
+    /**
+     * The best this sighting's faces score against one person's.
+     *
+     * Best-of is right for faces and wrong for clothes, which is why they are
+     * treated differently below. A face code is a measurement of a face, and
+     * any one read of it can be spoiled by the angle — so the best read is
+     * the most informative one. An appearance reading is mostly the colour of
+     * a coat; taking the best of several only finds the luckiest coincidence,
+     * and measurably so. Across a simulated 120-person service with no faces:
+     * best-of-looks merged 11 different people into one another, the latest
+     * look alone merged 8. (Before any of this: 12 splits and 14 merges.)
+     */
+    const faceScore = (p) => {
+      if (!faceReads.length || !p.faces.length) return 0;
+      let best = 0;
+      for (const f of faceReads) best = Math.max(best, bestAgainst(p.faces, f, dot));
+      return best;
+    };
+    /** The newest appearance reading only — see the note above. */
+    const lookScore = (p) => {
+      if (!lookReads.length || !p.looks.length) return 0;
+      return bestAgainst(p.looks, lookReads[lookReads.length - 1], alikeLook);
+    };
+
+    /** Matched after all: it was never a new person, so it stops waiting. */
+    const matched = (id) => { this.waiting.delete(wkey); return id; };
+
     const scored = [];
     for (const p of this.people.values()) {
       if (claimed.has(p.id)) continue;
@@ -322,13 +424,13 @@ export class IdentityRegistry {
         this.stats.rejectedImpossible++;
         continue;
       }
-      const face = o.face && p.faces.length ? bestAgainst(p.faces, o.face, dot) : 0;
+      const face = faceScore(p);
       // Both faces readable and plainly not each other: this is somebody else,
       // whatever they are wearing. See FACE_DIFFERENT.
-      if (o.face && p.faces.length && face < FACE_DIFFERENT) { this.stats.vetoedByFace++; continue; }
-      const look = o.look && p.looks.length ? bestAgainst(p.looks, o.look, alikeLook) : 0;
+      if (faceReads.length && p.faces.length && face < FACE_DIFFERENT) { this.stats.vetoedByFace++; continue; }
+      const look = lookScore(p);
       // Were they in this seat a moment ago? Supporting evidence only.
-      const sameSeat = !!(o.seat && p.seat === o.seat && now - (p.seatAt || 0) < SEAT_FRESH_MS);
+      const sameSeat = !!(seat && p.seat === seat && now - (p.seatAt || 0) < SEAT_FRESH_MS);
       scored.push({ p, face, look, sameSeat });
     }
 
@@ -343,7 +445,7 @@ export class IdentityRegistry {
     if (faces.length && faces[0].face >= FACE_SAME
         && (faces.length < 2 || faces[0].face - faces[1].face >= FACE_MARGIN)) {
       this.stats.matchedByFace++;
-      return this.touch(faces[0].p.id, cameraId, o, now).id;
+      return matched(this.touch(faces[0].p.id, cameraId, o, now, w).id);
     }
 
     // Otherwise what they look like — but only when one candidate stands
@@ -362,26 +464,68 @@ export class IdentityRegistry {
       if (best.look + help >= LOOK_SAME && clear) {
         this.stats.matchedByLook++;
         if (best.sameSeat) this.stats.helpedBySeat++;
-        return this.touch(best.p.id, cameraId, o, now).id;
+        return matched(this.touch(best.p.id, cameraId, o, now, w).id);
       }
       // Good, but not good enough to be sure. Attached and flagged rather
       // than quietly turned into a new person: an unflagged split looks
       // exactly like somebody arriving, while a flagged merge can be checked.
       if (best.look >= LOOK_UNCERTAIN && clear) {
         this.stats.uncertain++;
-        const p = this.touch(best.p.id, cameraId, o, now);
+        const p = this.touch(best.p.id, cameraId, o, now, w);
         p.uncertain++;
-        return p.id;
+        return matched(p.id);
       }
     }
 
     // Nobody fits. Either this is somebody new, or this camera is not allowed
     // to decide that — see createsIdentities.
     if (!this.createsIdentities(cameraId)) return null;
-    return this.create(cameraId, o, now).id;
+
+    // Nobody fits YET.
+    //
+    // A sighting that matches nobody is not a new person until it has given
+    // Kyro a fair number of separate chances to recognise them. One glance at
+    // a coat that didn't quite match anybody was enough to put a new name in
+    // a church's attendance figures: one person stepping out of a room and
+    // back became four, then seven.
+    //
+    // A face that matched nobody is strong evidence of somebody new — it has
+    // just been compared against every person Kyro knows. A coat that matched
+    // nobody is not, so it has to go on not matching for longer.
+    if (!w) {
+      w = { first: now, last: now, seen: 1, faces: o.face ? 1 : 0, looks: [], faceCodes: [], seat: o.seat ?? null };
+      if (o.look) keep(w.looks, o.look);
+      if (o.face) keep(w.faceCodes, o.face);
+      this.waiting.set(wkey, w);
+      this.stats.waiting++;
+      // Sightings that stopped coming before they earned a place. Tidied
+      // here rather than on a timer: this is the only thing that adds to it.
+      if (this.waiting.size > 500) {
+        for (const [k, v] of this.waiting) if (now - v.last > WAITING_STALE_MS) this.waiting.delete(k);
+      }
+    }
+    if (w.seen < (w.faces ? NEW_PERSON_WITH_FACE : NEW_PERSON_NO_FACE)) return null;
+    this.waiting.delete(wkey);
+    return this.create(cameraId, o, now, w).id;
   }
 
-  create(cameraId, o, now) {
+  /**
+   * Sightings waiting to be accounted for, on these cameras, right now.
+   *
+   * They are in the room — somebody is plainly in shot — they are simply not
+   * in the register yet. Counted here so that waiting never makes the live
+   * figure too low.
+   */
+  waitingNow(cameraIds, now = Date.now(), within = CO_SEEN_MS) {
+    let n = 0;
+    for (const [k, v] of this.waiting) {
+      if (now - v.last > within) continue;
+      if (cameraIds.has(k.slice(0, k.lastIndexOf("#")))) n++;
+    }
+    return n;
+  }
+
+  create(cameraId, o, now, waited = null) {
     const p = {
       id: this.nextId++,
       firstAt: now, lastAt: now,
@@ -405,6 +549,13 @@ export class IdentityRegistry {
       /** Where they are sitting, if anywhere. Never part of who they are. */
       seat: null, seatKey: null, seatAt: 0, seatCamera: "",
     };
+    // Everything seen while they were waiting to be accounted for, oldest
+    // first, so the newest reading is the one kept if there are too many.
+    if (waited) {
+      for (const l of waited.looks) keep(p.looks, l);
+      for (const f of waited.faceCodes) keep(p.faces, f);
+      if (waited.first) p.firstAt = waited.first;
+    }
     if (o.look) keep(p.looks, o.look);
     if (o.face) keep(p.faces, o.face);
     this.people.set(p.id, p);
@@ -445,9 +596,9 @@ export class IdentityRegistry {
     p.seatKey = key; p.seat = seat; p.seatAt = now; p.seatCamera = cameraId;
   }
 
-  touch(id, cameraId, o, now) {
+  touch(id, cameraId, o, now, waited = null) {
     const p = this.people.get(id);
-    if (!p) return this.create(cameraId, o, now);
+    if (!p) return this.create(cameraId, o, now, waited);
     this.setSeat(p, cameraId, o.seat ?? null, now);
     p.lastAt = now;
     p.lastCamera = cameraId;
@@ -457,6 +608,13 @@ export class IdentityRegistry {
     p.seen++;
     // Keep a few readings each, so somebody is recognised in the light they
     // are standing in rather than the light they first appeared in.
+    //
+    // Including anything seen while this sighting was waiting to be placed:
+    // it turned out to be this person, so it is readings of this person.
+    if (waited) {
+      for (const l of waited.looks) keep(p.looks, l);
+      for (const f of waited.faceCodes) keep(p.faces, f);
+    }
     if (o.look) keep(p.looks, o.look);
     if (o.face) keep(p.faces, o.face);
     return p;
@@ -490,7 +648,12 @@ export class IdentityRegistry {
       for (const [cam, at] of p.seenAt) if (cameraIds.has(cam) && now - at <= within) n++;
       if (n) { sightings += n; people++; }
     }
-    return { sightings, people, duplicates: Math.max(0, sightings - people) };
+    // Somebody Kyro hasn't placed yet is still somebody standing there. They
+    // are one sighting and one person, so they add nothing to the duplicates
+    // — which is the honest answer: Kyro does not yet know who they are, so
+    // it cannot claim they are somebody it has already counted.
+    const unplaced = this.waitingNow(cameraIds, now, within);
+    return { sightings: sightings + unplaced, people: people + unplaced, duplicates: Math.max(0, sightings - people) };
   }
 
   /** Everything the dashboard may show. No faces, no pictures, no names. */

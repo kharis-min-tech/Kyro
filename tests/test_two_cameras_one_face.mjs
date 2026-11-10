@@ -157,9 +157,14 @@ const BOTH = new Set(["cam-a", "cam-b"]);
 //    has since lost is not standing in front of it.
 {
   const r = reg();
+  // Seen twice each, so both sightings have earned their place in the
+  // register — one glance apiece and Kyro rightly says it doesn't know yet.
   r.observe("cam-a", [{ track: 1, look: person(5), face: face(5) }], 1_000);
   r.observe("cam-b", [{ track: 9, look: person(5), face: faceAgain(5, 2) }], 1_000);
-  ok("at the time, two sightings of one person", r.seenNow(BOTH, 1_500).duplicates === 1);
+  r.observe("cam-a", [{ track: 1, look: person(5), face: face(5) }], 1_500);
+  r.observe("cam-b", [{ track: 9, look: person(5), face: faceAgain(5, 2) }], 1_500);
+  ok("at the time, two sightings of one person", r.seenNow(BOTH, 2_000).duplicates === 1,
+     `got ${JSON.stringify(r.seenNow(BOTH, 2_000))}`);
   ok("a minute later, nothing is in view", r.seenNow(BOTH, 61_000).sightings === 0);
 }
 
