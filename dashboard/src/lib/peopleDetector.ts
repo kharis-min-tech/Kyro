@@ -211,6 +211,24 @@ export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOption
 const SURE = 0.5;
 
 /**
+ * Nothing this much wider than it is tall is a person.
+ *
+ * A pile of blankets on a bed was counted as one. The box was about three
+ * times wider than it was tall, which no person standing, sitting, kneeling or
+ * walking is — and the AI was reasonably confident, so every other check
+ * passed it. The one check nobody had written was the shape of a human being.
+ *
+ * Generous on purpose, because a camera looking straight down at a doorway —
+ * which is the mounting Kyro asks for — sees people from above, where somebody
+ * with their arms out can be half again as wide as they are long. Twice as
+ * wide is already unusual; nearly three times is a sofa, a bed, a table or a
+ * pile of washing.
+ */
+const WIDEST_PERSON = 2.2;
+/** Between this and WIDEST_PERSON, only a confident box counts. */
+const WIDE_NEEDS_SURE = 1.5;
+
+/**
  * Removes the AI's unsure guesses that aren't extra people — the cause of one
  * person near the camera being counted twice:
  *  - a big box it's unsure about: people near the camera are clearly visible,
@@ -234,6 +252,13 @@ export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinS
   people = people.filter((p) => whole.includes(p));
   const sure = people.filter((p) => p.score >= SURE);
   return people.filter((p) => {
+    const [bx1, by1, bx2, by2] = p.box;
+    // The shape of a human being. Checked before anything else, because this
+    // is the one thing no amount of confidence can make true: a box three
+    // times wider than it is tall is furniture, however sure the AI is of it.
+    const ratio = (bx2 - bx1) / Math.max(1, by2 - by1);
+    if (ratio > WIDEST_PERSON) return false;
+    if (ratio > WIDE_NEEDS_SURE && p.score < SURE) return false;
     if (p.score >= SURE) return true;
     const [x1, y1, x2, y2] = p.box;
     if (y2 - y1 > bigHeight * frameH && p.score < bigMinScore) return false;

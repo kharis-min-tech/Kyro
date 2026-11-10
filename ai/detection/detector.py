@@ -317,6 +317,16 @@ def in_ignore_zone(box, zones, frame_w: int, frame_h: int, share: float = 0.7) -
 SURE = 0.5
 # A box this wide (share of the bigger box) or wider, inside it and level with its top, is the same person.
 HALF_MIN_WIDTH = 0.5
+# Nothing this much wider than it is tall is a person. A pile of blankets on a
+# bed was counted as one: about three times wider than tall, and the model was
+# confident, so every other check passed it. The one check nobody had written
+# was the shape of a human being. Generous, because a camera looking straight
+# down at a doorway sees people from above, where somebody with their arms out
+# is half again as wide as they are long — but nearly three times is furniture.
+# Same numbers as Camera Mode (dashboard/src/lib/peopleDetector.ts).
+WIDEST_PERSON = 2.2
+# Between this and WIDEST_PERSON, only a confident box counts.
+WIDE_NEEDS_SURE = 1.5
 
 
 def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
@@ -331,7 +341,9 @@ def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
       - an unsure wide, flat box inside a person it IS sure about: their
         hands, lap, bag or a table edge — not a person's shape.
       - a box for just someone's top half inside the box for all of them,
-        starting at the same head height.
+        starting at the same head height;
+      - and anything that isn't the shape of a person at all, however sure the
+        model is of it (see WIDEST_PERSON).
     Unsure person-shaped boxes are kept, even inside someone else's box: in a
     crowd the people behind (a choir behind raised arms) look like that.
     """
@@ -341,6 +353,11 @@ def _tidy(boxes: np.ndarray, scores: np.ndarray, frame_h: int,
     area = np.maximum(w * h, 1e-6)
     sure = scores >= SURE
     keep = np.ones(len(boxes), dtype=bool)
+    # The shape of a human being, checked first: no amount of confidence makes
+    # a sofa a person.
+    ratio = w / np.maximum(h, 1e-6)
+    keep &= ratio <= WIDEST_PERSON
+    keep &= (ratio <= WIDE_NEEDS_SURE) | sure
     # The same person twice: a box for just their top half inside a box for
     # all of them — at least half as wide, starting at the same head height (however
     # sure the model is of both). Someone behind them is narrower or sticks out.
