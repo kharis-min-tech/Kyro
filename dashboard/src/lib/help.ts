@@ -17,7 +17,6 @@ const GUIDE_PAGES: Record<string, string> = {
   integrations: "/pages/integrations",
   notifications: "/pages/notifications",
   users: "/pages/users",
-  "data-protection": "/pages/data-protection",
   login: "/getting-started/signing-in",
 };
 

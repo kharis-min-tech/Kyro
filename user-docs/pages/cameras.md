@@ -39,7 +39,7 @@ For Wi-Fi security cameras, press **Find cameras** (under **Wi-Fi cameras**). Th
 
 Face matching answers one question Kyro cannot otherwise answer: is the person who just walked in somebody already counted? Without it, an usher holding the door all morning is counted every time they step through, and a choir in matching robes cannot be told apart at all.
 
-It is **off** until the church has completed [Data Protection & Authorisation](/pages/data-protection) and the responsible person has approved it. That page is where the lawful basis, the Article 9 condition, the DPIA, the notices and the review date are recorded — and until it is approved and in date, Kyro will not switch this on.
+It is **off** until an administrator switches it on (Cameras page → **Face matching** → **Switch on…**), confirming that the church has completed a **DPIA** for face matching and has **notices up at every entrance**. Kyro records who confirmed that and when.
 
 Even then it only runs **during a service** (Kyro records services by itself — see [Sessions](/pages/sessions)).
 
@@ -47,7 +47,7 @@ Even then it only runs **during a service** (Kyro records services by itself —
 
 Those numbers are kept for **the length of one service**, so that people are still recognised if the system restarts mid-service — they used to be held in memory only, and every restart lost them, which meant people already counted were counted again. They are deleted when the service ends, when a different service starts, the moment face matching is switched off, when the authorisation is withdrawn or expires, and **within twelve hours whatever else happens**.
 
-[Read the full arrangement →](/pages/data-protection)
+[What Kyro does with face data →](/pages/data-protection)
 
 How well it works (measured on 6,000 standard face-photo pairs): when Kyro says two faces are the same person it was right every time, so it doesn't wrongly merge different people. It only works for faces turned towards a camera and big enough in the picture (about 30 pixels wide or more), so cameras facing the congregation from the front help most; cameras behind people mostly see the backs of heads.
 

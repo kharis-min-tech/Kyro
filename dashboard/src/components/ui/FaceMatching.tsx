@@ -151,16 +151,14 @@ export function FaceMatching() {
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500">Switch on…</button>}
         </div>
 
-        {/* Where the permission lives. This is the page's natural home: the
-            moment somebody reaches for this switch is the moment the gate
-            matters, and a permanent menu entry for a once-a-year task sits in
-            the way of the pages used every Sunday. */}
+        {/* What happens to the data, next to the switch that starts it. */}
         <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-          Face matching needs the church&apos;s written authorisation before it can be used —{" "}
-          <a href="/data-protection" style={{ color: "#818cf8", textDecoration: "underline" }}>
-            Data protection &amp; authorisation
+          Face codes last one service and are then deleted — when it ends, when another starts, the moment this is
+          switched off, and within twelve hours whatever happens.{" "}
+          <a href="https://kyro-help.kharischurch.com/pages/data-protection" target="_blank" rel="noreferrer"
+            style={{ color: "#818cf8", textDecoration: "underline" }}>
+            What Kyro does with face data
           </a>
-          . Face codes last one service and are then deleted.
         </p>
 
         {asking && !p.face_matching && (

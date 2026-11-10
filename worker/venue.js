@@ -13,7 +13,6 @@ import { notifyCount } from "./index.js";
 import { IdentityRegistry } from "./identity.js";
 import { Building } from "./building.js";
 import { Trouble, cameraHealth } from "./health.js";
-import { Authorisation } from "./authorisation.js";
 
 const enc = new TextEncoder();
 const json = (body, status = 200) =>
@@ -111,7 +110,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-0e7d4b505e9b";
+const VENUE_CODE = "venue-9d722683b1dc";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -315,8 +314,6 @@ export class VenueHub extends DurableObject {
      * console log nobody at the church can read.
      */
     this.trouble = null;
-    /** Permission to read faces — see worker/authorisation.js. */
-    this.auth = null;
     /** camera → the last few door decisions, for the "what was counted" panel. */
     this.doorLog = new Map();
     // Who is signed in right now: username → deviceId → { name, role, device, at }.
@@ -499,19 +496,6 @@ export class VenueHub extends DurableObject {
       }
       // Is Kyro actually working? Every check it can make, with what each one
       // is looking at — never a single green light standing in for all of it.
-      // ── Permission to read faces ──────────────────────────────────────
-      //
-      // Reading is for administrators and operators, so anyone running a
-      // service can see where it stands. Changing and approving is for
-      // administrators.
-      if (p === "/api/live/authorisation" && request.method === "GET") {
-        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
-        return json((await this.authorisation()).view());
-      }
-      if (p === "/api/live/authorisation" && request.method === "POST") {
-        if (role !== "admin") return json({ error: "Only administrators can change the data protection record" }, 403);
-        return json(await this.changeAuthorisation(request, user));
-      }
       if (p === "/api/live/health" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
         return json(await this.healthReport());
@@ -663,10 +647,9 @@ export class VenueHub extends DurableObject {
     const live = await this.get("live", {});
     const newQuestions = [];
     // Face matching runs only while a service is being recorded (and only if switched on).
-    // Authorisation is checked every time, not only when the switch is
-    // flipped: an approval that expires or is withdrawn during a service has
-    // to stop the processing then, not at the next time somebody visits a
-    // settings page.
+    // Asked every time, not only when the switch is flipped: switching face
+    // matching off has to stop the processing then, not at the next time
+    // somebody visits a settings page.
     const mayReadFaces = await this.facesAllowed();
     const faceOn = mayReadFaces && !!(await this.get("service_live", null));
     if (!faceOn) this.faceCodes.clear();
@@ -965,9 +948,8 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
       // Faces go in their own table, one row each, so they can be deleted on
       // their own the moment the service ends.
-      // The switch AND the authorisation — see facesAllowed. Writing face
-      // codes down is the thing the authorisation is about, so it is checked
-      // here too rather than trusted from earlier in the request.
+      // Asked again here rather than trusted from earlier in the request:
+      // writing face codes down is the thing the switch governs.
       if (await this.facesAllowed()) this.saveFaces(service, now);
       else this.wipeFaces();
       // And whatever else happens — a service that never ended, a timer that
@@ -1159,76 +1141,15 @@ export class VenueHub extends DurableObject {
   }
 
   /**
-   * One change to the data protection record.
-   *
-   * Saving answers, approving, withdrawing, putting back, and recording
-   * documents and objections. Approving is separate from saving on purpose:
-   * changing what was approved takes the approval away, because an approval
-   * covers particular words and those words have changed.
-   */
-  async changeAuthorisation(request, user) {
-    const a = await this.authorisation();
-    const body = await request.json().catch(() => ({}));
-    let out;
-    switch (body.do) {
-      case "save":     out = a.update(body.answers ?? {}, user); break;
-      case "approve":  out = a.approve(clean(body.name, 80) || user, clean(body.role, 80), body.confirm ?? {}); break;
-      case "withdraw": {
-        out = a.suspend(user, clean(body.why, 300));
-        // Withdrawn means stopped, now — not at the end of the service.
-        if (out.ok) {
-          await this.ctx.storage.put("privacy", { ...(await this.privacy()), face_matching: false,
-            switched_off_by: user, switched_off_at: new Date().toISOString(), switched_off_why: "authorisation withdrawn" });
-          this.faceCodes.clear();
-          this.wipeFaces();
-          a.note(user, "Face codes deleted", "because the authorisation was withdrawn");
-        }
-        break;
-      }
-      case "resume":   out = a.resume(user); break;
-      case "document": out = a.addDocument(body.document ?? {}, user); break;
-      case "remove-document": out = a.removeDocument(clean(body.id, 40), user); break;
-      case "objection": out = a.objection(clean(body.what, 200), user); break;
-      default: out = { error: "Don't know how to do that" };
-    }
-    if (out?.ok) await this.ctx.storage.put("authorisation", a.save());
-    return out?.error ? out : { ...out, ...a.view() };
-  }
-
-  async authorisation() {
-    if (!this.auth) this.auth = new Authorisation(await this.get("authorisation", null));
-    return this.auth;
-  }
-
-  /**
    * May faces be read at all, right now?
    *
-   * Both halves: the church has switched it on, AND the authorisation stands
-   * and is in date. The second half is checked on every report, so an approval
-   * that expires or is withdrawn mid-service stops the processing then —
-   * and takes the face codes with it.
+   * The switch an administrator turns on, after confirming the DPIA and the
+   * notices. Asked again on every report rather than trusted from earlier in
+   * the request, so switching it off stops the processing immediately and
+   * takes the face codes with it.
    */
   async facesAllowed() {
-    const on = (await this.privacy()).face_matching;
-    if (!on) return false;
-    const auth = await this.authorisation();
-    if (auth.allowsFaces()) return true;
-    // It was running and may not be any more. Stop, delete, and say so.
-    await this.ctx.storage.put("privacy", {
-      ...(await this.privacy()), face_matching: false,
-      switched_off_by: "Kyro", switched_off_at: new Date().toISOString(),
-      switched_off_why: `authorisation ${auth.state()}`,
-    });
-    this.faceCodes.clear();
-    this.wipeFaces();
-    auth.note("Kyro", "Face matching stopped automatically", `the authorisation is ${auth.state()}`);
-    await this.ctx.storage.put("authorisation", auth.save());
-    await this.wrong("Face matching",
-      auth.state() === "expired"
-        ? "Stopped: the authorisation passed its review date. Face codes have been deleted. It needs reviewing and approving again."
-        : "Stopped: the authorisation was withdrawn. Face codes have been deleted.",
-      "");
-    return false;
+    return (await this.privacy()).face_matching === true;
   }
 
   async theBuilding() {
@@ -2562,29 +2483,16 @@ export class VenueHub extends DurableObject {
   async setPrivacy(request, user) {
     const body = await request.json().catch(() => ({}));
     if (body.face_matching) {
-      // The real gate. Face matching reads biometric data, and may not run
-      // until the church has written down its own lawful basis, its Article 9
-      // condition, who is accountable, what people are told, what somebody who
-      // objects is offered instead, and when it will all be looked at again —
-      // and the responsible person has approved that, in date. Enforced here
-      // rather than by hiding a button, because a hidden button is not a
-      // safeguard. See worker/authorisation.js.
-      const auth = await this.authorisation();
-      if (!auth.allowsFaces()) {
-        const state = auth.state();
-        const missing = auth.missing().map((m) => m.title);
-        return json({
-          error: state === "expired"
-            ? "The authorisation for face matching has passed its review date. It has to be looked at and approved again before this can be switched on."
-            : state === "suspended"
-            ? "The authorisation for face matching has been withdrawn. It has to be put back before this can be switched on."
-            : state === "awaiting_approval"
-            ? "Everything has been written down, but nobody has approved it yet. The responsible person approves it on Data protection & authorisation."
-            : `Face matching can't be switched on until the church has completed Data protection & authorisation${missing.length ? `: ${missing.join(", ")}` : ""}.`,
-          needs_authorisation: true, state, missing: auth.missing(),
-        }, 400);
-      }
       // Switching on needs both confirmations, recorded with who and when.
+      //
+      // There was briefly a larger gate here: a whole authorisation record
+      // that had to be filled in and approved before this would work. The
+      // church decided against it — the face data is temporary, the guide
+      // explains what Kyro does with it, and the deletion is what actually
+      // protects anybody. That decision belongs to the church as data
+      // controller. What remains is what was here before and still stands:
+      // off by default, two confirmations recorded against a name, running
+      // only during a service, and deleted when it ends.
       if (body.dpia_confirmed !== true || body.notices_confirmed !== true)
         return json({ error: "Please confirm both: the data protection impact assessment, and the notices at the entrances" }, 400);
       await this.ctx.storage.put("privacy", { face_matching: true, dpia_confirmed: true, notices_confirmed: true,

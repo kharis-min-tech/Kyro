@@ -51,22 +51,10 @@ const ALL_NAV = [
   { id: "integrations",  href: "/integrations",  label: "Integrations",  Icon: Webhook      },
   { id: "notifications", href: "/notifications", label: "Notifications", Icon: Bell         },
   { id: "users",         href: "/users",         label: "Users",         Icon: Users        },
-  // Data protection & authorisation is deliberately NOT in this menu. It is
-  // something a church fills in once and reviews about once a year, and a
-  // permanent button for it sits in the way of the pages used every Sunday.
-  // It is reached from the Face matching card on the Cameras page — which is
-  // where somebody meets the gate — and from the guide. The page itself is
-  // still there, and administrators can still open it directly.
+
 ] as const;
 
-/**
- * What this menu can show — which is no longer the same as every page Kyro
- * has. Data protection & authorisation is a real page with real permissions
- * and deliberately no menu entry, so the list of pages somebody is allowed
- * is wider than the list of buttons.
- */
 type PageId = typeof ALL_NAV[number]["id"];
-type AllowedPage = PageId | "data-protection";
 // Which pages a user may see lives in lib/access.ts (shared with <PageGuard>).
 
 
@@ -168,8 +156,8 @@ export function Sidebar() {
   const pendingReviews = usePendingReviews();
   const hasLiveSession = useHasLiveSession();
 
-  const [allowedPages, setAllowedPages] = useState<AllowedPage[]>(() =>
-    (ROLE_DEFAULT_PAGES[role] as AllowedPage[]) ?? ["seating","cameras"]
+  const [allowedPages, setAllowedPages] = useState<PageId[]>(() =>
+    (ROLE_DEFAULT_PAGES[role] as PageId[]) ?? ["seating","cameras"]
   );
 
   useEffect(() => {

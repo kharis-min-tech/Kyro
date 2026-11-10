@@ -87,6 +87,15 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
      /Switched off means switched off[\s\S]{0,200}this\.wipeFaces\(\);/.test(worker));
   ok("and nothing is written unless faces are allowed",
      /if \(await this\.facesAllowed\(\)\) this\.saveFaces\(service, now\);\s*\n\s*else this\.wipeFaces\(\);/.test(worker));
+  // "Allowed" is the switch an administrator turns on after confirming the
+  // DPIA and the notices. There was briefly a whole authorisation record in
+  // front of it; the church decided against it, which is its decision to
+  // make, and what protects anybody is the deleting — which is unchanged.
+  ok("allowed means the switch, and is asked every time",
+     /async facesAllowed\(\) \{\s*\n\s*return \(await this\.privacy\(\)\)\.face_matching === true;/.test(worker));
+  ok("switching on still needs both confirmations, against a name",
+     /if \(body\.dpia_confirmed !== true \|\| body\.notices_confirmed !== true\)/.test(worker)
+     && /switched_on_by: clean\(user, 60\)/.test(worker));
   ok("with a limit that does not depend on anything working",
      /const FACE_MAX_AGE_MS = /.test(worker)
      && /DELETE FROM faces WHERE service != \? OR at <= \?/.test(worker));
