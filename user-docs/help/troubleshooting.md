@@ -41,6 +41,11 @@ The figure under the big number on [AI Count](/pages/ai-count) now tells you how
 2. **Two cameras are set as different rooms.** Cameras sharing a **room name** are two views of one room, and Kyro takes the fullest view. Cameras with different room names are different rooms and are added up — right for a balcony and a main floor, wrong for two cameras pointed at the same place. A camera that adds itself is named after itself, so two cameras in one computer start out added together. Give them the **same room name** on [Cameras](/pages/cameras) (the pencil).
 3. **Something that isn't a person is being counted.** On [Cameras](/pages/cameras), the preview under **Counting on this computer** draws a green box round everything it counts. Look at where the extra boxes are: a poster or photo of people, a face on a screen, or **the camera seeing the very screen it's previewing on** all get counted.
 
+**Something got counted that wasn't a person — how do I take the number back down?**
+Kyro drops a photograph held up to the lens by itself (it sits entirely inside the box round the person holding it), and **asks** about anything that hasn't moved for four minutes — a pillow, a coat over a chair, a poster. Open [AI Count](/pages/ai-count) and look for **Kyro needs a second opinion**.
+
+Answering **No, take it off** removes it from the live count *and* from today's attendance, busiest day, came-in and the arrival chart, immediately — and anything that looks like it isn't counted again for the rest of the service. If it's something permanent your camera always sees, mark it once with **Don't count an area** on [Cameras](/pages/cameras).
+
 ## Cameras
 
 **A camera shows Offline.**

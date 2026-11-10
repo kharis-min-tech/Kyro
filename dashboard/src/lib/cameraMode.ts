@@ -254,7 +254,7 @@ export interface CameraReport {
   people_seen?: number;
   /** Everyone it is following: this camera's own id for them, an appearance
    *  reading, and a face code while face matching is on. Never a picture. */
-  seen?: { t: number; l: number[] | null; f: string | null; s?: string | null }[];
+  seen?: { t: number; l: number[] | null; f: string | null; s?: string | null; q?: number }[];
   /** Which seats are taken: [seat id, state, seconds vacant, confidence]. */
   seats?: [string, string, number, number][];
   /** What the picture itself is like — connected is not working. */

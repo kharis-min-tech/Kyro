@@ -218,6 +218,26 @@ export const NEW_PERSON_WITH_FACE = 2;
  * A camera reports every five seconds, so this is around twenty.
  */
 export const NEW_PERSON_NO_FACE = 4;
+/**
+ * How long something has to have not moved at all before Kyro asks whether
+ * it is a person.
+ *
+ * The browser measures the stillness (see STILL_ENOUGH_MS in
+ * personTracker.ts) and sends it; this is the line at which it is worth
+ * putting the question. Nothing is ever removed on this alone — somebody
+ * asleep in a back pew must not be quietly deleted from a church's
+ * attendance for keeping still.
+ */
+export const ASK_IF_STILL_S = 240;
+/**
+ * How long somebody stays "here" when the camera that saw them is still
+ * running and still cannot see them.
+ *
+ * Long enough for a pillar, a stretch, or turning to talk to the row behind.
+ * Short enough that a correction shows up on the screen while the person who
+ * made it is still looking at it.
+ */
+export const STILL_WATCHING_MS = 60_000;
 /** A sighting that stopped coming before it earned a place in the register. */
 export const WAITING_STALE_MS = 60_000;
 /** Faces kept per identity, so one bad reading can't define anybody. */
@@ -393,6 +413,35 @@ export class IdentityRegistry {
      */
     this.asks = [];
     /**
+     * People who have stopped existing since the hub last looked.
+     *
+     * ── Why this matters more than it sounds ─────────────────────────────
+     *
+     * "if ever you make a mistake, make sure you put the number down!! dont
+     * just pile up the false data with the real data".
+     *
+     * Correcting the register in memory is only half a correction. Every
+     * figure a church actually reads — attendance for the day, "busiest
+     * day", "came in this session", the arrival chart — is built from rows
+     * in a table, written as people are seen. Merge two entries into one and
+     * the row for the second stays exactly where it was, so the register
+     * says 1 and the page goes on saying 2. That is the pile-up: a figure
+     * that only ever climbs, because nothing was ever taken back out.
+     *
+     * So anyone who stops existing is listed here, the hub takes the list
+     * and removes their row, and every figure follows in the same breath.
+     */
+    this.gone = [];
+    /**
+     * Things that were never people.
+     *
+     * A pillow, a coat over a chair, a poster, a photograph on a screen. Once
+     * somebody has said so, the appearance is kept — and anything that looks
+     * like it is not counted again for the rest of the service, so the same
+     * cushion is not asked about every four minutes.
+     */
+    this.notPeople = [];
+    /**
      * Pairs an operator has already ruled on, so the same two people are not
      * asked about over and over. "camera#track|camera#track" → true (same) or
      * false (different). Lives and dies with the service, like everything
@@ -419,6 +468,8 @@ export class IdentityRegistry {
     this.waiting.clear();
     this.asks = [];
     this.ruled.clear();
+    this.gone = [];
+    this.notPeople = [];
     this.nextId = 1;
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
   }
@@ -435,6 +486,37 @@ export class IdentityRegistry {
    */
   observe(cameraId, obs, now) {
     const out = [];
+    /**
+     * Anything that has not moved at all for four minutes.
+     *
+     * A seated human being is never still: they breathe, shift, turn their
+     * head, cross their legs. A pillow, a coat over a chair, a statue or a
+     * poster does not move, ever. That is the one signal that tells them
+     * apart, and it only exists over time — no single picture can settle it,
+     * which is why the AI counted a cushion and was not wrong to.
+     *
+     * Checked here rather than in identify(), where it was useless: a track
+     * the camera is already following never reaches identify at all, and a
+     * pillow is followed continuously by definition.
+     *
+     * It is only ever a reason to ASK. Somebody asleep in a back pew must
+     * never be quietly deleted from a church's attendance for keeping still.
+     * See ASK_IF_STILL_S.
+     */
+    for (const o of obs) {
+      if ((o.stillFor || 0) < ASK_IF_STILL_S) continue;
+      const key = `still|${cameraId}#${o.track}`;
+      if (this.ruled.has(key) || this.asks.some((a) => a.pair === key)) continue;
+      this.ruled.set(key, null);
+      this.asks.push({
+        pair: key, at: now, kind: "person", guess: "person",
+        camera: cameraId, track: o.track, person: null,
+        other_camera: null, other_track: null,
+        score: null, had_face: !!o.face,
+        reason: `hasn't moved at all for ${Math.round((o.stillFor || 0) / 60)} minutes`,
+      });
+      if (this.asks.length > 40) this.asks.shift();
+    }
     // Two people standing side by side are two people: an identity may be
     // claimed by at most one observation from the same camera at the same
     // moment, however alike they look.
@@ -557,6 +639,17 @@ export class IdentityRegistry {
       });
       if (this.asks.length > 40) this.asks.shift();
     };
+
+    // Something already ruled "not a person" — a pillow, a coat over a chair,
+    // a poster. It is not counted, and it is not asked about again.
+    if (this.notPeople.length && lookReads.length) {
+      const latest = lookReads[lookReads.length - 1];
+      if (bestAgainst(this.notPeople, latest, alikeLook) >= this.lookSame) {
+        this.waiting.delete(wkey);
+        this.stats.ignoredNotPeople = (this.stats.ignoredNotPeople || 0) + 1;
+        return null;
+      }
+    }
 
     const scored = [];
     for (const p of this.people.values()) {
@@ -935,7 +1028,43 @@ export class IdentityRegistry {
     for (const [k, v] of this.byTrack) if (v.id === dropId) v.id = keepId;
     for (const [k, v] of this.seats) if (v === dropId) this.seats.set(k, keepId);
     this.people.delete(dropId);
+    // Their row has to go too, or the register says 1 and every page that
+    // reads the table goes on saying 2. See `gone`.
+    this.gone.push(dropId);
     return true;
+  }
+
+  /**
+   * That was never a person.
+   *
+   * A pillow, a coat over a chair, a poster, a photograph held up to the
+   * lens. Removed outright — not merged into anybody, because there is
+   * nobody to merge into — and what it looked like is kept so the same thing
+   * is not counted again five minutes later.
+   *
+   * @returns what changed, or null if there was nothing there.
+   */
+  notAPerson(cameraId, track, now = Date.now()) {
+    const link = this.byTrack.get(`${cameraId}#${track}`);
+    const p = link && this.people.get(link.id);
+    if (!p) return null;
+    // Remember the thing, so it stops being counted rather than being asked
+    // about over and over.
+    for (const l of p.looks.slice(-2)) this.notPeople.push(l);
+    if (this.notPeople.length > 40) this.notPeople.splice(0, this.notPeople.length - 40);
+    for (const [k, v] of [...this.byTrack]) if (v.id === p.id) this.byTrack.delete(k);
+    for (const [k, v] of [...this.seats]) if (v === p.id) this.seats.delete(k);
+    this.people.delete(p.id);
+    this.gone.push(p.id);
+    this.stats.notPeople = (this.stats.notPeople || 0) + 1;
+    return { removed: p.id, people: this.size };
+  }
+
+  /** People who have stopped existing, taken away by the caller. */
+  takeGone() {
+    const out = this.gone;
+    this.gone = [];
+    return out;
   }
 
   /**
@@ -991,9 +1120,26 @@ export class IdentityRegistry {
    *
    * @param within how long out of sight before somebody counts as gone
    */
-  hereNow(now = Date.now(), within = 5 * 60_000) {
+  hereNow(now = Date.now(), within = 5 * 60_000, running = null) {
     let n = 0;
-    for (const p of this.people.values()) if (now - p.lastAt <= within) n++;
+    for (const p of this.people.values()) {
+      // Somebody a WORKING camera cannot see has probably gone.
+      //
+      // Five minutes is the right answer for somebody who was last seen on a
+      // camera that has since been switched off or unplugged: nothing is
+      // watching that part of the building, so their not being in shot says
+      // nothing. It is the wrong answer when the camera that saw them is
+      // still running and still looking at the same room — then not being in
+      // shot is real evidence, and holding them "here" for five minutes
+      // means a figure that stays too high for five minutes after a mistake
+      // is corrected. Reported as: the cameras can see 1, the register says
+      // 2, the headline says 2 — "its not fast enough".
+      //
+      // A minute still covers somebody behind a pillar, standing up, or
+      // turning their back.
+      const watched = running && p.lastCamera && running.has(p.lastCamera);
+      if (now - p.lastAt <= (watched ? STILL_WATCHING_MS : within)) n++;
+    }
     return n;
   }
 

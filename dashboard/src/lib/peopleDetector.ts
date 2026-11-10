@@ -283,6 +283,62 @@ export function outsideZones(people: Person[], zones: [number, number, number, n
   });
 }
 
+/**
+ * How much of `b` lies inside `a`, 0–1.
+ *
+ * Not IoU: this is one-sided on purpose. Two people standing close together
+ * overlap a little and neither is INSIDE the other. A photograph of people on
+ * a phone screen is entirely inside the box round the person holding it.
+ */
+function containedIn(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const ix = Math.max(0, Math.min(a[2], b[2]) - Math.max(a[0], b[0]));
+  const iy = Math.max(0, Math.min(a[3], b[3]) - Math.max(a[1], b[1]));
+  const area = Math.max((b[2] - b[0]) * (b[3] - b[1]), 1e-6);
+  return (ix * iy) / area;
+}
+
+/** This much of a detection inside a bigger one, and it is not a separate person. */
+export const INSIDE_SOMEBODY = 0.85;
+/** …and it has to be this much smaller, or two people really are overlapping. */
+export const MUCH_SMALLER = 0.4;
+
+/**
+ * People a person is carrying are not people.
+ *
+ * ── What happened ─────────────────────────────────────────────────────────
+ *
+ * "i put my phone towards the camera showing two people / a picture, and it
+ * counted it, now my data is wrong".
+ *
+ * The AI is asked "where are the people in this picture", and it answers
+ * correctly: there are people in the picture. Two of them are on a phone
+ * screen. It has no way to know the difference and it is not being asked to.
+ *
+ * But the geometry gives it away, and gives it away cleanly. A photograph of
+ * people held up to a camera sits ENTIRELY INSIDE the box round the person
+ * holding it, and is much smaller. Two real people standing close together
+ * do not do that: however much they overlap, each one's head is above the
+ * other's shoulders or their feet are below — neither is swallowed whole.
+ *
+ * So a detection almost completely inside a much larger one is whatever that
+ * person is holding, wearing or standing in front of: a phone, a magazine, a
+ * printed order of service with a photograph on it, a baby's doll. It is not
+ * counted.
+ *
+ * This is a rule about shapes, not a judgement about what something is — it
+ * cannot tell a pillow from a person, because a pillow is not inside
+ * anybody. See the stillness check in personTracker.ts for that one.
+ */
+export function notHeldBySomebody(people: Person[]): Person[] {
+  if (people.length < 2) return people;
+  const area = (b: [number, number, number, number]) => Math.max((b[2] - b[0]) * (b[3] - b[1]), 1e-6);
+  return people.filter((p, i) =>
+    !people.some((other, j) =>
+      j !== i
+      && area(p.box) < area(other.box) * MUCH_SMALLER
+      && containedIn(other.box, p.box) >= INSIDE_SOMEBODY));
+}
+
 /** Smooths the headcount: the middle of the last few readings, so one odd picture doesn't make it jump. */
 export class SteadyCount {
   private readings: number[] = [];

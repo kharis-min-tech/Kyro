@@ -97,7 +97,7 @@ export function SamePerson() {
 
   const load = useCallback(() => {
     edgeFetch<Ask[]>("/api/live/questions")
-      .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question")))
+      .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question" || q.review_type === "is_this_a_person")))
       .catch(() => {});
     edgeFetch<Learning>("/api/live/learning").then(setLearn).catch(() => {});
   }, []);
@@ -118,8 +118,9 @@ export function SamePerson() {
       // is reported back.
       setSaid(
         r.agreed ? "Kyro had that right already — nothing changed."
-          : r.action === "merged" ? `Counted as one person. ${r.people} different people this service.`
+          : r.action === "merged" ? `Taken off: counted as one person. ${r.people} different people this service.`
           : r.action === "split" ? `Counted as two. ${r.people} different people this service.`
+          : r.action === "removed" ? `Taken off the count, and off today's figures. ${r.people} different people this service — and anything that looks like it won't be counted again.`
           : "Noted.",
       );
       setAsks((prev) => prev.filter((x) => x.review_id !== q.review_id));
@@ -138,12 +139,13 @@ export function SamePerson() {
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: `1px solid ${asks.length ? "rgba(99,102,241,0.45)" : BORDER}` }}>
       <div className="px-5 py-4" style={{ borderBottom: `1px solid ${BORDER}` }}>
         <p className="flex items-center gap-2 text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-          <HelpCircle size={15} style={{ color: "#818cf8" }} /> Is this the same person?
+          <HelpCircle size={15} style={{ color: "#818cf8" }} /> Kyro needs a second opinion
         </p>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
           {asks.length
-            ? <>Kyro wasn&apos;t sure about {asks.length === 1 ? "one pair" : `${asks.length} pairs`}. It has made its
-                best guess so the count keeps going — your answer corrects it straight away.</>
+            ? <>{asks.length === 1 ? "One thing" : `${asks.length} things`} Kyro isn&apos;t sure about. It has made its
+                best guess so the count keeps going — and your answer <strong>changes the figures straight away</strong>,
+                including today&apos;s totals. Nothing is left piled on top.</>
             : <>Nothing to check right now. Kyro asks when it has to guess.</>}
         </p>
       </div>
@@ -155,7 +157,37 @@ export function SamePerson() {
         <p className="px-5 py-2" style={{ fontSize: 12, color: "#f87171", borderBottom: `1px solid ${BORDER}` }}>{err}</p>
       )}
 
-      {asks.map((q) => (
+      {asks.map((q) => q.review_type === "is_this_a_person" ? (
+        /* One picture, one thing to decide. The AI is asked where the people
+           are and answers honestly — a cushion is person-shaped, and so is a
+           photograph of somebody. Nothing in a single frame settles it. What
+           does settle it is that the thing has not moved a pixel in four
+           minutes, and a person glancing at it. */
+        <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="flex gap-3">
+            <div style={{ width: "40%" }}><Side id={q.review_id} side="a" label={q.where || "Being counted"} /></div>
+            <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this a person?</p>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+                Kyro is counting it as one, and it {q.why || "hasn't moved"}. People breathe and shift; a cushion,
+                a coat over a chair or a poster doesn&apos;t.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => answer(q, "Yes, a person")} disabled={busy !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#16a34a" }}>
+                  {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, a person
+                </button>
+                <button onClick={() => answer(q, "No, not a person")} disabled={busy !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b91c1c" }}>
+                  <X size={12} /> No, take it off
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
         <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <div className="flex gap-3">
             <Side id={q.review_id} side="a" label={q.where || "Just seen"} />

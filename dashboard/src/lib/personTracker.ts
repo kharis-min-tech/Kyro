@@ -230,6 +230,30 @@ interface Track {
    * figure. They did not arrive during it, so they cannot leave during it.
    */
   arrived: boolean;
+  /**
+   * How long this box has barely moved, in milliseconds, and where it was
+   * when it last did.
+   *
+   * ── Why ────────────────────────────────────────────────────────────────
+   *
+   * "it counted my pillow as another person now my count data went up and
+   * its now false information".
+   *
+   * The AI is asked where the people are and it answers honestly: that
+   * cushion is person-shaped. Nothing in a single picture can settle it —
+   * and nothing needs to, because the difference shows up over time. A
+   * seated human being is never still. They breathe, shift, turn their
+   * head, cross their legs; the box round them moves by a few pixels every
+   * second for as long as they are there. A pillow, a coat over a chair, a
+   * statue, a mannequin, a poster does not move at all, ever.
+   *
+   * So this is measured rather than guessed at, and it is only ever used to
+   * ASK — see STILL_ENOUGH_MS. Somebody genuinely asleep in a back pew must
+   * not be quietly deleted from a church's attendance because they kept
+   * still, so nothing is removed without a person saying so.
+   */
+  stillSince: number;
+  stillBox: [number, number, number, number];
   face: Float32Array | null;   // their face code, when one could be read
   /** What they looked like: clothing colours, build, height. Never stored. */
   look: Look | null;
@@ -335,6 +359,23 @@ function iou(a: [number, number, number, number], b: [number, number, number, nu
   const union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter;
   return union > 0 ? inter / union : 0;
 }
+
+/**
+ * How far a box may move and still count as not having moved.
+ *
+ * As a fraction of its own height, so it means the same for somebody at the
+ * front and somebody across the hall. A person's box twitches by well over
+ * this every few seconds; the detector's own jitter on a motionless object is
+ * well under it.
+ */
+const STILL_WITHIN = 0.02;
+/**
+ * How long something has to not move at all before Kyro asks about it.
+ *
+ * Four minutes. Long enough that nobody sitting attentively through a reading
+ * is asked about, short enough that a cushion is spotted within a hymn.
+ */
+export const STILL_ENOUGH_MS = 4 * 60_000;
 
 /** Somebody who has walked out of view, and what they were counted as. */
 interface Known {
@@ -461,6 +502,7 @@ export class PersonTracker {
       if (takenTrack.has(t) || takenBox.has(b)) continue;
       takenTrack.add(t); takenBox.add(b);
       const tr = this.tracks[t];
+      this.noteMovement(tr, boxes[b], now);
       tr.box = boxes[b]; tr.missing = 0; tr.lastSeen = now;
       if (faces?.[b]) tr.face = faces[b];
       if (looks?.[b]) tr.look = looks[b];
@@ -553,7 +595,7 @@ export class PersonTracker {
         this.countPerson(t);
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, arrived: false, tallied: false,
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, arrived: false, tallied: false, stillSince: now, stillBox: b,
         uniqued: false, ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
@@ -624,10 +666,27 @@ export class PersonTracker {
    * Only people Kyro is actually sure of. A box it was never convinced by
    * never becomes somebody in the register.
    */
-  seenNow(): { track: number; look: Look | null; face: Float32Array | null; box: [number, number, number, number] }[] {
+  seenNow(now: number = Date.now()): { track: number; look: Look | null; face: Float32Array | null; box: [number, number, number, number]; stillFor: number }[] {
     return this.tracks
       .filter((t) => t.counted && t.missing === 0)
-      .map((t) => ({ track: t.id, look: t.look, face: t.face, box: t.box }));
+      .map((t) => ({ track: t.id, look: t.look, face: t.face, box: t.box, stillFor: Math.max(0, now - t.stillSince) }));
+  }
+
+  /**
+   * Has this box moved since last time?
+   *
+   * The clock only restarts when it moves by more than the detector's own
+   * jitter — see STILL_WITHIN. Measured against where it was when it last
+   * really moved, not against the previous frame, so a slow drift of one
+   * pixel a second still counts as moving.
+   */
+  private noteMovement(t: Track, box: [number, number, number, number], now: number): void {
+    const h = Math.max(t.stillBox[3] - t.stillBox[1], 1);
+    const moved = Math.max(
+      Math.abs(box[0] - t.stillBox[0]), Math.abs(box[1] - t.stillBox[1]),
+      Math.abs(box[2] - t.stillBox[2]), Math.abs(box[3] - t.stillBox[3]),
+    ) / h;
+    if (moved > STILL_WITHIN) { t.stillSince = now; t.stillBox = box; }
   }
 
   /** The decisions since this was last asked. Taking them clears them. */

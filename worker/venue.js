@@ -158,7 +158,7 @@ const MIN_FPS_FOR_DOOR = 3;       // a doorway needs more: people cross it in a 
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
-const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question", "same_person_question"];
+const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question", "same_person_question", "is_this_a_person"];
 /**
  * How long Kyro waits for a picture of each side of "is this the same
  * person?" before giving up on the question.
@@ -1162,6 +1162,10 @@ export class VenueHub extends DurableObject {
         face: faceOk && typeof x.f === "string" ? unpackFace(x.f) : null,
         // Which seat they are in, if any — context, never proof of who.
         seat: typeof x.s === "string" ? clean(x.s, 24) : null,
+        // How many seconds this box has not moved at all, when that is long
+        // enough to be worth asking about. A seated person is never still;
+        // a pillow, a coat over a chair or a poster is.
+        stillFor: Number.isFinite(Number(x.q)) ? Math.max(0, Number(x.q)) : 0,
       })).filter((x) => x.look || x.face);
       if (obs.length) this.register.observe(id, obs, now);
     }
@@ -1406,8 +1410,54 @@ export class VenueHub extends DurableObject {
    * its own service and nothing is kept that could match a person in one
    * service to a person in another.
    */
+  /**
+   * People who have stopped existing, taken out of the table too.
+   *
+   * ── The thing this fixes ────────────────────────────────────────────────
+   *
+   * "if ever you make a mistake, make sure you put the number down!! dont
+   * just pile up the false data with the real data ... if you finally
+   * identified that it was 1 person and not 2 put the number down".
+   *
+   * Correcting the register in memory was only half a correction. Every
+   * figure a church actually reads — attendance for the day, "busiest day",
+   * "came in this session", the arrival chart — is built from rows in the
+   * people table, written as people are seen. Merging two entries into one
+   * left the second row exactly where it was, so the register said 1 and the
+   * page went on saying 2. That is the pile-up: a number that could only
+   * ever climb, because nothing was ever taken back out of it.
+   *
+   * Marked deleted rather than destroyed, like everything else here, so a
+   * correction can itself be undone. Every figure filters them out, so they
+   * come off the screen the moment this runs.
+   */
+  forgetPeopleRows(service) {
+    const gone = this.register?.takeGone?.() ?? [];
+    if (!service || !gone.length) return 0;
+    const at = Date.now();
+    let n = 0;
+    try {
+      for (const id of gone) {
+        this.ctx.storage.sql.exec(
+          "UPDATE people SET deleted_at = ? WHERE deleted_at IS NULL AND service = ? AND person = ?", at, service, id);
+        n++;
+      }
+      // Every figure below is built from those rows, so none of them may be
+      // answered from a cache made before this.
+      this.movementCache = null;
+    } catch (e) {
+      this.wrong("Register of people",
+        "Corrected who was here, but couldn't take the old entries out of the day's figures — those will read too high until this clears",
+        e && e.message).catch(() => {});
+    }
+    return n;
+  }
+
   savePeople(service) {
     if (!service || !this.register) return;
+    // Anyone who has stopped existing goes first, so a row is never written
+    // back for somebody who was merged away a moment ago.
+    this.forgetPeopleRows(service);
     try {
       // Only the people something has happened to since the last save. A full
       // congregation is nine hundred rows and this runs every half minute;
@@ -1920,7 +1970,9 @@ export class VenueHub extends DurableObject {
     // No doorway: the register's own answer — everybody it knows who has been
     // seen in the last few minutes. People, not crossings. See hereNow() in
     // worker/identity.js, and LEFT_AFTER_MS for what "still here" means.
-    const registerNow = this.register ? this.register.hereNow(Date.now(), LEFT_AFTER_MS) : 0;
+    const registerNow = this.register
+      ? this.register.hereNow(Date.now(), LEFT_AFTER_MS, new Set(zones.filter((z) => z.is_running).map((z) => z.camera_id)))
+      : 0;
     const countedNet = doorNet ?? registerNow;
     // A ceiling nobody can argue with: there cannot be more people in the
     // building than there are DIFFERENT people seen all service.
@@ -2652,9 +2704,31 @@ export class VenueHub extends DurableObject {
       let live = Object.values(qs).filter((q) => q.review_type === "same_person_question" && !q.answer).length;
       for (const a of asks) {
         if (live >= MOST_ASKS) break;
-        const id = `same-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
+        const id = `${a.kind === "person" ? "isperson" : "same"}-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
         const cam = cams[a.camera];
         const otherCam = cams[a.other_camera] ?? cam;
+        // "Is this a person?" has one picture and one thing to decide. It is
+        // the same machinery — a guess, a picture, an answer that corrects
+        // the register — asking a different question.
+        if (a.kind === "person") {
+          qs[id] = {
+            type: "review_request", review_id: id, camera_id: a.camera,
+            review_type: "is_this_a_person", target_role: "operator",
+            question: "Is this a person?",
+            guess: "person", score: null, had_face: !!a.had_face,
+            why: clean(a.reason, 120),
+            where: clean(cam?.zone_name || cam?.name || "", 60), other_where: "",
+            ask: { pair: a.pair, kind: "person", camera: a.camera, track: a.track },
+            track_id: a.track, position: [0, 0], bbox_hint: null,
+            confidence: 0, best_guess: "A person",
+            options: ["Yes, a person", "No, not a person"],
+            created_at: now / 1000,
+            pictures: 0,
+          };
+          live++;
+          wanted.push({ id, side: "a", camera_id: a.camera, track: a.track });
+          continue;
+        }
         qs[id] = {
           type: "review_request", review_id: id, camera_id: a.camera,
           review_type: "same_person_question", target_role: "operator",
@@ -2698,6 +2772,8 @@ export class VenueHub extends DurableObject {
       // "Is this the same person?" without the two pictures is two names and
       // a number. Nobody can answer that, so it is not asked.
       .filter((q) => q.review_type !== "same_person_question" || (q.pictures ?? 0) >= 2)
+      // …and one for "is this a person?", which has only one thing to show.
+      .filter((q) => q.review_type !== "is_this_a_person" || (q.pictures ?? 0) >= 1)
       .sort((a, b) => a.created_at - b.created_at)
       .map(({ answer, answered_by, answered_at, ...q }) => q);
   }
@@ -2753,10 +2829,39 @@ export class VenueHub extends DurableObject {
     // be corrected — and it is corrected now, so the attendance figure moves
     // while the person who answered is still looking at it.
     let result = null;
+    if (q.review_type === "is_this_a_person") {
+      // "No" is the one that changes anything: the entry goes, the figures
+      // follow in the same breath, and what it looked like is remembered so
+      // the same cushion is not counted again this service.
+      if (/^no/i.test(q.answer) && this.register && q.ask) {
+        result = this.register.notAPerson(q.ask.camera, q.ask.track) ?? { changed: false };
+        if (result.removed) {
+          result = { changed: true, action: "removed", people: result.people };
+          this.forgetPeopleRows(this.register.service);
+          this.savePeople(this.register.service);
+          try {
+            await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+          } catch (e) {
+            await this.wrong("Register of people", "Couldn't save the correction you just made", e && e.message);
+          }
+        }
+      } else {
+        result = { changed: false, agreed: true };
+      }
+      await this.ctx.storage.put("questions", qs);
+      await this.ctx.storage.delete(`qsnap:${id}:a`);
+      await this.ctx.storage.delete(`qsnap:${id}:b`);
+      await this.ctx.storage.delete(`qsnap:${id}`);
+      return json({ ok: true, ...result });
+    }
     if (q.review_type === "same_person_question") {
       const said = /^same/i.test(q.answer) ? true : /^different/i.test(q.answer) ? false : null;
       if (said !== null && this.register && q.ask) {
         result = this.register.answerAsk(q.ask, said);
+        // The figures come off the screen now, not at the next save. "Put
+        // the number down" means while she is looking at it.
+        this.forgetPeopleRows(this.register.service);
+        this.savePeople(this.register.service);
         await this.learnFromAnswer(q, said, result);
         await this.maybeMoveTheLine();
         try {

@@ -143,7 +143,7 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
 // ── Two pictures, or no question ───────────────────────────────────────────
 {
   ok("the website turns the register's guesses into questions", /async makeAsks\(cams, now\) \{/.test(worker));
-  ok("of their own kind", /"same_person_question"/.test(worker) && /QUESTION_TYPES = \[[^\]]*"same_person_question"\]/.test(worker));
+  ok("of their own kind", /"same_person_question"/.test(worker) && /QUESTION_TYPES = \[[^\]]*"same_person_question", "is_this_a_person"\]/.test(worker));
   ok("it asks the counting browser for a picture of each side",
      /wanted\.push\(\{ id, side: "a", camera_id: a\.camera, track: a\.track \}\);/.test(worker)
      && /wanted\.push\(\{ id, side: "b", camera_id: a\.other_camera, track: a\.other_track \}\);/.test(worker));

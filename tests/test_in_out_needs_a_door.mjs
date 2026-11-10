@@ -123,8 +123,13 @@ fs.rmSync(tmp, { recursive: true, force: true });
      /const entries = sumDoors\("entries"\);/.test(worker) && /const exits = sumDoors\("exits"\);/.test(worker));
   ok("the room cameras' crossing counts no longer stand in", !/const roomNet =/.test(worker));
   ok("with the register answering 'how many are here' instead",
-     /const registerNow = this\.register \? this\.register\.hereNow\(Date\.now\(\), LEFT_AFTER_MS\) : 0;/.test(worker)
+     /const registerNow = this\.register\s*\n?\s*\? this\.register\.hereNow\(Date\.now\(\), LEFT_AFTER_MS, new Set\(zones\.filter/.test(worker)
      && /const countedNet = doorNet \?\? registerNow;/.test(worker));
+  // …and somebody a WORKING camera cannot see has probably gone. Five
+  // minutes is right when nothing is watching that room any more; it is far
+  // too slow when the camera is right there and can see they are not.
+  ok("and somebody a working camera can't see drops out in a minute",
+     /export const STILL_WATCHING_MS = 60_000;/.test(fs.readFileSync(path.join(root, "worker/identity.js"), "utf8")));
   ok("and the page is told which it was", /counted_net_from_register: doorNet === null && registerNow > 0,/.test(worker));
   // Still null rather than a made-up number when nothing can follow people.
   ok("no door, no in-and-out figure at all",

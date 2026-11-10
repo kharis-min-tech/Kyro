@@ -21,10 +21,10 @@ import {
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, sendPersonPicture, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
-import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
+import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
-import { PersonTracker } from "@/lib/personTracker";
+import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
 import { lookOf } from "@/lib/appearance";
 import { PictureWatch } from "@/lib/pictureCheck";
 import { SeatFinder } from "@/lib/seatFinder";
@@ -413,7 +413,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // Everything the AI noticed, before the "sure enough to count" cutoff,
           // so "nobody there" can be told apart from "seen but not sure".
           c.rawPeople = people;
-          c.people = outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height);
+          // Confident enough, not in a "don't count this" area, and not a
+          // picture of people held up in front of the lens — see
+          // notHeldBySomebody.
+          c.people = notHeldBySomebody(
+            outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height));
           const codes = await faceCodes(c, px);
           // What each person looks like — the colour of what they're wearing,
           // their build, how tall they are in the picture. Costs nothing (no
@@ -674,6 +678,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
                        x.look.bottom[0], x.look.bottom[1], x.look.bottom[2],
                        x.look.shape, x.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
           f: faceOnRef.current && x.face ? packFace(x.face) : null,
+          // How long this box has not moved at all. A seated human being is
+          // never still; a pillow, a coat over a chair or a poster is. Sent
+          // so the website can ASK about one — never so it can decide. See
+          // STILL_ENOUGH_MS in personTracker.ts.
+          q: x.stillFor >= STILL_ENOUGH_MS ? Math.round(x.stillFor / 1000) : undefined,
         })),
         // Every decision this camera made at the door since the last report,
         // so the website can show what was counted and what wasn't.

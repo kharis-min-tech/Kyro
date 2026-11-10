@@ -5,6 +5,29 @@ AI Count is the main dashboard. It shows how many people are in the building, ho
 <Shot name="ai-count" alt="AI Count page: total people in building, chart of the day, arrival and exit times, Live Overview, AI Alerts and System Status" />
 
 
+## Is this a person?
+
+The AI is asked *where are the people in this picture*, and it answers honestly. A cushion is person-shaped. So is a photograph of somebody held up to the lens. **Nothing in a single frame can settle it.**
+
+Two things now do:
+
+- **A picture held up to a camera isn't counted at all.** A photograph of people on a phone, or on a printed sheet, sits *entirely inside* the box round the person holding it, and is much smaller. Two real people standing close together never do that — one's head is above the other's shoulders, or their feet are below. Kyro drops those detections before they reach the count.
+- **Anything that hasn't moved for four minutes gets a question.** A seated person is never still: they breathe, shift, turn their head. A pillow, a coat over a chair, a statue or a poster doesn't move at all, ever. Kyro shows you the picture and asks **Is this a person?** — it never decides on its own, because people do fall asleep.
+
+Answer **No, take it off** and it comes off the count *and off today's figures*, and **anything that looks like it isn't counted again** for the rest of the service — so the same cushion isn't asked about every four minutes.
+
+::: tip A statue your camera always sees
+For something permanent, mark it once with **Don't count an area** on the [Cameras](/pages/cameras) page instead of answering the same question every service.
+:::
+
+## When Kyro is wrong, the number goes down
+
+Every correction takes the number **back out** — not just off the live count, but out of today's figures: attendance, **busiest day**, **came in this session**, and the arrival chart, all in the same moment you answer.
+
+This used to be only half true. Kyro corrected itself in memory, and the rows it had already written stayed exactly where they were — so the register said 1 and the page went on saying 2. That's a figure that can only ever climb, and it's why *busiest day* read 4 when there had only ever been one person.
+
+Nothing is destroyed: corrected entries are marked deleted the same way a deleted day is, so a correction can itself be undone.
+
 ## Is this the same person?
 
 When Kyro has to guess whether two sightings are the same person, it now **asks you** — with a picture of each.
