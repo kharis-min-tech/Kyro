@@ -212,7 +212,7 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
       ctx.textAlign = "center";
       ctx.fillText(
         loadingBg ? "Loading venue snapshot from camera…"
-          : bgError ? "No camera snapshot available — upload one, or check the camera is running"
+          : bgError ? "This camera is off, so there is no picture to draw on. Kyro deliberately won't show the last one it had — drawing a seat layout over a photograph of a different day puts every seat in the wrong place. Switch the camera on, or upload a picture."
           : "Upload a camera screenshot to begin",
         canvas.width / 2, canvas.height / 2,
       );

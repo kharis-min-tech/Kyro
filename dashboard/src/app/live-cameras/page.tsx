@@ -44,7 +44,7 @@ import type { Camera, VenueTotal, ZoneLive } from "@/types";
 import {
   Video, WifiOff, Users, ArrowUpRight, ArrowDownLeft,
   Maximize2, AlertTriangle, CheckCircle, XCircle,
-  Armchair, ChevronDown, ChevronUp, Minus, Plus, Play,
+  Armchair, ChevronDown, ChevronUp, Minus, Plus, Play, VideoOff,
 } from "lucide-react";
 
 const BG      = "var(--bg-base)";
@@ -211,11 +211,19 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   if (edge) {
     if (!snap.url) {
       const browserCam = cameraId.startsWith("web-") || (streamUrl?.startsWith("webcam://") ?? false);
+      // A camera that HAS a last picture but isn't sending one now is off, and
+      // says so with when it last sent one. It used to go on showing that
+      // picture: a full hall, in colour, under the word "Offline". A
+      // photograph is the most convincing thing on a screen and a label
+      // cannot argue with it.
+      const lastSeen = snap.takenAt ? new Date(snap.takenAt) : null;
       return (
         <div className="w-full h-full flex flex-col items-center justify-center gap-2" style={{ background: "var(--bg-inset)" }}>
-          <Video size={28} className="text-gray-700" />
+          <VideoOff size={28} className="text-gray-700" />
           <span className="text-xs text-gray-600 px-4 text-center">
-            {browserCam
+            {lastSeen
+              ? `This camera is off. Nothing is being shown, because the last picture — ${lastSeen.toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" })} — is not a picture of now.`
+              : browserCam
               ? "No picture yet — this camera is plugged into another computer, and a still arrives every 20 seconds once it is counting"
               : "No picture yet — it appears as soon as the camera computer is on"}
           </span>

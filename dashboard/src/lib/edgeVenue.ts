@@ -199,7 +199,16 @@ export function useEdgeSnapshot(cameraId: string | null, enabled: boolean, every
           headers: token ? { Authorization: `Bearer ${token}` } : {},
           cache: "no-store",
         });
-        if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("image/")) return;
+        if (!res.ok || !(res.headers.get("content-type") ?? "").startsWith("image/")) {
+          // The camera has stopped, so there is no picture of now. Let go of
+          // the one being shown rather than leaving Sunday afternoon on the
+          // screen under the word "Offline" — a photograph of a full hall is
+          // more convincing than any label beside it.
+          if (current.current) { URL.revokeObjectURL(current.current); current.current = null; }
+          setUrl(null);
+          setTakenAt(res.headers.get("X-Last-Picture"));
+          return;
+        }
         show(await res.blob(), res.headers.get("X-Taken-At"));
       } catch { /* non-fatal — keep the last picture */ }
     };

@@ -12,6 +12,10 @@ export interface Service {
   face_data_deleted_at?: string; quiet_since?: string | null;
 }
 interface Services { live: Service | null; services: Service[]; face_matching_now: boolean }
+/** A deleted service, kept whole so it can be put back. */
+export interface DeletedService extends Service {
+  counts_deleted?: boolean; deleted_by?: string; deleted_at?: string;
+}
 
 export const servicesApi = {
   list: () => edgeFetch<Services>("/api/live/services"),
@@ -23,6 +27,10 @@ export const servicesApi = {
   start: () => edgeFetch<{ already: boolean }>("/api/live/service/start", { method: "POST" }),
   /** Only the figures: start the arrivals and departures again from zero. Deletes nothing. */
   freshCounts: () => edgeVenueApi.freshStart(),
+  /** Services deleted in the last 30 days, and still recoverable. */
+  deleted: () => edgeFetch<DeletedService[]>("/api/live/services-deleted"),
+  restore: (id: string) => edgeFetch<{ restored: boolean; name: string; counts_restored: boolean }>(
+    `/api/live/services-deleted/${encodeURIComponent(id)}/restore`, { method: "POST" }),
   rename: (id: string, name: string) => edgeFetch<Service>(`/api/live/services/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) }),
 };
 
@@ -42,12 +50,16 @@ export function AutoServices() {
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const [confirmFresh, setConfirmFresh] = useState(false);
+  const [binned, setBinned] = useState<DeletedService[]>([]);
   const [alsoCounts, setAlsoCounts] = useState(false);
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
   const { venue } = useEdgeVenue(true, 5000);
 
   const load = useCallback(async () => {
     try { setData(await servicesApi.list()); setErr(null); } catch (e: any) { setErr(e?.message ?? "Couldn't load services"); }
+    // Deleted services are kept for 30 days. They were kept all along; there
+    // was simply nowhere that showed them, so deleting one looked permanent.
+    try { setBinned(await servicesApi.deleted()); } catch { /* the list is a bonus, not the page */ }
   }, []);
   useEffect(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t); }, [load]);
 
@@ -181,6 +193,41 @@ export function AutoServices() {
         )}
       </div>
 
+      {/* Recently deleted — kept for 30 days, then gone for good. */}
+      {binned.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Recently deleted ({binned.length})</p>
+          <p className="text-xs text-gray-500">
+            Still here. Bring one back any time within 30 days of deleting it, after which it goes for good.
+          </p>
+          {binned.map((s) => {
+            const gone = s.deleted_at ? new Date(Date.parse(s.deleted_at) + 30 * 86400000) : null;
+            return (
+              <div key={s.id} className="rounded-xl p-3 flex flex-wrap items-center gap-2"
+                style={{ background: "var(--bg-card)", border: "1px dashed var(--border-subtle)" }}>
+                <Trash2 size={13} className="shrink-0 text-gray-500" />
+                <div className="min-w-0">
+                  <p className="text-sm text-gray-300 truncate">{s.name}</p>
+                  <p className="text-xs text-gray-500">
+                    {date(s.started_at)} · busiest {s.peak}
+                    {s.deleted_by ? ` · deleted by ${s.deleted_by}` : ""}
+                    {gone ? ` · gone for good ${gone.toLocaleDateString([], { day: "numeric", month: "short" })}` : ""}
+                    {s.counts_deleted ? " · its counts went too, and come back with it" : ""}
+                  </p>
+                </div>
+                <span className="flex-1" />
+                {admin && (
+                  <button onClick={() => act(s.id, () => servicesApi.restore(s.id))} disabled={busy === s.id}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
+                    <RotateCcw size={12} /> Bring it back
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Ended */}
       <div className="flex flex-col gap-3">
         <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Past services ({ended.length})</p>
@@ -220,7 +267,8 @@ export function AutoServices() {
                 <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>Delete &quot;{s.name}&quot;?</p>
                 <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
                   This removes the service from the list. <strong>The day&apos;s attendance figures stay</strong> on Analytics and
-                  the calendar unless you tick below.
+                  the calendar unless you tick below. The service itself goes to <strong>Recently deleted</strong> below,
+                  where you can bring it back for 30 days.
                 </p>
                 <label className="flex items-start gap-2 text-xs" style={{ color: "var(--text-secondary)" }}>
                   <input type="checkbox" checked={alsoCounts} onChange={(e) => setAlsoCounts(e.target.checked)} className="mt-0.5" />

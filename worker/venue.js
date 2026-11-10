@@ -77,6 +77,15 @@ const FACE_MAX_AGE_MS = 12 * 60 * 60_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
+ * A picture older than this is not of now, and is not shown.
+ *
+ * The camera computer sends one every twenty seconds while it is counting, so
+ * anything older than a couple of minutes means it has stopped — and a
+ * photograph of a full hall is a very convincing thing to put under the word
+ * "Offline".
+ */
+const SNAPSHOT_STALE_MS = 3 * 60_000;
+/**
  * In/out recorded before this moment can't be trusted and is never charted.
  *
  * Two reasons, in order.
@@ -102,7 +111,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-b598b37d4e22";
+const VENUE_CODE = "venue-4f361b2cae61";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -457,7 +466,17 @@ export class VenueHub extends DurableObject {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can start the counts fresh" }, 403);
         return json(await this.freshStart());
       }
-      if (p === "/api/live/services-deleted" && request.method === "GET") return json(await this.get("deleted_services", []));
+      if (p === "/api/live/services-deleted" && request.method === "GET") {
+        // Tidied as it is read, so a service that has been deleted for more
+        // than 30 days stops appearing in a list that promises 30 days.
+        const log = this.tidyDeletedServices(await this.get("deleted_services", []));
+        return json(log);
+      }
+      const undel = p.match(/^\/api\/live\/services-deleted\/([\w-]+)\/restore$/);
+      if (undel && request.method === "POST") {
+        if (role !== "admin") return json({ error: "Only administrators can bring a service back" }, 403);
+        return this.restoreService(undel[1], user);
+      }
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
       if (p === "/api/live/movement" && request.method === "GET") return json(await this.movementByDay(url));
       // "What did you actually count?" — every decision the door cameras made
@@ -1281,9 +1300,32 @@ export class VenueHub extends DurableObject {
     return json({ ok: true });
   }
 
+  /**
+   * The latest picture from a camera — and nothing at all once that picture
+   * has stopped being "latest".
+   *
+   * A camera switched off on Sunday afternoon went on showing Sunday
+   * afternoon's picture. The tile said Offline in the corner, and underneath
+   * it was a room full of people, in colour, looking exactly like now. A
+   * picture is the most convincing thing on a screen; a label cannot argue
+   * with it.
+   *
+   * So a picture from a camera that is no longer reporting is not served at
+   * all. The page gets nothing and says the camera is off, which is the truth
+   * and is impossible to misread.
+   */
   async getSnapshot(camera_id) {
     const s = await this.ctx.storage.get(`snap:${camera_id}`);
     if (!s) return new Response("No picture yet", { status: 404 });
+    const live = await this.get("live", {});
+    const reporting = this.isOnline(live[camera_id]);
+    const age = Date.now() - (s.at || 0);
+    if (!reporting || age > SNAPSHOT_STALE_MS) {
+      return new Response("That camera isn't on, so there is no picture of now", {
+        status: 404,
+        headers: { "Cache-Control": "no-store", "X-Last-Picture": new Date(s.at || 0).toISOString() },
+      });
+    }
     return new Response(s.data, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store", "X-Taken-At": new Date(s.at).toISOString() } });
   }
 
@@ -2423,6 +2465,17 @@ export class VenueHub extends DurableObject {
    * attendance figures. Pass ?counts=1 to remove those too (asked for
    * separately, with its own confirmation).
    */
+  /**
+   * Delete a service record.
+   *
+   * It goes to Recently deleted, whole, so it can be brought back for 30 days
+   * and then goes for good — the same promise the day's counts already had.
+   *
+   * It used to keep only a note of WHAT was deleted: the name, the times, the
+   * peak. That is enough to say "this was deleted" and not enough to undo it,
+   * so a service deleted by mistake was gone the moment the button was
+   * pressed, with a page that said it could be recovered for 30 days.
+   */
   async deleteService(id, user, alsoCounts = false) {
     const list = await this.get("services", []);
     const s = list.find((x) => x.id === id);
@@ -2430,10 +2483,36 @@ export class VenueHub extends DurableObject {
     if (alsoCounts) this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), Date.parse(s.started_at), Date.parse(s.ended_at));
     await this.ctx.storage.put("services", list.filter((x) => x.id !== id));
     const log = await this.get("deleted_services", []);
-    log.unshift({ name: s.name, started_at: s.started_at, ended_at: s.ended_at, peak: s.peak,
-      counts_deleted: !!alsoCounts, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
-    await this.ctx.storage.put("deleted_services", log.slice(0, 200));
+    log.unshift({ ...s, counts_deleted: !!alsoCounts, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
+    await this.ctx.storage.put("deleted_services", this.tidyDeletedServices(log));
     return json({ deleted: true });
+  }
+
+  /** Gone for good after 30 days, like a deleted day's counts. */
+  tidyDeletedServices(log, now = Date.now()) {
+    const cutoff = now - DELETED_KEPT_DAYS * 86400_000;
+    return log.filter((x) => Date.parse(x.deleted_at || "") > cutoff).slice(0, 200);
+  }
+
+  /** Put a deleted service back where it was. */
+  async restoreService(id, user) {
+    const log = await this.get("deleted_services", []);
+    const was = log.find((x) => x.id === id);
+    if (!was) return json({ error: "That service isn't in Recently deleted — it may have been more than 30 days ago" }, 404);
+    const { counts_deleted, deleted_by, deleted_at, ...svc } = was;
+    const list = await this.get("services", []);
+    if (!list.some((x) => x.id === svc.id)) {
+      list.unshift(svc);
+      list.sort((a, b) => Date.parse(b.started_at) - Date.parse(a.started_at));
+      await this.ctx.storage.put("services", list.slice(0, 200));
+    }
+    // The counts it took with it come back too, if they were deleted with it.
+    if (counts_deleted && svc.started_at && svc.ended_at) {
+      this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?",
+        Date.parse(svc.started_at), Date.parse(svc.ended_at));
+    }
+    await this.ctx.storage.put("deleted_services", log.filter((x) => x.id !== id));
+    return json({ restored: true, name: svc.name, counts_restored: !!counts_deleted });
   }
 
   /** An admin ends the service now (e.g. people are still chatting afterwards). */
