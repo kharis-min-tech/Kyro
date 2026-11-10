@@ -26,6 +26,7 @@ import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { PersonTracker } from "@/lib/personTracker";
 import { lookOf } from "@/lib/appearance";
+import { PictureWatch } from "@/lib/pictureCheck";
 import { SeatFinder } from "@/lib/seatFinder";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
@@ -104,6 +105,8 @@ interface Cam {
   needsTiles: boolean; sinceTileCheck: number;
   /** Watching a doorway. It gets more turns, and never splits the picture. */
   isDoor: boolean;
+  /** Watches for a black or frozen picture — see lib/pictureCheck.ts. */
+  watch: PictureWatch;
   /** Finds this camera's seats by itself. Only ever for a camera on a room. */
   seatFinder: SeatFinder;
   /** When its seat list was last sent to the website. */
@@ -174,6 +177,22 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   /** Why faces can't be read here, if they can't. Told to the website, so the
    *  Face matching card can say so instead of sitting there saying "On". */
   const faceErr = useRef<string | null>(null);
+  /**
+   * Whatever has gone wrong in this browser, waiting to be sent to the
+   * website with the next report.
+   *
+   * This is the half of Kyro nobody can see from the office: it runs on a
+   * computer at the back of a hall, and until now its failures went to a
+   * console log on that computer. A failure nobody can see is a failure
+   * nobody fixes.
+   */
+  const problems = useRef<{ where: string; what: string; detail?: string }[]>([]);
+  const say = useCallback((where: string, what: string, detail?: string) => {
+    // One of each, so a camera failing on every count doesn't flood it.
+    if (problems.current.some((p) => p.where === where && p.what === what)) return;
+    problems.current.push({ where, what, detail });
+    if (problems.current.length > 10) problems.current.shift();
+  }, []);
   /** The service being recorded. When it changes, everybody is forgotten. */
   const serviceRef = useRef<string | null>(null);
   // The fresh start this browser has already applied, so a new session's zero
@@ -211,7 +230,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(), faces: null, facesAt: 0,
-          seatFinder: new SeatFinder(key), seatsSentAt: 0,
+          watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
         };
         // What this camera has already worked out about its seats, from last
         // time. Seats don't move; starting again every reload would mean
@@ -312,6 +331,30 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           continue;
         }
         c.noPictureSince = 0;
+        // Is this picture any use at all? A connected camera sending black, or
+        // the same frame over and over, counts zero people and looks perfectly
+        // healthy doing it.
+        if (c.watch.saw(px) && (c.watch.black || c.watch.frozen)) {
+          say(c.label, c.watch.black
+            ? "The picture is black. Check the lens cap and the lighting — and if this is a HuddleCam at 1920x1080, it may need to be asked for 1280x720 instead."
+            : "The same picture over and over: this camera has stopped, although it is still connected. Unplug it and plug it back in.");
+        }
+        // A black picture is the same fault as no picture wearing a disguise,
+        // so it gets the same answer: ask the camera for less and try again.
+        if (c.watch.black && c.tries < 3) {
+          c.tries++;
+          try {
+            c.stream?.getTracks().forEach((t) => t.stop());
+            c.stream = await openCamera(c.deviceId, c.tries);
+            c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c.stream = null; c.error = "Unplugged"; refreshViews(); });
+            if (c.video) { c.video.srcObject = c.stream; c.video.play().catch(() => {}); }
+            c.watch.reset();
+            c.error = null;
+          } catch {
+            c.error = "This camera sends a black picture at every size Kyro can ask for.";
+          }
+          continue;
+        }
         const t0 = performance.now();
         try {
           // Splitting the picture into tiles costs five AI runs instead of
@@ -353,7 +396,14 @@ export function CountingProvider({ children }: { children: ReactNode }) {
               try {
                 const chairs = await engine.current.seating(px);
                 c.seatFinder.sawChairs(chairs.map((x) => x.box as [number, number, number, number]), px.width, px.height, Date.now());
-              } catch { c.seatFinder.chairsAt = Date.now(); }   // never stop counting over it
+              } catch (e) {
+                // Finding seats must never stop counting people — but it must
+                // not fail quietly either, or the seat map simply never
+                // appears and nobody knows why.
+                c.seatFinder.chairsAt = Date.now();
+                say(c.label, "Couldn't look for chairs, so the seat map for this camera won't fill in",
+                  e instanceof Error ? e.message : String(e));
+              }
             }
             c.seatFinder.decide(Date.now());
           }
@@ -366,6 +416,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           c.error = null;
         } catch (e) {
           c.error = `Counting problem: ${e instanceof Error ? e.message : e}`.slice(0, 120);
+          say(c.label, "Counting failed on this camera", e instanceof Error ? e.message : String(e));
         }
         did = true;
       }
@@ -541,12 +592,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         status: c.error || Date.now() - c.countedAt > 60_000 ? "error" : "online",
         error: c.error ?? (c.countedAt ? null : "Starting…"),
         fps: c.secondsPerCount ? +(1 / c.secondsPerCount).toFixed(1) : 0,
+        // Honest about what the picture is, separately from whether the
+        // camera is connected. Connected is not working.
+        black: c.watch.black, frozen: c.watch.frozen,
+        no_picture: !!c.noPictureSince && Date.now() - c.noPictureSince > NO_PICTURE_MS,
+        counted_at: c.countedAt,
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       });
       });
       try {
         const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode } =
-          await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current });
+          await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current);
+        problems.current = [];
         // A different service, or none: forget everybody seen in the last one.
         // People are remembered only for as long as one service runs — see
         // PersonTracker.forgetPeople.
@@ -595,7 +652,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           if (!seats.length) continue;
           c.seatsSentAt = Date.now();
           try { localStorage.setItem(`kyro_seats_${c.key}`, c.seatFinder.save()); } catch { /* fine without it */ }
-          sendSeats(c.key, seats, c.seatFinder.stage).catch(() => { c.seatsSentAt = 0; });
+          sendSeats(c.key, seats, c.seatFinder.stage).catch((e) => {
+            c.seatsSentAt = 0;                      // try again next time
+            say(c.label, "Found seats, but couldn't send them to Kyro — the seat map will be out of date",
+              e instanceof Error ? e.message : String(e));
+          });
         }
         for (const c of list) {
           if (Date.now() - c.lastPicture >= PICTURE_EVERY_MS && c.countedAt) {

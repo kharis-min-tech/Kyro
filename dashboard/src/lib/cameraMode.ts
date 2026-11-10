@@ -226,6 +226,8 @@ export interface CameraReport {
   seen?: { t: number; l: number[] | null; f: string | null; s?: string | null }[];
   /** Which seats are taken: [seat id, state, seconds vacant, confidence]. */
   seats?: [string, string, number, number][];
+  /** What the picture itself is like — connected is not working. */
+  black?: boolean; frozen?: boolean; no_picture?: boolean; counted_at?: number;
   /** Face codes, only while face matching is switched on. Never a picture. */
   faces?: string[]; faces_age_s?: number;
   /** What this camera decided at the door since the last report, for showing. */
@@ -246,12 +248,15 @@ export async function sendReport(
    * sending no codes used to look exactly like a fault.
    */
   faces: { error?: string | null; ready?: boolean } = {},
+  /** Whatever has gone wrong in this browser since the last report. */
+  problems: { where: string; what: string; detail?: string }[] = [],
 ): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${d.token}` },
     body: JSON.stringify({ version: CAMERA_MODE_VERSION, faces_error: faces.error ?? null, faces_ready: !!faces.ready,
+      problems: problems.slice(0, 10),
       cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
   });
   let res = await post(dev);

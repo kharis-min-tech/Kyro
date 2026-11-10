@@ -12,6 +12,7 @@ import { DurableObject } from "cloudflare:workers";
 import { notifyCount } from "./index.js";
 import { IdentityRegistry } from "./identity.js";
 import { Building } from "./building.js";
+import { Trouble, cameraHealth } from "./health.js";
 
 const enc = new TextEncoder();
 const json = (body, status = 200) =>
@@ -287,6 +288,12 @@ export class VenueHub extends DurableObject {
      */
     this.building = null;
     this.buildingSavedAt = 0;
+    /**
+     * What is wrong with Kyro, where, and since when — see worker/health.js.
+     * Loaded on first use; every failure below ends up here instead of in a
+     * console log nobody at the church can read.
+     */
+    this.trouble = null;
     /** camera → the last few door decisions, for the "what was counted" panel. */
     this.doorLog = new Map();
     // Who is signed in right now: username → deviceId → { name, role, device, at }.
@@ -430,6 +437,12 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/building" && request.method === "POST") {
         if (role !== "admin") return json({ error: "Only administrators can change the seating" }, 403);
         return json(await this.changeBuilding(request, user));
+      }
+      // Is Kyro actually working? Every check it can make, with what each one
+      // is looking at — never a single green light standing in for all of it.
+      if (p === "/api/live/health" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json(await this.healthReport());
       }
       if (p === "/api/live/identity" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
@@ -636,6 +649,11 @@ export class VenueHub extends DurableObject {
         current: num(c.current, 0, 100000), peak: num(c.peak, 0, 100000),
         entries: seen.in, exits: seen.out, people: seen.people || 0,
         status: ["online", "error", "offline"].includes(c.status) ? c.status : "online",
+        // What the picture is actually like. Kept separately from whether the
+        // camera is connected, because a connected camera sending black is
+        // not a working camera.
+        black: !!c.black, frozen: !!c.frozen, no_picture: !!c.no_picture,
+        counted_at: num(c.counted_at, 0, Date.now() + 60_000) || now,
         error_reason: c.error ? clean(c.error, 120) : null, fps: Number(c.fps) || 0,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
       };
@@ -659,7 +677,14 @@ export class VenueHub extends DurableObject {
         try {
           await this.ctx.storage.put(`seat_live:${camera_id}`,
             { at: now, seats: c.seats.slice(0, MAX_SEATS).map(cleanSeatState).filter(Boolean) });
-        } catch (e) { console.log("seat states too big to store", camera_id, e && e.message); }
+        } catch (e) {
+          // The seat map silently stopped updating for this camera. Said out
+          // loud, with the camera's name, because the map still LOOKS fine:
+          // it goes on showing the last states it managed to store.
+          await this.wrong(`Seat map · ${cams[camera_id]?.name || camera_id}`,
+            "Couldn't store which seats are taken — the seat map for this camera is frozen at its last good reading",
+            e && e.message);
+        }
       }
       if (now - (this.lastSample.get(camera_id) ?? 0) >= SAMPLE_EVERY_MS) {
         this.lastSample.set(camera_id, now);
@@ -671,6 +696,15 @@ export class VenueHub extends DurableObject {
       }
     }
 
+    // Whatever went wrong in the browser doing the counting. It is the half of
+    // Kyro nobody can see from here, and until now its failures stayed in a
+    // console log on a computer at the back of a hall.
+    if (Array.isArray(body.problems)) {
+      for (const pr of body.problems.slice(0, 10)) {
+        if (!pr || typeof pr.what !== "string") continue;
+        await this.wrong(clean(pr.where, 60) || "Counting computer", clean(pr.what, 200), clean(pr.detail, 200));
+      }
+    }
     // The counting browser couldn't load the face AI. Kept so the Face
     // matching card can say so rather than looking switched on and idle.
     // The face AI is loaded in that browser and looking at every count —
@@ -686,8 +720,18 @@ export class VenueHub extends DurableObject {
     if (countersChanged) await this.ctx.storage.put("counters", counters);
     // The register of people. Every camera's observations meet here, which is
     // the only place they can be compared with each other.
-    try { await this.rememberPeople(device, body, cams, now); }
-    catch (e) { console.log("register failed", e && e.message); }
+    try {
+      await this.rememberPeople(device, body, cams, now);
+      await this.working("Register of people");
+    } catch (e) {
+      // This is the serious one. With the register gone, attendance falls back
+      // to each camera's own tally, which counts the same congregation over
+      // and over — the number on the screen does not change appearance, it
+      // changes MEANING. Nobody may be left to find that out for themselves.
+      await this.wrong("Register of people",
+        "Couldn't record who is here, so the attendance figure has fallen back to each camera's own count — which counts the same people repeatedly and will read far too high",
+        e && e.message);
+    }
     const devices = await this.get("devices", {});
     if (devices[device.id]) {
       devices[device.id].last_seen = new Date(now).toISOString();
@@ -697,7 +741,14 @@ export class VenueHub extends DurableObject {
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
     await this.capacityAlerts(cams, live);
-    try { await this.trackService(now); } catch (e) { console.log("service tracking failed", e && e.message); }
+    try {
+      await this.trackService(now);
+      await this.working("Services");
+    } catch (e) {
+      await this.wrong("Services",
+        "Couldn't follow whether a service is running, so one may fail to start, fail to end, or record the wrong busiest figure",
+        e && e.message);
+    }
 
     // Tell the box which cameras it may use (added on the website) and which not.
     const mine = Object.values(cams).filter((c) => c.device_id === device.id && c.kind !== "network");
@@ -867,6 +918,83 @@ export class VenueHub extends DurableObject {
     }
     if (out?.ok) await this.saveBuilding(true);
     return out?.error ? { ...out, error: out.error } : { ...out, ...(await this.theBuilding()).overview() };
+  }
+
+  /**
+   * The whole truth about what is working.
+   *
+   * A green light here means the checks behind it passed, not that nothing has
+   * complained. Each camera is checked on four separate questions — is it
+   * reporting, is it sending a picture, is that picture black or frozen, is it
+   * counting — because one word covering four questions is how a broken camera
+   * stays green.
+   */
+  async healthReport() {
+    const now = Date.now();
+    const cams = await this.get("cameras", {});
+    const live = await this.get("live", {});
+    const t = await this.troubles();
+    const cameras = Object.values(cams)
+      .filter((c) => !c.hidden && !c.pending)
+      .map((c) => {
+        const l = live[c.camera_id] || {};
+        const needs = c.location === "entrance" ? MIN_FPS_FOR_DOOR : 0;
+        const h = cameraHealth({
+          updated_at: l.updated_at, fps: l.fps, counted_at: l.counted_at ?? l.updated_at,
+          error: l.error_reason, no_picture: !!l.no_picture, black: !!l.black, frozen: !!l.frozen,
+        }, now, needs);
+        return {
+          camera_id: c.camera_id, name: c.name, where: c.location || "indoor",
+          ...h,
+          last_seen: l.updated_at ? new Date(l.updated_at).toISOString() : null,
+          fps: l.fps ?? 0, needs_fps: needs,
+          picture_size: l.width && l.height ? `${l.width}x${l.height}` : null,
+        };
+      });
+    const service = await this.get("service_live", null);
+    const problems = t.list(now);
+    const live_problems = problems.filter((x) => !x.fixed);
+    return {
+      // Green only when every check passed. Anything failing is named.
+      ok: live_problems.length === 0 && cameras.every((c) => c.ok),
+      checked_at: new Date(now).toISOString(),
+      code: VENUE_CODE,
+      cameras,
+      cameras_working: cameras.filter((c) => c.ok).length,
+      cameras_total: cameras.length,
+      service: service ? { id: service.id, name: service.name, since: service.started_at } : null,
+      counting: {
+        register_running: !!this.register,
+        people_in_register: this.register?.size ?? 0,
+        building_seats: this.building ? this.building.overview().total : 0,
+        // Said plainly: with no register, the attendance figure is each
+        // camera's own tally, which counts the same people over and over.
+        attendance_is_from_register: !!this.register?.size,
+      },
+      problems,
+      problems_now: live_problems.length,
+    };
+  }
+
+  async troubles() {
+    if (!this.trouble) this.trouble = new Trouble(await this.get("trouble", null));
+    return this.trouble;
+  }
+
+  /** Record a failure where it can be seen, and keep it. */
+  async wrong(where, what, detail = "") {
+    const t = await this.troubles();
+    t.note(where, what, detail);
+    await this.ctx.storage.put("trouble", t.save());
+  }
+
+  /** That part is working again. The record stays, marked fixed. */
+  async working(where) {
+    const t = await this.troubles();
+    if (!t.items.size) return;
+    const was = t.broken;
+    t.ok(where);
+    if (was !== t.broken) await this.ctx.storage.put("trouble", t.save());
   }
 
   async theBuilding() {

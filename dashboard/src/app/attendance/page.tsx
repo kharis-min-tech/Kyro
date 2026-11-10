@@ -15,6 +15,7 @@ import { DEMO_MODE } from "@/lib/demo";
 import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { DoorLog, IdentityHealth } from "@/components/ui/DoorLog";
+import { SystemHealth } from "@/components/ui/SystemHealth";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
@@ -1554,6 +1555,8 @@ export default function AttendancePage() {
 
             {/* Every decision the entrance made, in words — so the figures
                 above can be checked against the door itself. */}
+            {/* Whether Kyro is working, above everything that depends on it. */}
+            {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <SystemHealth />}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <DoorLog />}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <IdentityHealth />}
 
