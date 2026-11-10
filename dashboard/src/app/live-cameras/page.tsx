@@ -394,11 +394,20 @@ function VenueOverview({
 }) {
   const totalSeats  = venueTotal?.total_capacity ?? 0;
   const current     = venueTotal?.total_current ?? 0;
-  const seatsLeft   = Math.max(0, totalSeats - current);
+  /**
+   * With no camera counting anywhere, there is no count — and therefore no
+   * space left and no occupancy.
+   *
+   * "Space left" is the capacity minus the count, which is only a measurement
+   * while something is counting. With every camera off it is just the
+   * capacity wearing the word "left", in green, as though somebody had looked.
+   */
+  const counting    = (venueTotal?.cameras_running ?? 0) > 0;
+  const seatsLeft   = counting ? Math.max(0, totalSeats - current) : null;
   const venuePct    = venueTotal?.venue_occupancy_pct ?? 0;
-  const barColor    = occupancyColor(totalSeats > 0 ? venuePct : null);
-  const canFitQueue = queueSize > 0 && seatsLeft >= queueSize;
-  const queueFit    = queueSize > 0 ? seatsLeft - queueSize : null;
+  const barColor    = occupancyColor(counting && totalSeats > 0 ? venuePct : null);
+  const canFitQueue = queueSize > 0 && seatsLeft !== null && seatsLeft >= queueSize;
+  const queueFit    = queueSize > 0 && seatsLeft !== null ? seatsLeft - queueSize : null;
 
   return (
     <div
@@ -410,9 +419,16 @@ function VenueOverview({
         {/* Total in venue */}
         <div className="flex flex-col gap-0.5 min-w-[90px]">
           <span className="text-xs text-gray-500 uppercase tracking-widest">In venue</span>
-          <span className="text-3xl font-bold text-white tabular-nums">{current.toLocaleString()}</span>
+          <span className="text-3xl font-bold tabular-nums"
+            style={{ color: counting ? "#fff" : "var(--text-faint)" }}>
+            {counting ? current.toLocaleString() : "—"}
+          </span>
           {totalSeats > 0 && (
-            <span className="text-xs text-gray-600 tabular-nums">of the {totalSeats.toLocaleString()} this venue is set to hold</span>
+            <span className="text-xs text-gray-600 tabular-nums">
+              {counting
+                ? `of the ${totalSeats.toLocaleString()} this venue is set to hold`
+                : `no camera is counting · set to hold ${totalSeats.toLocaleString()}`}
+            </span>
           )}
         </div>
 
@@ -421,18 +437,23 @@ function VenueOverview({
           <span className="text-xs text-gray-500 uppercase tracking-widest">Space left</span>
           <span
             className="text-3xl font-bold tabular-nums"
-            style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 20 ? "#f59e0b" : "#22c55e" }}
+            style={{ color: seatsLeft === null ? "var(--text-faint)"
+              : seatsLeft === 0 ? "#ef4444" : seatsLeft < 20 ? "#f59e0b" : "#22c55e" }}
           >
-            {totalSeats > 0 ? seatsLeft.toLocaleString() : "—"}
+            {totalSeats > 0 && seatsLeft !== null ? seatsLeft.toLocaleString() : "—"}
           </span>
           {totalSeats > 0 && seatsLeft === 0 && (
             <span className="text-xs text-red-400 font-medium">Full</span>
           )}
           {/* Said plainly, because "seats left" read as though Kyro could see
               empty chairs. It cannot: this is the capacity set for each camera
-              minus the number of people counted. */}
-          {totalSeats > 0 && seatsLeft > 0 && (
+              minus the number of people counted — which is a measurement only
+              while something is counting. */}
+          {totalSeats > 0 && seatsLeft !== null && seatsLeft > 0 && (
             <span className="text-xs" style={{ color: "var(--text-faint)" }}>capacity minus the count</span>
+          )}
+          {totalSeats > 0 && seatsLeft === null && (
+            <span className="text-xs" style={{ color: "var(--text-faint)" }}>nothing is counting</span>
           )}
         </div>
 
@@ -441,7 +462,7 @@ function VenueOverview({
           <div className="flex flex-col gap-0.5 min-w-[80px]">
             <span className="text-xs text-gray-500 uppercase tracking-widest">Occupancy</span>
             <span className="text-3xl font-bold tabular-nums" style={{ color: barColor }}>
-              {Math.round(venuePct)}%
+              {counting ? `${Math.round(venuePct)}%` : "—"}
             </span>
           </div>
         )}
@@ -520,7 +541,7 @@ function VenueOverview({
           <div className="h-2 rounded-full bg-gray-800 overflow-hidden">
             <div
               className="h-full rounded-full transition-all duration-700"
-              style={{ width: `${Math.min(100, venuePct)}%`, background: barColor }}
+              style={{ width: counting ? `${Math.min(100, venuePct)}%` : "0%", background: barColor }}
             />
           </div>
           <div className="flex justify-between mt-1.5">
@@ -579,10 +600,24 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
 
           {/* Rows */}
           {zonesWithCapacity.map((zone) => {
-            const left   = Math.max(0, zone.capacity - zone.current);
-            const pct    = Math.round(zone.occupancy_pct);
-            const color  = occupancyColor(pct);
-            const status = occupancyLabel(pct);
+            /**
+             * A camera that isn't counting has no figures, only a capacity.
+             *
+             * This row used to read, for a camera that was switched off:
+             * 0 people in, 21 space left, 0% full, Open — in green, beside
+             * the word Offline. Every one of those but the capacity is a
+             * measurement, and nothing was measuring. "21 spaces left" in a
+             * room nothing can see is not a cautious figure, it is a made-up
+             * one, and it is the kind somebody acts on.
+             *
+             * Capacity stays, because it is a setting somebody typed in
+             * rather than something a camera found.
+             */
+            const counting = zone.is_running && (zone as { is_counting?: boolean }).is_counting !== false;
+            const left   = counting ? Math.max(0, zone.capacity - zone.current) : null;
+            const pct    = counting ? Math.round(zone.occupancy_pct) : null;
+            const color  = counting ? occupancyColor(pct) : "var(--text-faint)";
+            const status = counting ? occupancyLabel(pct) : "unknown";
 
             return (
               <div key={zone.camera_id} className="flex items-center px-4 py-3"
@@ -602,49 +637,49 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                 </span>
 
                 {/* People in */}
-                <span className="w-20 text-right text-sm text-white font-medium tabular-nums shrink-0">
-                  {zone.current.toLocaleString()}
+                <span className="w-20 text-right text-sm font-medium tabular-nums shrink-0"
+                  style={{ color: counting ? "#fff" : "var(--text-faint)" }}>
+                  {counting ? zone.current.toLocaleString() : "—"}
                 </span>
 
                 {/* Space left */}
                 <span className="w-24 text-right text-sm font-bold tabular-nums shrink-0"
-                  style={{ color: left === 0 ? "#ef4444" : left < 10 ? "#f59e0b" : "#22c55e" }}>
-                  {left === 0 ? "None left" : left.toLocaleString()}
+                  style={{ color: left === null ? "var(--text-faint)" : left === 0 ? "#ef4444" : left < 10 ? "#f59e0b" : "#22c55e" }}>
+                  {left === null ? "—" : left === 0 ? "None left" : left.toLocaleString()}
                 </span>
 
                 {/* How full bar + % */}
                 <div className="w-32 flex items-center gap-2 justify-end shrink-0">
                   <div className="w-16 h-1.5 rounded-full bg-gray-800 overflow-hidden">
                     <div className="h-full rounded-full transition-all duration-700"
-                      style={{ width: `${Math.min(100, pct)}%`, background: color }} />
+                      style={{ width: `${Math.min(100, pct ?? 0)}%`, background: color }} />
                   </div>
                   <span className="text-xs tabular-nums w-8 text-right font-medium" style={{ color }}>
-                    {pct}%
+                    {pct === null ? "—" : `${pct}%`}
                   </span>
                 </div>
 
-                {/* Status */}
+                {/* Status — ONE badge. It used to draw the occupancy badge and
+                    the Offline badge on top of each other in a 5rem box, so a
+                    switched-off camera read "Open" and "Offline" at once, in
+                    the same place. */}
                 <div className="w-20 flex justify-end shrink-0">
-                  {status === "critical" && (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>Full</span>
-                  )}
-                  {status === "warning" && (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>Filling</span>
-                  )}
-                  {status === "ok" && (
-                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(34,197,94,0.12)", color: "#86efac" }}>Open</span>
-                  )}
-                  {!zone.is_running && (
+                  {!zone.is_running ? (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
                       style={{ background: "rgba(75,85,99,0.3)", color: "var(--text-tertiary)" }}>Offline</span>
-                  )}
-                  {zone.is_running && zone.status === "error" && (
+                  ) : zone.status === "error" || !counting ? (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
                       style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}
                       title={zone.error_reason ?? undefined}>Camera error</span>
+                  ) : status === "critical" ? (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>Full</span>
+                  ) : status === "warning" ? (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>Filling</span>
+                  ) : (
+                    <span className="text-xs px-2.5 py-1 rounded-full font-medium"
+                      style={{ background: "rgba(34,197,94,0.12)", color: "#86efac" }}>Open</span>
                   )}
                 </div>
               </div>
@@ -691,8 +726,17 @@ function CameraTile({
   const edgeError = edgeLive?.error ?? null;
   const capacity = camera.zone_capacity ?? 0;
   const isQueue  = camera.location === "queue";
-  const pct      = (!isQueue && capacity > 0) ? Math.min(100, Math.round((current / capacity) * 100)) : null;
-  const seatsLeft = (!isQueue && capacity > 0) ? Math.max(0, capacity - current) : null;
+  /**
+   * Nothing is counting, so there is nothing to report but the capacity.
+   *
+   * A switched-off camera's tile read "0 / 21" and "21 spaces left", in
+   * green, beside its own message explaining that it is not plugged in. A
+   * room nothing can see has no occupancy and no space left; it has a number
+   * somebody typed in once, and no measurement at all.
+   */
+  const measuring = isLive;
+  const pct      = (measuring && !isQueue && capacity > 0) ? Math.min(100, Math.round((current / capacity) * 100)) : null;
+  const seatsLeft = (measuring && !isQueue && capacity > 0) ? Math.max(0, capacity - current) : null;
   const color    = occupancyColor(pct);
   const level    = occupancyLabel(pct);
 
@@ -828,7 +872,10 @@ function CameraTile({
           <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
             style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
             <Users size={12} className="text-indigo-300" />
-            <span className="text-sm font-bold text-white tabular-nums">{current.toLocaleString()}</span>
+            <span className="text-sm font-bold tabular-nums"
+              style={{ color: measuring ? "#fff" : "var(--text-faint)" }}>
+              {measuring ? current.toLocaleString() : "—"}
+            </span>
             {capacity > 0 && <span className="text-xs text-gray-400">/ {capacity.toLocaleString()}</span>}
           </div>
           {seatsLeft !== null && (
@@ -898,7 +945,7 @@ function CameraTile({
             it can genuinely measure. */}
         <div className="flex items-center justify-between pt-0.5">
           <div className="flex items-center gap-4">
-            {showInOut ? (<>
+            {showInOut && measuring ? (<>
               <div className="flex items-center gap-1.5">
                 <ArrowUpRight size={12} className="text-green-500" />
                 <span className="text-xs text-gray-400 tabular-nums">
@@ -912,8 +959,11 @@ function CameraTile({
                 </span>
               </div>
             </>) : (
-              <span className="text-xs text-gray-400 tabular-nums" title={inOutWhyNot}>
-                <span className="text-gray-300 font-medium">{peak.toLocaleString()}</span> most at once
+              <span className="text-xs tabular-nums" title={measuring ? inOutWhyNot : undefined}
+                style={{ color: measuring ? "var(--text-tertiary)" : "var(--text-faint)" }}>
+                {measuring
+                  ? <><span className="text-gray-300 font-medium">{peak.toLocaleString()}</span> most at once</>
+                  : "Not counting — no figures from this camera"}
               </span>
             )}
           </div>

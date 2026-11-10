@@ -39,6 +39,12 @@ Arrivals and departures for the whole building don't need a doorway camera: Kyro
 - **See one room bigger:** tap the expand icon at the bottom right of its tile. Close it with **<Icon name="close" label="close" />** or the Esc key.
 - **Picture stopped?** If a tile says **Stream lost — tap to retry**, tap it.
 
+::: warning A camera that isn't counting has no figures
+Only its **capacity** is shown — that's a number you typed in, not something a camera found. **People in**, **space left** and **how full** all read **—**, and so do the venue totals at the top when no camera is running anywhere.
+
+"21 spaces left" in a room nothing can see isn't a cautious figure, it's an invented one — and it's the kind somebody acts on when deciding whether to open another room.
+:::
+
 ::: tip A camera that is off shows no picture at all
 When you stop counting, or unplug a camera, its tile goes grey straight away and says so. It never keeps showing the last picture it sent: a photograph of a full hall is far more convincing than the word "Offline" beside it, so Kyro would rather show you nothing than show you a moment that has passed.
 :::
