@@ -102,6 +102,38 @@ export const LOOK_MARGIN = 0.05;
 export const LOOK_ALONE = 0.92;
 /** An appearance match weaker than this is never used, however clear. */
 export const LOOK_UNCERTAIN = 0.82;
+/**
+ * A uniform.
+ *
+ * The choir wear the same robes. The ushers wear the same jackets. When this
+ * many people Kyro already knows look like the person in front of it, what
+ * they are wearing has stopped being evidence about WHO they are — it is
+ * evidence about which group they belong to, which is a different question and
+ * not one attendance cares about.
+ *
+ * Appearance is then refused outright for that sighting: only a face, or the
+ * camera still following them, may say who this is. The cost is that a choir
+ * member who steps out and comes back without being recognised is counted
+ * twice. The alternative is worse and silent: twenty robed singers quietly
+ * merged into three or four people, and an attendance figure that is wrong
+ * downwards with nothing to show for it.
+ */
+export const UNIFORM_CROWD = 3;
+/**
+ * Where somebody was sitting, as SUPPORTING evidence.
+ *
+ * The same seat, moments later, is usually the same person — but only usually,
+ * and it must never be proof: people swap seats, and a choir stand is a row of
+ * identical people in identical robes where "the seat they were in" is the
+ * only thing telling them apart, which is exactly when it is least safe.
+ *
+ * So a seat can lift an appearance match that was nearly good enough over the
+ * line, and can do nothing on its own. A face outranks it; a uniform cancels
+ * it, because in a row of identical robes the seat is doing all the work.
+ */
+export const SEAT_HELPS = 0.04;
+/** How long a seat stays believable as a hint about who somebody is. */
+export const SEAT_FRESH_MS = 60_000;
 /** A camera's own track stays attached to its identity for this long. */
 export const TRACK_LINK_MS = 5 * 60_000;
 /** Faces and appearances kept per identity, so one bad reading can't define them. */
@@ -179,8 +211,21 @@ export class IdentityRegistry {
     this.overlapping = opts.overlapping ?? ((a, b) => this.zoneOf(a) === this.zoneOf(b));
     this.people = new Map();      // id → identity
     this.byTrack = new Map();     // "camera#track" → { id, at }
+    /**
+     * Which person is in which seat, across every camera.
+     *
+     * One person in one seat and one seat holding one person, which is the
+     * whole reason this lives here rather than in either half: the seat finder
+     * only knows the seats one camera can see, and a person can be seen by
+     * more than one camera.
+     *
+     * A seat id is never a person id. Somebody who sits in five chairs during
+     * a service is five seats and ONE person in the attendance figure, and
+     * nothing about seats can add to it or take from it.
+     */
+    this.seats = new Map();       // "camera#seat" → person id
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0 };
     this.service = null;
   }
 
@@ -195,8 +240,9 @@ export class IdentityRegistry {
     this.service = id ?? null;
     this.people.clear();
     this.byTrack.clear();
+    this.seats.clear();
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0 };
   }
 
   /**
@@ -271,8 +317,16 @@ export class IdentityRegistry {
       // whatever they are wearing. See FACE_DIFFERENT.
       if (o.face && p.faces.length && face < FACE_DIFFERENT) { this.stats.vetoedByFace++; continue; }
       const look = o.look && p.looks.length ? bestAgainst(p.looks, o.look, alikeLook) : 0;
-      scored.push({ p, face, look });
+      // Were they in this seat a moment ago? Supporting evidence only.
+      const sameSeat = !!(o.seat && p.seat === o.seat && now - (p.seatAt || 0) < SEAT_FRESH_MS);
+      scored.push({ p, face, look, sameSeat });
     }
+
+    // A uniform: too many people Kyro knows look like this one, so what they
+    // are wearing says nothing about which of them this is. See UNIFORM_CROWD.
+    const alike = scored.filter((x) => x.look >= LOOK_SAME).length;
+    const uniform = alike >= UNIFORM_CROWD;
+    if (uniform) this.stats.uniformed++;
 
     // A face settles it, when there is one and it is clearly one person's.
     const faces = scored.filter((s) => s.face > 0).sort((a, b) => b.face - a.face);
@@ -283,14 +337,21 @@ export class IdentityRegistry {
     }
 
     // Otherwise what they look like — but only when one candidate stands
-    // clearly apart. In a hall of dark coats nobody does, and the honest
-    // answer is that this is somebody new.
-    const looks = scored.filter((s) => s.look > 0).sort((a, b) => b.look - a.look);
+    // clearly apart, and never at all when the room is full of people dressed
+    // the same. In a hall of dark coats, or a choir stand, nobody stands
+    // apart, and the honest answer is that Kyro does not know.
+    const looks = uniform ? [] : scored.filter((s) => s.look > 0).sort((a, b) => b.look - a.look);
     if (looks.length) {
       const best = looks[0], second = looks[1]?.look ?? 0;
-      const clear = looks.length < 2 ? best.look >= LOOK_ALONE : best.look - second >= LOOK_MARGIN;
-      if (best.look >= LOOK_SAME && clear) {
+      // Being in the seat they were just in lifts a nearly-good-enough match
+      // over the line. It can never make a match on its own — see SEAT_HELPS.
+      const help = best.sameSeat ? SEAT_HELPS : 0;
+      const clear = looks.length < 2
+        ? best.look + help >= LOOK_ALONE
+        : best.look - second + help >= LOOK_MARGIN;
+      if (best.look + help >= LOOK_SAME && clear) {
         this.stats.matchedByLook++;
+        if (best.sameSeat) this.stats.helpedBySeat++;
         return this.touch(best.p.id, cameraId, o, now).id;
       }
       // Good, but not good enough to be sure. Attached and flagged rather
@@ -319,17 +380,47 @@ export class IdentityRegistry {
       looks: [], faces: [],
       seen: 1,
       uncertain: 0,
+      /** Where they are sitting, if anywhere. Never part of who they are. */
+      seat: null, seatKey: null, seatAt: 0, seatCamera: "",
     };
     if (o.look) keep(p.looks, o.look);
     if (o.face) keep(p.faces, o.face);
     this.people.set(p.id, p);
     this.stats.created++;
+    if (o.seat) this.setSeat(p, cameraId, o.seat, now);
     return p;
+  }
+
+  /**
+   * Somebody sat down, stood up or moved.
+   *
+   * Sitting down, standing up and changing seats are all the same person. The
+   * seat changes; the person does not, and attendance never moves.
+   */
+  setSeat(p, cameraId, seat, now) {
+    const key = seat ? `${cameraId}#${seat}` : null;
+    if (p.seatKey === key) { if (key) p.seatAt = now; return; }
+    // They have left wherever they were, so it is free for somebody else.
+    if (p.seatKey && this.seats.get(p.seatKey) === p.id) this.seats.delete(p.seatKey);
+    if (!key) { p.seatKey = null; p.seat = null; return; }
+    // Nobody may sit in a seat somebody else is already in. The seat finder
+    // allows only one person per seat on one camera; this is the same rule
+    // across all of them.
+    const already = this.seats.get(key);
+    if (already && already !== p.id && this.people.has(already)) {
+      const other = this.people.get(already);
+      if (now - (other.seatAt || 0) < SEAT_FRESH_MS) return;   // still theirs
+      other.seatKey = null; other.seat = null;
+    }
+    if (p.seatKey) this.stats.movedSeat++;
+    this.seats.set(key, p.id);
+    p.seatKey = key; p.seat = seat; p.seatAt = now; p.seatCamera = cameraId;
   }
 
   touch(id, cameraId, o, now) {
     const p = this.people.get(id);
     if (!p) return this.create(cameraId, o, now);
+    this.setSeat(p, cameraId, o.seat ?? null, now);
     p.lastAt = now;
     p.lastCamera = cameraId;
     p.cameras.add(cameraId);
@@ -357,6 +448,13 @@ export class IdentityRegistry {
       flagged_matches: this.stats.uncertain,
       rejected_as_impossible: this.stats.rejectedImpossible,
       ruled_out_by_face: this.stats.vetoedByFace,
+      /** Sightings where everyone looked alike, so appearance was refused. */
+      in_a_uniform: this.stats.uniformed,
+      /** Matches where the seat they were in tipped the balance. */
+      helped_by_their_seat: this.stats.helpedBySeat,
+      /** Times somebody changed seats. Never a new person. */
+      changed_seats: this.stats.movedSeat,
+      seated_now: [...this.seats.keys()].length,
       created: this.stats.created,
       service: this.service,
     };
@@ -369,17 +467,28 @@ export class IdentityRegistry {
    * strongest signal for people already seen, which is the right way round.
    */
   snapshot(maxBytes = 0) {
+    // Written small on purpose. Nine hundred people is a lot of repeated field
+    // names, and the whole thing has to fit in one stored value — the first
+    // version spent 140 KB on names like "seatCamera" and didn't fit at all,
+    // with nothing to show for the space. One letter each, and anything that
+    // is empty is left out rather than written as null.
     const base = (looksEach) => ({
+      v: 2,
       service: this.service,
       nextId: this.nextId,
       stats: this.stats,
       people: [...this.people.values()]
         .sort((a, b) => a.lastAt - b.lastAt)           // oldest first, so they lose theirs first
-        .map((p) => ({
-          id: p.id, firstAt: p.firstAt, lastAt: p.lastAt, seen: p.seen, uncertain: p.uncertain,
-          cameras: [...p.cameras], lastCamera: p.lastCamera,
-          looks: looksEach > 0 ? p.looks.slice(-looksEach) : [],
-        })),
+        .map((p) => {
+          const o = { i: p.id, f: p.firstAt, l: p.lastAt, n: p.seen };
+          if (p.uncertain) o.u = p.uncertain;
+          if (p.cameras.size) o.c = [...p.cameras];
+          if (p.lastCamera) o.k = p.lastCamera;
+          if (p.seatKey) { o.s = p.seat; o.sk = p.seatKey; o.sa = p.seatAt; if (p.seatCamera) o.sc = p.seatCamera; }
+          const looks = looksEach > 0 ? p.looks.slice(-looksEach) : [];
+          if (looks.length) o.b = looks;
+          return o;
+        }),
     });
     if (!maxBytes) return base(SAMPLES);
     // Trim until it fits where it has to be kept. Fewer readings each first;
@@ -392,9 +501,9 @@ export class IdentityRegistry {
     }
     const snap = base(1);
     while (JSON.stringify(snap).length > maxBytes) {
-      const next = snap.people.find((p) => p.looks.length);
+      const next = snap.people.find((p) => p.b && p.b.length);
       if (!next) break;                                 // nothing left to give
-      next.looks = [];
+      delete next.b;
     }
     return snap;
   }
@@ -405,12 +514,25 @@ export class IdentityRegistry {
     this.nextId = snap.nextId ?? 1;
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, ...(snap.stats ?? {}) };
     this.people.clear();
+    this.seats.clear();
     for (const p of snap.people) {
-      this.people.set(p.id, {
-        id: p.id, firstAt: p.firstAt, lastAt: p.lastAt, seen: p.seen ?? 1, uncertain: p.uncertain ?? 0,
-        cameras: new Set(p.cameras ?? []), lastCamera: p.lastCamera ?? "",
-        looks: p.looks ?? [], faces: [],
+      // Both spellings: the short one written now, and the long one written
+      // before it, so a register saved by the previous version still loads
+      // rather than a congregation starting again from nobody.
+      const id = p.i ?? p.id;
+      if (!id) continue;
+      const seatKey = p.sk ?? p.seatKey ?? null;
+      this.people.set(id, {
+        id, firstAt: p.f ?? p.firstAt ?? 0, lastAt: p.l ?? p.lastAt ?? 0,
+        seen: p.n ?? p.seen ?? 1, uncertain: p.u ?? p.uncertain ?? 0,
+        cameras: new Set(p.c ?? p.cameras ?? []), lastCamera: p.k ?? p.lastCamera ?? "",
+        seat: p.s ?? p.seat ?? null, seatKey, seatAt: p.sa ?? p.seatAt ?? 0,
+        seatCamera: p.sc ?? p.seatCamera ?? "",
+        looks: p.b ?? p.looks ?? [], faces: [],
       });
+      // Who is in which seat is rebuilt from the people, so the two can never
+      // disagree after a restart.
+      if (seatKey) this.seats.set(seatKey, id);
     }
   }
 }

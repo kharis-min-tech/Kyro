@@ -266,8 +266,19 @@ const wobble = (b, k) => b.map((v, i) => v + (i % 2 ? 1 : 2) * Math.sin(k + i));
   ok("and never on a doorway camera", /c\.isDoor \? \{\} : \{ seats:/.test(ctx));
   ok("the attendance register is untouched by any of it",
      /people_seen: c\.tracker\.people,/.test(ctx));
-  const finder = fs.readFileSync(path.join(root, "dashboard/src/lib/seatFinder.ts"), "utf8");
-  ok("nothing records who sat anywhere", !/name|person_id|identity/i.test(finder.split("export class")[1] ?? ""));
+  // Nothing about WHO is kept here. Checked on what is actually saved rather
+  // than on words in the file: the seat finder may be told which box is in
+  // which seat (that is how the register joins them up) but it keeps places,
+  // not people, and a reload restores seats and nothing else.
+  const f2 = new SeatFinder("cam");
+  f2.sawChairs([chair(0, 0)], W, H, 1);
+  f2.sawChairs([chair(0, 0)], W, H, 2);
+  f2.decide(3);
+  f2.whoIsWhere([sitter(0, 0)], W, H);
+  const saved = JSON.parse(f2.save());
+  ok("what is kept is places, not people",
+     JSON.stringify(Object.keys(saved).sort()) === JSON.stringify(["nextId", "places", "stage"]), JSON.stringify(Object.keys(saved)));
+  ok("and a place holds no person", saved.places.every((p) => !("person" in p) && !("who" in p)));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

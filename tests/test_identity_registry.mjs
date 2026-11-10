@@ -412,10 +412,10 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
   ok("with nobody dropped from it", fitted.people.length === r.size, `${fitted.people.length} of ${r.size}`);
   // The people seen most recently keep their readings: they are the ones
   // likely to be seen again.
-  const withLooks = fitted.people.filter((p) => p.looks.length);
+  const withLooks = fitted.people.filter((p) => p.b && p.b.length);
   ok("and the people seen most recently keep theirs", withLooks.length > 0);
   const newest = fitted.people[fitted.people.length - 1];
-  ok("the very last person seen certainly does", newest.looks.length > 0);
+  ok("the very last person seen certainly does", !!newest.b && newest.b.length > 0);
   // And it still works when restored.
   const back = reg();
   back.restore(fitted);

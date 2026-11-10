@@ -609,10 +609,10 @@ export class PersonTracker {
    * Only people Kyro is actually sure of. A box it was never convinced by
    * never becomes somebody in the register.
    */
-  seenNow(): { track: number; look: Look | null; face: Float32Array | null }[] {
+  seenNow(): { track: number; look: Look | null; face: Float32Array | null; box: [number, number, number, number] }[] {
     return this.tracks
       .filter((t) => t.counted && t.missing === 0)
-      .map((t) => ({ track: t.id, look: t.look, face: t.face }));
+      .map((t) => ({ track: t.id, look: t.look, face: t.face, box: t.box }));
   }
 
   /** The decisions since this was last asked. Taking them clears them. */

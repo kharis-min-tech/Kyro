@@ -239,7 +239,19 @@ export class SeatFinder {
    *     part of a minute after they are lost, and reports as "temporarily
    *     vacant" rather than empty.
    */
-  occupancy(people: Box[], w: number, h: number, now: number): [string, SeatState, number, number][] {
+  /**
+   * Which person is in which seat, as far as this camera can see.
+   *
+   * Returned rather than kept, because WHO they are is not this file's
+   * business: the seat finder knows about seats, the register knows about
+   * people, and the only thing joining them is "the person in this box is in
+   * that seat". See worker/identity.js.
+   *
+   * Each person takes at most one seat and each seat at most one person, best
+   * overlaps first — so one person never fills the chairs either side of them,
+   * and two people side by side take two seats.
+   */
+  whoIsWhere(people: Box[], w: number, h: number): { seatOfPerson: (string | null)[]; personOfSeat: Map<string, number> } {
     const seats = this.seats();
     const boxes = people.map((b) => this.toSeatSpace(b, w, h));
     const pairs: { s: number; p: number; score: number }[] = [];
@@ -257,6 +269,23 @@ export class SeatFinder {
       if (seatTaken.has(s) || personUsed.has(p)) continue;
       seatTaken.set(s, p); personUsed.add(p);
     }
+    const seatOfPerson: (string | null)[] = people.map(() => null);
+    const personOfSeat = new Map<string, number>();
+    for (const [si, pi] of seatTaken) {
+      seatOfPerson[pi] = seats[si].seat_id;
+      personOfSeat.set(seats[si].seat_id, pi);
+    }
+    return { seatOfPerson, personOfSeat };
+  }
+
+  occupancy(people: Box[], w: number, h: number, now: number): [string, SeatState, number, number][] {
+    const seats = this.seats();
+    const { personOfSeat } = this.whoIsWhere(people, w, h);
+    const seatTaken = new Map<number, number>();
+    seats.forEach((seat, si) => {
+      const who = personOfSeat.get(seat.seat_id);
+      if (who !== undefined) seatTaken.set(si, who);
+    });
     return seats.map((seat, si) => {
       const who = seatTaken.get(si);
       const held = this.held.get(seat.seat_id);

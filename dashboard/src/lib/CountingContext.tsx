@@ -501,7 +501,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     if (phase !== "running" || demoRef.current) return;
     const tick = async () => {
       const list = [...cams.current.values()].filter((c) => c.stream);
-      const reports: CameraReport[] = list.map((c) => ({
+      const reports: CameraReport[] = list.map((c) => {
+        // Who is in which seat, as this camera sees it. Worked out once and
+        // used for both the seat states and the register, so the two cannot
+        // disagree about where somebody is sitting.
+        const following = c.tracker.seenNow();
+        const seatOf = c.isDoor ? [] : c.seatFinder.whoIsWhere(
+          following.map((x) => x.box as [number, number, number, number]),
+          c.video?.videoWidth || 1280, c.video?.videoHeight || 720).seatOfPerson;
+        return ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
         entries: c.tracker.entries, exits: c.tracker.exits,
         // Different people, counted once each — see PersonTracker.people.
@@ -516,8 +524,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // people. A look is eight small numbers; a face only travels while
         // face matching is switched on, and is a list of numbers either way —
         // never a picture. See worker/identity.js.
-        seen: c.tracker.seenNow().slice(0, 40).map((x) => ({
+        seen: following.slice(0, 40).map((x, i) => ({
           t: x.track,
+          // Which seat this person is in, if any. Context for the register,
+          // never proof of who they are — see SEAT_HELPS in identity.js.
+          s: seatOf[i] ?? null,
           l: x.look ? [x.look.top[0], x.look.top[1], x.look.top[2],
                        x.look.bottom[0], x.look.bottom[1], x.look.bottom[2],
                        x.look.shape, x.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
@@ -531,7 +542,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         error: c.error ?? (c.countedAt ? null : "Starting…"),
         fps: c.secondsPerCount ? +(1 / c.secondsPerCount).toFixed(1) : 0,
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
-      }));
+      });
+      });
       try {
         const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current });

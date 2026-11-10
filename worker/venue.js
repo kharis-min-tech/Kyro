@@ -88,7 +88,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-4862e562f08b";
+const VENUE_CODE = "venue-17e032003524";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -788,6 +788,8 @@ export class VenueHub extends DurableObject {
         // A face only ever enters the register while face matching is switched
         // on, whatever a camera computer sends.
         face: faceOk && typeof x.f === "string" ? unpackFace(x.f) : null,
+        // Which seat they are in, if any — context, never proof of who.
+        seat: typeof x.s === "string" ? clean(x.s, 24) : null,
       })).filter((x) => x.look || x.face);
       if (obs.length) this.register.observe(id, obs, now);
     }

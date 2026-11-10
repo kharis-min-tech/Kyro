@@ -38,6 +38,7 @@ interface Identity {
   uncertain_matches: number; with_a_face: number; matched_by_track: number;
   matched_by_face: number; matched_by_look: number; flagged_matches: number;
   rejected_as_impossible: number; ruled_out_by_face: number; created: number;
+  in_a_uniform: number; helped_by_their_seat: number; changed_seats: number; seated_now: number;
 }
 
 /**
@@ -68,6 +69,10 @@ export function IdentityHealth() {
     ["Ruled out by their face", d.ruled_out_by_face, "looked alike, but plainly not the same person"],
     ["Ruled out as impossible", d.rejected_as_impossible, "could not have crossed the building that fast"],
     ["Matches Kyro isn't sure of", d.uncertain_matches, "attached to somebody, and flagged rather than hidden"],
+    ["In a seat right now", d.seated_now ?? 0, "one person to a seat, one seat to a person"],
+    ["Changed seats", d.changed_seats ?? 0, "a new seat, never a new person"],
+    ["Everyone dressed alike", d.in_a_uniform ?? 0, "choir or ushers: appearance refused, only a face will do"],
+    ["Helped by their seat", d.helped_by_their_seat ?? 0, "where they were sitting tipped a close match"],
   ];
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: `1px solid ${BORDER}` }}>
