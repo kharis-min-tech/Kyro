@@ -1,14 +1,28 @@
 # Data Protection & Authorisation
 
-This is where your church writes down its permission to use **face matching**, and who decided it.
+::: tip Face data is temporary. It lasts one service and is then deleted.
+Kyro keeps **no photographs of anybody**. Each face becomes a list of numbers, and Kyro has no idea whose it is — no names, no record of who attended, and nothing is ever compared against a list of people.
 
-Kyro will not let face matching run until this page is complete and approved. That is not a formality: reading faces is processing biometric data about people who came to a church service, and UK law treats it differently from counting heads.
+Those numbers exist for one reason: so that somebody who steps out and comes back is not counted twice. They are deleted **when the service ends** — and also when a different service starts, the moment face matching is switched off, if the authorisation is withdrawn or passes its review date, and in any case **within twelve hours**, whether or not a service ever ended properly.
 
-::: danger Filling this in is not the same as being compliant
+Nobody has to remember to delete anything. Kyro does it.
+:::
+
+This page is where your church writes down its permission to use face matching, and who decided it. You answer the questions once, and review them about once a year.
+
+Kyro will not let face matching run until it is answered and approved. That is not a formality: a list of numbers that identifies a person is biometric data, and UK law treats it differently from counting heads.
+
+::: danger Answering these is not the same as being compliant
 Kyro will never tell you that your church is compliant, because it cannot know. That is a judgement about your church, your building and your congregation, made by people who are accountable for it.
 
-A completed form is a record of your decisions. **An uploaded DPIA is not a completed DPIA. An approval button is not a lawyer.** If you are unsure, take advice — the Information Commissioner's Office publishes free guidance for small organisations.
+What you write here is a record of your decisions, not a legal opinion — and ticking a box saying you have a DPIA is not the same as having done one. If you are unsure, take advice; the Information Commissioner's Office publishes free guidance for small organisations.
 :::
+
+## Where to find it
+
+In Kyro, open **Data Protection** in the left-hand menu. It is there for administrators only, and it does not have to be switched on for anybody — an administrator always has it.
+
+If you cannot see it, sign out and back in: the menu is built from your account's pages, and an account created before this page existed needs a fresh sign-in to pick it up.
 
 ## Why this exists
 
@@ -25,7 +39,7 @@ The second one is the step most often missed. Article 6 on its own is not enough
 
 ## What you have to answer
 
-Eleven things. Each asks you to **write something**, not tick something — a box that only needs ticking records that somebody clicked, while a box that needs filling in records what you decided and can be read back by whoever has to defend it.
+Eleven things. Most are a sentence or two. Each asks you to **write something**, not tick something — a box that only needs ticking records that somebody clicked, while a written answer records what you decided and can be read back by whoever has to defend it.
 
 | | What it asks | Why |
 |---|---|---|

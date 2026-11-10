@@ -169,9 +169,27 @@ export default function DataProtectionPage() {
         <div>
           <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)" }}>Data protection &amp; authorisation</h1>
           <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: 4, lineHeight: 1.5 }}>
-            Face matching reads biometric data. Before it can be used, the church writes down its own answers here: what the
-            lawful basis is, which Article 9 condition applies, who is accountable, what people are told, what somebody who
-            objects is offered instead, and when all of it will be looked at again.
+            Before face matching can be used, the church answers the questions below. They only need answering once, and
+            then reviewing about once a year.
+          </p>
+        </div>
+
+        {/* The promise, first and in plain words. It is the thing a church
+            needs to be able to repeat to somebody who asks at the door, and
+            burying it under legal vocabulary helps nobody. */}
+        <div className="rounded-2xl p-5" style={{ background: "rgba(34,197,94,0.07)", border: `1px solid ${GOOD}44` }}>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-primary)" }}>
+            Face data is temporary. It lasts one service and is then deleted.
+          </p>
+          <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 6, lineHeight: 1.6 }}>
+            Kyro keeps <strong>no photographs of anybody</strong>. Each face becomes a list of numbers, and Kyro has no idea
+            whose it is — no names, no record of who attended, and nothing is ever compared against a list of people.
+            Those numbers exist so that somebody who steps out and comes back is not counted twice, and for no other reason.
+          </p>
+          <p style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: 8, lineHeight: 1.6 }}>
+            They are deleted <strong>when the service ends</strong> — and also when a different service starts, the moment
+            face matching is switched off, if this authorisation is withdrawn or passes its review date, and in any case
+            within twelve hours, whether or not a service ever ended properly. Nobody has to remember to do any of it.
           </p>
         </div>
 
@@ -179,11 +197,11 @@ export default function DataProtectionPage() {
             be misunderstood by somebody filling in a form. */}
         <div className="rounded-xl px-4 py-3" style={{ background: "rgba(245,158,11,0.08)", border: `1px solid ${WARN}44` }}>
           <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55 }}>
-            <strong>Filling this in is not the same as being compliant, and Kyro will never tell you that you are.</strong>{" "}
-            It cannot — that is a judgement about your church, made by people accountable for it. A completed form is a
-            record of your decisions; an uploaded DPIA is not a completed DPIA; an approval button is not a lawyer. What
-            this does is stop face matching running until the decisions have actually been made and written down, and keep
-            them where they can be produced.
+            <strong>Answering these is not the same as being compliant, and Kyro will never tell you that you are.</strong>{" "}
+            It cannot — that is a judgement about your church, made by people accountable for it. What is written here is a
+            record of your decisions, not a legal opinion, and ticking a box saying you have a DPIA is not the same as
+            having done one. What this does is stop face matching running until those decisions have actually been made,
+            and keep them somewhere they can be produced if anybody asks.
           </p>
         </div>
 

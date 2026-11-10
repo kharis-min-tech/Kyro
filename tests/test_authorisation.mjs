@@ -176,14 +176,49 @@ const CONFIRM = { accountable: true, read_dpia: true, basis_is_ours: true, notic
 {
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/data-protection/page.tsx"), "utf8");
   ok("the page refuses to claim compliance",
-     /Filling this in is not the same as being compliant, and Kyro will never tell you that you are/.test(page));
-  ok("it says a DPIA upload is not a DPIA", /an uploaded DPIA is not a completed DPIA/.test(page));
+     /Answering these is not the same as being compliant, and Kyro will never tell you that you are/.test(page));
+  ok("it says a tick is not a DPIA",
+     /ticking a box saying you have a DPIA is not the same as\s*\n?\s*having done one/.test(page.replace(/\s+/g, " ")) || /is not the same as having done one/.test(page.replace(/\s+/g, " ")));
   ok("it explains Article 9 is a SECOND condition", /needs a second condition &lt;em&gt;as well as&lt;\/em&gt;|as well as/.test(page));
   ok("it asks for the alternative for people who object", /For people who do not want to take part/.test(page));
   ok("and does not pretend to be a filing cabinet",
      /It is not a filing cabinet and does not store the\s+file/.test(page));
   ok("every one of the eleven areas has a section",
      REQUIRED.every((r) => page.includes(`id="${r.id}"`)), REQUIRED.filter((r) => !page.includes(`id="${r.id}"`)).map((r) => r.id).join(", "));
+}
+
+// ── The page has to be reachable by the person who must fill it in ─────────
+//
+// Every account's pages were chosen before this page existed, so nobody's
+// saved list contained it. The menu is built from that list — which made Data
+// Protection invisible to everybody, including the administrator, while Kyro
+// refused to switch face matching on until they had completed it. "There's no
+// form to fill" was exactly right.
+{
+  const access = fs.readFileSync(path.join(root, "dashboard/src/lib/access.ts"), "utf8");
+  ok("the page is a known page", /"data-protection",/.test(access));
+  ok("and an administrator always has it, whatever their saved list says",
+     /const ALWAYS_FOR_ADMIN: PageId\[\] = \["data-protection"\];/.test(access));
+  ok("added to a saved list of pages", /withAdminPages\(p\.pages\.filter/.test(access));
+  ok("and to the defaults", /withAdminPages\(ROLE_DEFAULT_PAGES\[r\]/.test(access));
+  ok("only for administrators", /r === "admin" \? \[\.\.\.new Set/.test(access));
+}
+
+// ── It leads with the promise, not with the caveats ────────────────────────
+{
+  const page = fs.readFileSync(path.join(root, "dashboard/src/app/data-protection/page.tsx"), "utf8");
+  ok("the first thing on the page is that face data is temporary",
+     /Face data is temporary\. It lasts one service and is then deleted\./.test(page));
+  ok("it says there are no photographs", /Kyro keeps <strong>no photographs of anybody<\/strong>/.test(page));
+  ok("and no record of who attended", /no names, no record of who attended/.test(page));
+  ok("and that nobody has to remember to delete anything",
+     /Nobody has to remember to do any of it/.test(page));
+
+  const docs = fs.readFileSync(path.join(root, "user-docs/pages/data-protection.md"), "utf8");
+  ok("the guide leads with it too",
+     docs.indexOf("Face data is temporary") < docs.indexOf("not the same as being compliant"));
+  ok("and says where to find the page", /open \*\*Data Protection\*\* in the left-hand menu/.test(docs));
+  ok("including what to do if it isn't there", /sign out and back in/.test(docs));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. Face matching cannot run until the church has decided it may.");
