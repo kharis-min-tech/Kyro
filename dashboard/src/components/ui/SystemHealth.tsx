@@ -15,8 +15,10 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Activity, CheckCircle2, AlertTriangle, XCircle, Camera, Users } from "lucide-react";
+import { Activity, CheckCircle2, AlertTriangle, XCircle, Camera, Users, Trash2 } from "lucide-react";
 import { edgeFetch } from "@/lib/edgeAuth";
+import { edgeVenueApi } from "@/lib/edgeVenue";
+import { useAuth } from "@/hooks/useAuth";
 
 const BORDER = "var(--border-subtle)";
 const GOOD = "#22c55e", BAD = "#ef4444", WARN = "#f59e0b";
@@ -55,9 +57,22 @@ const ago = (s: number) => {
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 
 export function SystemHealth() {
+  const { role } = useAuth();
+  const admin = role === "admin";
   const [h, setH] = useState<Health | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
+  /**
+   * Which camera is being asked about before it is removed.
+   *
+   * Asked here in the page rather than in one of the browser's own boxes —
+   * those appear for reloads too, cannot say what is about to happen, and
+   * teach people to click through warnings without reading them.
+   */
+  const [removing, setRemoving] = useState<CamHealth | null>(null);
+  /** Asked before clearing out every camera that has stopped reporting. */
+  const [tidying, setTidying] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => edgeFetch<Health>("/api/live/health")
     .then((r) => { setH(r); setErr(null); })
@@ -79,6 +94,8 @@ export function SystemHealth() {
   if (!h) return null;
 
   const live = h.problems.filter((p) => !p.fixed);
+  /** Cameras that have stopped reporting altogether — the ones worth clearing. */
+  const gone = h.cameras.filter((c) => c.state === "not reporting");
   const fixed = h.problems.filter((p) => p.fixed).slice(0, 8);
   const colour = h.ok ? GOOD : live.length ? BAD : WARN;
 
@@ -123,11 +140,69 @@ export function SystemHealth() {
       {open && (
         <div style={{ borderTop: `1px solid ${BORDER}` }}>
           {/* Cameras, each question answered separately. */}
-          <div className="px-5 py-3">
+          <div className="px-5 py-3 flex flex-wrap items-center justify-between gap-2">
             <p className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               <Camera size={11} /> Cameras
             </p>
+            {/* Old cameras pile up: a browser that registered again, a webcam
+                tried once, a test. Each one is a row of red saying something
+                true and useless. Clearing them out one at a time is a chore,
+                so there is one button for the lot — and it only ever offers
+                the ones that have stopped reporting. */}
+            {admin && gone.length > 1 && (
+              <button onClick={() => { setTidying(true); setErr(null); }} disabled={busy}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+                style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}>
+                <Trash2 size={11} /> Remove the {gone.length} that have gone
+              </button>
+            )}
           </div>
+
+          {tidying && (
+            <div className="px-5 py-4 flex flex-col gap-2"
+              style={{ borderTop: `1px solid ${BORDER}`, background: "rgba(239,68,68,0.07)" }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Remove {gone.length} cameras that have stopped reporting?
+              </p>
+              <ul style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                {gone.map((c) => (
+                  <li key={c.camera_id}>• {c.name} — {c.last_seen ? `last heard from ${ago(Math.round((Date.now() - Date.parse(c.last_seen)) / 1000))}` : "has never reported"}</li>
+                ))}
+              </ul>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+                Their names, rooms, seats and settings go. <strong>The counts they recorded stay.</strong> Any that are
+                still plugged in somewhere will come back as new cameras for you to add.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button disabled={busy}
+                  onClick={async () => {
+                    setBusy(true); setErr(null);
+                    // One at a time, and stop at the first failure rather than
+                    // carrying on and reporting a tidy-up that half happened.
+                    for (const c of gone) {
+                      try {
+                        await edgeVenueApi.removeCamera(c.camera_id, true);
+                      } catch (e) {
+                        setErr(`Removed what it could, then stopped at ${c.name}: ${e instanceof Error ? e.message : e}`);
+                        break;
+                      }
+                    }
+                    setTidying(false);
+                    await load();
+                    setBusy(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b91c1c" }}>
+                  {busy ? "Removing…" : `Yes, remove all ${gone.length}`}
+                </button>
+                <button onClick={() => setTidying(false)} disabled={busy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           {h.cameras.map((c) => (
             <div key={c.camera_id} className="px-5 py-2.5" style={{ borderTop: `1px solid ${BORDER}` }}>
               <p className="flex items-center gap-2" style={{ fontSize: 13 }}>
@@ -138,6 +213,15 @@ export function SystemHealth() {
                   {c.picture_size && ` · ${c.picture_size}`}
                   {c.fps > 0 && ` · ${c.fps} counts a second`}
                 </span>
+                <span className="flex-1" />
+                {admin && (
+                  <button onClick={() => { setRemoving(c); setErr(null); }} disabled={busy}
+                    title={`Remove ${c.name} from Kyro`} aria-label={`Remove ${c.name}`}
+                    className="shrink-0 rounded-lg p-1 disabled:opacity-40"
+                    style={{ color: "var(--text-faint)" }}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
               </p>
               {!c.ok && c.worst && (
                 <p style={{ fontSize: 12, color: BAD, marginLeft: 21, marginTop: 2 }}>{c.worst}</p>
@@ -152,6 +236,46 @@ export function SystemHealth() {
               </ul>
             </div>
           ))}
+
+          {/* Asked before anything is removed, and said in terms of what is
+              about to happen rather than "are you sure?". */}
+          {removing && (
+            <div className="px-5 py-4 flex flex-col gap-2"
+              style={{ borderTop: `1px solid ${BORDER}`, background: "rgba(239,68,68,0.07)" }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)" }}>
+                Remove “{removing.name}” from Kyro?
+              </p>
+              <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.55 }}>
+                Its name, its room, its seats and its settings go. <strong>The counts it has already
+                recorded stay</strong> — Analytics and the day&apos;s figures are not touched.
+                {" "}If this camera is still plugged in somewhere, it comes back as a new camera and Kyro asks whether to
+                add it, so removing one that is still running is not permanent — removing one that has gone, is.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button disabled={busy}
+                  onClick={async () => {
+                    setBusy(true); setErr(null);
+                    try {
+                      await edgeVenueApi.removeCamera(removing.camera_id, true);
+                      setRemoving(null);
+                      await load();
+                    } catch (e) {
+                      setErr(e instanceof Error ? e.message : "Couldn't remove that camera");
+                    }
+                    setBusy(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b91c1c" }}>
+                  {busy ? "Removing…" : "Yes, remove it"}
+                </button>
+                <button onClick={() => setRemoving(null)} disabled={busy}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Counting. */}
           <div className="px-5 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
