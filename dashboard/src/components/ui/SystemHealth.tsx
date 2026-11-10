@@ -42,7 +42,16 @@ interface Health {
   problems: Problem[]; problems_now: number;
 }
 
-const ago = (s: number) => (s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
+/** A length of time somebody can read. "9 days 3 h", never "791909s". */
+const ago = (s: number) => {
+  if (s < 60) return `${s}s ago`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return rs ? `${m} min ${rs}s ago` : `${m} min ago`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 48) return rm ? `${h} h ${rm} min ago` : `${h} h ago`;
+  const d = Math.floor(h / 24), rh = h % 24;
+  return rh ? `${d} days ${rh} h ago` : `${d} days ago`;
+};
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 
 export function SystemHealth() {

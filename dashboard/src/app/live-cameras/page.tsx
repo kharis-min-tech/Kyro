@@ -176,13 +176,16 @@ function BrowserCameraStream({ streamUrl, cameraId, zoneName }: { streamUrl: str
 }
 
 /** "12 seconds ago" in a couple of words, for a picture's age. */
+/** A length of time somebody can read. "9 days 3 h", never "791909s". */
 function ago(ms: number): string {
   const s = Math.max(0, Math.round(ms / 1000));
   if (s < 60) return `${s}s ago`;
-  const m = Math.round(s / 60);
-  if (m < 60) return `${m} min ago`;
-  const h = Math.round(m / 60);
-  return `${h} hr ago`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return rs ? `${m} min ${rs}s ago` : `${m} min ago`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 48) return rm ? `${h} h ${rm} min ago` : `${h} h ago`;
+  const d = Math.floor(h / 24), rh = h % 24;
+  return rh ? `${d} days ${rh} h ago` : `${d} days ago`;
 }
 
 function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; streamUrl?: string; zoneName?: string }) {

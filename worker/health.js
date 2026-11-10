@@ -121,13 +121,31 @@ export class Trouble {
  * @param now     the clock
  * @param needFps how many counts a second this camera needs for its job
  */
+/**
+ * A length of time somebody can read.
+ *
+ * "791909s ago" is a true statement and a useless one: nobody converts two
+ * hundred and twenty hours in their head, and the number is so long it reads
+ * as noise. Hours and minutes, or days once it is past a couple of them.
+ */
+export function howLong(ms) {
+  const s = Math.max(0, Math.round(ms / 1000));
+  if (s < 60) return `${s} second${s === 1 ? "" : "s"}`;
+  const m = Math.floor(s / 60), rs = s % 60;
+  if (m < 60) return rs ? `${m} min ${rs}s` : `${m} min`;
+  const h = Math.floor(m / 60), rm = m % 60;
+  if (h < 48) return rm ? `${h} h ${rm} min` : `${h} h`;
+  const d = Math.floor(h / 24), rh = h % 24;
+  return rh ? `${d} days ${rh} h` : `${d} days`;
+}
+
 export function cameraHealth(c, now, needFps = 0) {
   const checks = [];
   const add = (name, ok, says) => checks.push({ name, ok, says });
   const since = c.updated_at ? now - c.updated_at : Infinity;
 
   add("Reporting", since < 30_000,
-    since === Infinity ? "has never reported" : `last heard from ${Math.round(since / 1000)}s ago`);
+    since === Infinity ? "has never reported" : `last heard from ${howLong(since)} ago`);
   // Everything below is only meaningful if it is reporting at all.
   if (since < 30_000) {
     add("Sending a picture", !c.no_picture, c.no_picture ? "open, but sending no picture" : "sending pictures");
@@ -136,7 +154,7 @@ export function cameraHealth(c, now, needFps = 0) {
     add("Picture is not frozen", !c.frozen,
       c.frozen ? "the same picture over and over — the camera has stopped, even though it is still connected" : "the picture is changing");
     add("Counting", !!c.counted_at && now - c.counted_at < 60_000,
-      c.counted_at ? `last counted ${Math.round((now - c.counted_at) / 1000)}s ago` : "has not counted anything");
+      c.counted_at ? `last counted ${howLong(now - c.counted_at)} ago` : "has not counted anything");
     if (needFps > 0) {
       add("Fast enough for its job", (c.fps || 0) >= needFps,
         `${c.fps || 0} counts a second, needs ${needFps}`);

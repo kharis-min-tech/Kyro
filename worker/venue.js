@@ -111,7 +111,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-4f361b2cae61";
+const VENUE_CODE = "venue-0e7d4b505e9b";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -1361,9 +1361,21 @@ export class VenueHub extends DurableObject {
     this.ctx.acceptWebSocket(server, ["watch", `watch:${camera_id}`]);
     server.serializeAttachment({ kind: "watch", camera_id, device: cam.device_id });
     this.ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
-    // Show the last picture straight away while the video starts.
+    // Show the last picture straight away while the video starts — but only
+    // if it is a picture of NOW.
+    //
+    // This was the other half of the stale-picture problem, and the more
+    // confusing half. The still endpoint had been taught to refuse an old
+    // picture; this one went on pushing it down the live-video socket the
+    // instant anybody connected, where the page stamps whatever arrives as
+    // having been taken this second. So a camera that had been off since
+    // Sunday showed a full hall labelled "Picture from 6s ago", and flickered
+    // between that and "this camera is off" as the two paths fought: one
+    // clearing the picture, the other pushing it straight back.
     const snap = await this.ctx.storage.get(`snap:${camera_id}`);
-    if (snap?.data) { try { server.send(snap.data); } catch {} }
+    const live = await this.get("live", {});
+    const fresh = snap?.data && this.isOnline(live[camera_id]) && Date.now() - (snap.at || 0) <= SNAPSHOT_STALE_MS;
+    if (fresh) { try { server.send(snap.data); } catch {} }
     this.tellBox(cam.device_id);
     return new Response(null, { status: 101, webSocket: client, headers: { "Sec-WebSocket-Protocol": "kyro" } });
   }

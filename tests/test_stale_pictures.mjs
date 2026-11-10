@@ -67,5 +67,39 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("the delete warning says where it goes", /goes to <strong>Recently deleted<\/strong>/.test(page));
 }
 
+// ── The other half: the live-video socket ──────────────────────────────────
+//
+// The still endpoint was taught to refuse an old picture, and the camera tile
+// went on showing one anyway — labelled "Picture from 6s ago", flickering
+// between that and "this camera is off". Two paths were fighting: one
+// clearing the picture, the other pushing it straight back. The live-video
+// socket sends the last stored picture the instant anybody connects, and the
+// page stamps whatever arrives over that socket as taken this second.
+{
+  const watch = worker.slice(worker.indexOf("async watch(camera_id, request)"), worker.indexOf("async watch(camera_id, request)") + 2000);
+  ok("the live socket only pushes a picture of now",
+     /const fresh = snap\?\.data && this\.isOnline\(live\[camera_id\]\) && Date\.now\(\) - \(snap\.at \|\| 0\) <= SNAPSHOT_STALE_MS;/.test(watch));
+  ok("and pushes nothing otherwise", /if \(fresh\) \{ try \{ server\.send\(snap\.data\); \} catch \{\} \}/.test(watch));
+  ok("so the two paths agree rather than fight",
+     /one\s*\n?\s*\* clearing the picture, the other pushing it straight back/.test(watch.replace(/\s+/g, " "))
+     || /clearing the picture, the other pushing it straight back/.test(watch));
+}
+
+// ── Lengths of time somebody can read ──────────────────────────────────────
+{
+  const { howLong } = await import("../worker/health.js");
+  ok("seconds stay seconds", howLong(5_000) === "5 seconds");
+  ok("a minute reads as a minute", howLong(61_000) === "1 min 1s");
+  ok("an hour reads as an hour", howLong(3_601_000) === "1 h");
+  ok("and nine days does not read as 791909s", howLong(791_909_000) === "9 days 3 h", howLong(791_909_000));
+  ok("nothing anywhere prints raw seconds past a minute",
+     !/\$\{Math\.round\(since \/ 1000\)\}s ago/.test(fs.readFileSync(path.join(root, "worker/health.js"), "utf8")));
+
+  for (const f of ["dashboard/src/app/live-cameras/page.tsx", "dashboard/src/components/ui/SystemHealth.tsx"]) {
+    const src = fs.readFileSync(path.join(root, f), "utf8");
+    ok(`${f.split("/").pop()} says days once it is past two`, /days \$\{rh\} h ago|\$\{d\} days ago/.test(src));
+  }
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Off means off, and deleted means recoverable.");
 process.exit(fails ? 1 : 0);
