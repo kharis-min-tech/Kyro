@@ -225,69 +225,36 @@ export default function IntegrationsPage() {
           </p>
         </div>
 
-        {/* Is this set up, and what is the next thing to do?
-            Reported as "the inegrations section, not working". The page was
-            working — it was waiting for a web address that nobody had, and it
-            said so nowhere. A page of settings that cannot say whether it is
-            set up reads as broken, and reading as broken is a kind of broken.
-            So: the state, in one line, and what to do about it. */}
-        <div className="rounded-2xl px-5 py-4 flex items-start gap-3"
+        {/* The state, in one line.
+
+            This was a block with a three-bullet guide to getting a webhook
+            address out of Zapier, Slack and a denomination's portal, printed
+            above the form every time. "and this too from integration
+            section" — and she is right: somebody who already has an address
+            has to read past all of it, and somebody who hasn't is better
+            served by the help page, which has room to do it properly.
+            See user-docs/pages/integrations.md. */}
+        <div className="rounded-2xl px-5 py-3 flex items-center gap-3"
           style={{
             background: "var(--bg-card)",
             border: `1px solid ${cfg.url.trim() ? (lastSent && !lastSent.ok ? "rgba(239,68,68,0.45)" : "rgba(16,185,129,0.4)") : BORDER}`,
           }}>
           {cfg.url.trim()
-            ? (lastSent && !lastSent.ok ? <XCircle size={16} className="shrink-0 mt-0.5" style={{ color: "#f87171" }} />
-              : <CheckCircle size={16} className="shrink-0 mt-0.5" style={{ color: "#4ade80" }} />)
-            : <Info size={16} className="shrink-0 mt-0.5" style={{ color: "var(--text-faint)" }} />}
-          <div className="min-w-0 text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-            {!cfg.url.trim() ? (
-              <>
-                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Not set up yet</p>
-                <p className="mt-1">
-                  Kyro has nowhere to send your totals to. This page doesn&apos;t send them anywhere by
-                  itself — it posts them to an address <strong>somewhere else</strong> gives you, and
-                  you paste that address in below.
-                </p>
-                <p className="mt-1.5 font-semibold" style={{ color: "var(--text-primary)" }}>Where that address comes from</p>
-                <ul className="list-disc pl-4 space-y-0.5 mt-0.5">
-                  <li><strong>A Google Sheet:</strong> make a free Zapier account, create a Zap with the
-                    trigger <em>Webhooks by Zapier → Catch Hook</em>, and Zapier shows you a web address
-                    starting <code>https://hooks.zapier.com/…</code>. Paste it below. Then add{" "}
-                    <em>Google Sheets → Create Spreadsheet Row</em> as the action. Make.com works the
-                    same way and is also free to start.</li>
-                  <li><strong>Slack or Teams:</strong> in the app&apos;s own settings, add an{" "}
-                    <em>Incoming Webhook</em> to the channel you want. It gives you the address.</li>
-                  <li><strong>Your denomination&apos;s portal:</strong> ask whoever runs it for a webhook
-                    or API address to post attendance to.</li>
-                </ul>
-                <p className="mt-1.5" style={{ color: "var(--text-faint)" }}>
-                  Nothing is lost while this is empty — your figures are all in Analytics either way.
-                  This only sends a copy somewhere else.
-                </p>
-              </>
-            ) : lastSent && !lastSent.ok ? (
-              <>
-                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Set up, but the last send failed</p>
-                <p className="mt-1">
-                  {fmtWhen(lastSent.at)} ({lastSent.how === "auto" ? "automatic" : "by hand"})
-                  {lastSent.status ? ` — the receiving system answered ${lastSent.status}` : " — it couldn't be reached"}.
-                  {" "}Press <strong>Send a test</strong> below: it says exactly what came back.
-                </p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Set up and ready</p>
-                <p className="mt-1">
-                  Totals go to <span className="font-mono">{cfg.url.trim().slice(0, 60)}{cfg.url.trim().length > 60 ? "…" : ""}</span>
+            ? (lastSent && !lastSent.ok ? <XCircle size={15} className="shrink-0" style={{ color: "#f87171" }} />
+              : <CheckCircle size={15} className="shrink-0" style={{ color: "#4ade80" }} />)
+            : <Info size={15} className="shrink-0" style={{ color: "var(--text-faint)" }} />}
+          <p className="text-xs min-w-0" style={{ color: "var(--text-secondary)" }}>
+            {!cfg.url.trim()
+              ? <><strong style={{ color: "var(--text-primary)" }}>Not set up yet.</strong> Paste the address from
+                  Zapier, Slack or your reporting system below.</>
+              : lastSent && !lastSent.ok
+              ? <><strong style={{ color: "var(--text-primary)" }}>Last send failed</strong> ({fmtWhen(lastSent.at)}
+                  {lastSent.status ? `, ${lastSent.status}` : ""}). Press <strong>Send a test</strong>.</>
+              : <><strong style={{ color: "var(--text-primary)" }}>Set up and ready.</strong>
                   {cfg.auto.enabled
-                    ? <> — automatically on {cfg.auto.days.map((d) => DAYS[d]).join(", ")} at {cfg.auto.time}, with nobody&apos;s browser open.</>
-                    : <> when you press a Send button below. Switch on <strong>Send automatically</strong> to have Kyro do it for you.</>}
-                  {lastSent && <> Last sent {fmtWhen(lastSent.at)} — delivered.</>}
-                </p>
-              </>
-            )}
-          </div>
+                    ? ` Sending automatically on ${cfg.auto.days.map((d) => DAYS[d]).join(", ")} at ${cfg.auto.time}.`
+                    : " Switch on Send automatically below to have Kyro do it for you."}</>}
+          </p>
         </div>
 
         {/* Plain-English explanation */}

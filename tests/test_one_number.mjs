@@ -105,10 +105,10 @@ const hereNow = (seen, door, room = 0, everSeen = 0) =>
   // neither — why there is nothing else to go on. See
   // tests/test_headline_explains_itself.mjs.
   ok("and explains the one it shows",
-     /The cameras can see\{" "\}/.test(page)
-     && /Everyone counted in at the entrance, less everyone counted out/.test(page.replace(/\s+/g, " "))
-     && /The register has\{" "\}/.test(page)
-     && /someone can be here without a camera seeing them this second/.test(page));
+     /where this number comes from/.test(page)
+     && /The cameras can see <strong>\{seenNow\.toLocaleString\(\)\}<\/strong>/.test(page)
+     && /The entrance has counted/.test(page.replace(/\s+/g, " "))
+     && /The register has/.test(page.replace(/\s+/g, " ")));
 
   const sessions = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
   ok("the Sessions page reads the same field", /venue\?\.total_current/.test(sessions));

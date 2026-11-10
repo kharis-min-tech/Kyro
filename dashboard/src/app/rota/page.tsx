@@ -610,38 +610,16 @@ export default function RotaPage() {
           </div>
         )}
 
-        {/* Explainer banner */}
-        <div className="rounded-xl px-4 py-3 flex items-start gap-3"
-          style={{ background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)" }}>
-          <AlertCircle size={15} className="text-indigo-400 shrink-0 mt-0.5" />
-          {/* What this page actually does, which is not what it used to claim.
-              It promised the times would be acted on straight away, and that
-              it told altar-call answers from scheduled appearances. The times were
-              used for nothing at all, and nothing on any screen ever mentioned
-              the rota again. Promising what a page does not do is worse than
-              doing nothing: it sends somebody away believing a thing is set
-              up. This is the list of what happens, and nothing else. */}
-          <div className="text-xs text-gray-300 leading-relaxed">
-            <p className="font-semibold mb-1 text-white">What Kyro does with this</p>
-            <ul className="list-disc pl-4 space-y-0.5">
-              <li><strong>It knows when a service is on.</strong> While something on the rota is running,
-                Kyro starts recording the session as soon as a camera sees anybody, instead of waiting
-                for a crowd to prove it — and the session is <strong>named after the rota entry</strong>,
-                so Sessions and Analytics say what it was rather than &ldquo;Sunday morning service&rdquo;.</li>
-              <li><strong>It knows when it is over.</strong> The session finishes shortly after the rota
-                says it ends, rather than running on all afternoon because a few people stayed behind.</li>
-              <li><strong>It shows what is on.</strong> The rota appears beside the live figures on the
-                Attendance page, so you can see Kyro and the rota agreeing.</li>
-              <li><strong>It holds seats.</strong> If you give an entry rows or seats, those seats are
-                shown as held on the Seat Map rather than empty, so a reserved choir block doesn&apos;t
-                read as spare capacity.</li>
-            </ul>
-            <p className="mt-1.5 text-gray-500">
-              It does <em>not</em> track who is rostered on, or tell a scheduled worship team from
-              anybody else at the front. Kyro counts people; it does not know who anybody is.
-            </p>
-          </div>
-        </div>
+        {/* The explainer banner is gone — "and this too on rotas section,
+            not needed".
+
+            It was a four-bullet list of what Kyro does with a rota, printed
+            above the rota every time. It was written because the page used
+            to CLAIM things it did not do, and the fix for a false claim is a
+            true one — but once the page works, a list of what it does is
+            just a wall between somebody and the thing they came to use. It
+            lives on the help page, where somebody who wants it can go.
+            See user-docs/pages/rota.md. */}
 
         {noEdgeRooms && (
           <div className="rounded-xl px-4 py-4 flex items-start gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>

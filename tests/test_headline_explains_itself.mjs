@@ -45,22 +45,32 @@ const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.
 const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 const flat = page.replace(/\s+/g, " ");
 
-// ── The figure says what went into it ──────────────────────────────────────
+// ── The figure says what went into it — behind one word ───────────────────
+//
+// It used to say it in four sentences of prose, printed under the figure on
+// every load. "too much writing, i dont want it, dosent look neat or nice",
+// which is fair: an explanation nobody asked for is not help, it is a wall to
+// read past. It still has to be ANSWERABLE — that is what it was written for
+// — so it costs one word until somebody wants it.
 {
-  ok("it starts with what the cameras can actually see",
-     /The cameras can see\{" "\}/.test(page));
-  ok("and says when some of those sightings are one person twice",
-     /in view of two cameras at\s*\n?\s*once and/.test(page) || /in view of two cameras at once and/.test(flat));
+  ok("the figure is one short line, not a paragraph",
+     /<summary style=\{\{ fontSize: 12/.test(page)
+     && /in shot now · <span style=\{\{ textDecoration: "underline" \}\}>where this number comes from<\/span>/.test(page));
+  ok("and the detail is behind it", /<details style=\{\{ marginTop: 6 \}\}>/.test(page));
+  ok("which still starts with what the cameras can see",
+     /The cameras can see <strong>\{seenNow\.toLocaleString\(\)\}<\/strong>/.test(page));
+  ok("and still says when some of those are one person twice",
+     /of them on two cameras at once and counted once/.test(flat));
   ok("the duplicate count comes from the website, not a guess",
      /seen_on_two_cameras\?: number/.test(page) && /seen_on_two_cameras: twice,/.test(worker));
 }
 
-// ── Each possible second figure is named for what it is ────────────────────
+// ── Each possible second figure is still named for what it is ─────────────
 {
   ok("a doorway's figure is called the doorway's",
-     /Everyone counted in at the entrance, less everyone counted out/.test(flat));
+     /The entrance has counted <strong>\{countedNet\.toLocaleString\(\)\}<\/strong> in, less those out\./.test(flat));
   ok("the register's is called the register's",
-     /The register has\{" "\}/.test(page) && /seen in the last five minutes/.test(flat));
+     /The register has <strong>\{countedNet\.toLocaleString\(\)\}<\/strong> seen in the last five minutes\./.test(flat));
   ok("and it no longer claims the room cameras counted people in and out",
      !/by the room cameras/.test(page));
   ok("the page is told which one it was",
@@ -70,13 +80,10 @@ const flat = page.replace(/\s+/g, " ");
 
 // ── The answer she needed: no service, no register ─────────────────────────
 {
-  ok("with no service running, the page says why there is no register",
-     /No service is being recorded, so there is no register of people yet/.test(flat));
-  ok("it says what that means for the figure",
+  ok("with no service running, it says why there is no register",
+     /No service is being recorded, so there is no register yet/.test(flat));
+  ok("and what that means for the figure",
      /each camera&apos;s count is simply added to the next/.test(flat));
-  ok("and that face matching does nothing meanwhile, whatever the switch says",
-     /face matching does nothing however it is set/.test(flat));
-  ok("and how to start one", /Start a session now/.test(page));
   // The claim has to be true: the register really is service-only, and faces
   // really do need a live service.
   ok("the register genuinely only runs during a service",

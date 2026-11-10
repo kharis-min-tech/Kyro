@@ -1499,52 +1499,37 @@ export default function AttendancePage() {
                       follow people through a doorway, so its count isn&apos;t being added up yet.
                     </p>
                   )}
-                  {/* How this number was reached, in its own words.
-                      "Showing me 2-3 people when it's only me" has to be
-                      answerable from the screen. A headline is only
-                      checkable if it says which rule produced it and what
-                      went into it — otherwise the only thing anyone can do
-                      with a wrong figure is say that it is wrong. It also
-                      used to claim the second figure was "everyone counted
-                      in, less everyone counted out" and credit it to the
-                      room cameras, which stopped being true when they stopped
-                      being asked a question they cannot answer. */}
+                  {/* How this number was reached — one line, and the rest
+                      behind a word.
+
+                      This was four sentences of prose under a figure, every
+                      time. "too much writing, i dont want it, dosent look
+                      neat or nice", and she is right: an explanation nobody
+                      asked for, printed on every load, is not help — it is a
+                      wall to read past. It still has to be ANSWERABLE, since
+                      "how is there 1 person and 6 came in" is what it was
+                      written for, so it is a <details> that costs one word
+                      until somebody wants it. */}
                   {metric === "people" && isToday && edge && (
-                    <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
-                      The cameras can see{" "}
-                      <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong>
-                      {seenNow === 1 ? " person" : " people"} right now
-                      {seenTwice > 0 && (
-                        <> — {seenTwice === 1 ? "one of them is" : `${seenTwice} of them are`} in view of two cameras at
-                          once and {seenTwice === 1 ? "is" : "are"} counted once</>
-                      )}.{" "}
-                      {netFromDoor
-                        ? <>Everyone counted in at the entrance, less everyone counted out:{" "}
-                            <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>.</>
-                        : netFromRegister
-                        ? <>The register has{" "}
-                            <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>
-                            {countedNet === 1 ? " person" : " people"} seen in the last five minutes — somebody behind a
-                            pillar is still here.</>
-                        : !venueTotal?.service_now
-                        ? <>No service is being recorded, so there is no register of people yet — until one starts,
-                            each camera&apos;s count is simply added to the next, and face matching does nothing however
-                            it is set. A service starts by itself when the room fills, when your rota says one is on,
-                            or from <strong>Start a session now</strong> on Sessions.</>
-                        : <>No camera is on a doorway, so there is nothing else to go on.</>}
-                      {cappedAt !== null
-                        ? " "
-                        : countedNet > seenNow
-                        ? " That is more than is in shot, so that is the figure — someone can be here without a camera seeing them this second."
-                        : " "}
-                      {cappedAt !== null && (
-                        <>Only{" "}
-                          <strong style={{ color: "var(--text-secondary)" }}>{cappedAt.toLocaleString()}</strong>
-                          {cappedAt === 1 ? " different person has" : " different people have"} been seen all service,
-                          so that is the figure — there cannot be more people here than have ever been here.
-                        </>
-                      )}
-                    </p>
+                    <details style={{ marginTop: 6 }}>
+                      <summary style={{ fontSize: 12, color: "var(--text-faint)", cursor: "pointer", listStyle: "none" }}>
+                        {seenNow.toLocaleString()} in shot now · <span style={{ textDecoration: "underline" }}>where this number comes from</span>
+                      </summary>
+                      <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45, maxWidth: "52ch" }}>
+                        The cameras can see <strong>{seenNow.toLocaleString()}</strong>
+                        {seenTwice > 0 && <>, {seenTwice} of them on two cameras at once and counted once</>}.{" "}
+                        {netFromDoor
+                          ? <>The entrance has counted <strong>{countedNet.toLocaleString()}</strong> in, less those out.</>
+                          : netFromRegister
+                          ? <>The register has <strong>{countedNet.toLocaleString()}</strong> seen in the last five minutes.</>
+                          : !venueTotal?.service_now
+                          ? <>No service is being recorded, so there is no register yet and each camera&apos;s count is simply added to the next.</>
+                          : <>No camera is on a doorway.</>}
+                        {cappedAt !== null && (
+                          <> Only <strong>{cappedAt.toLocaleString()}</strong> different people have been seen all service, so that is the figure.</>
+                        )}
+                      </p>
+                    </details>
                   )}
                   {/* Two rooms, both with somebody in them, and nothing
                       saying they might be the same somebody. */}

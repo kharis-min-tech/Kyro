@@ -44,6 +44,8 @@ const rota = fs.readFileSync(path.join(root, "dashboard/src/app/rota/page.tsx"),
 const panel = fs.readFileSync(path.join(root, "dashboard/src/components/ui/WhatsOn.tsx"), "utf8");
 const attendance = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
 const integrations = fs.readFileSync(path.join(root, "dashboard/src/app/integrations/page.tsx"), "utf8");
+/** A help page, whitespace flattened so a wrapped sentence still matches. */
+const docs = (f) => fs.readFileSync(path.join(root, "user-docs", f), "utf8").replace(/\s+/g, " ");
 
 // ── What's on: one place that answers it ───────────────────────────────────
 //
@@ -144,10 +146,17 @@ const integrations = fs.readFileSync(path.join(root, "dashboard/src/app/integrat
 {
   ok("the altar-call claim is gone", !/altar call/i.test(rota));
   ok("and 'will use these times immediately' with it", !/use these times immediately/.test(rota));
-  ok("what it actually does is listed", /What Kyro does with this/.test(rota)
-     && /named after the rota entry/.test(rota));
-  ok("and what it does not do is said out loud",
-     /Kyro counts people; it does not know who anybody is/.test(rota));
+  // The four-bullet "What Kyro does with this" banner is gone from the page
+  // — "and this too on rotas section, not needed". It was written to replace
+  // a FALSE claim, and the fix for a false claim is a true one; but once the
+  // page works, a list of what it does is a wall between somebody and the
+  // thing they came to use. It lives on the help page, which has room to do
+  // it properly, and that is where it is checked.
+  ok("the banner is off the page", !/What Kyro does with this/.test(rota));
+  ok("but what it does is written down where there is room",
+     /It names the session after the rota entry\./.test(docs("pages/rota.md")));
+  ok("and what it does NOT do, just as plainly",
+     /Kyro counts people; it doesn't know who anybody is/.test(docs("pages/rota.md")));
 }
 
 // ── Saving actually saves, or says why not ─────────────────────────────────
@@ -175,13 +184,27 @@ const integrations = fs.readFileSync(path.join(root, "dashboard/src/app/integrat
 // so nowhere — which reads as broken, and reading as broken is a kind of
 // broken.
 {
-  ok("the page says when it isn't set up", /Not set up yet/.test(integrations));
-  ok("and where an address actually comes from",
-     /hooks\.zapier\.com/.test(integrations) && /Incoming Webhook/.test(integrations));
-  ok("it says when a send failed, and what to press", /Set up, but the last send failed/.test(integrations));
-  ok("and when it is working, where things go and when", /Set up and ready/.test(integrations));
-  ok("nobody is left thinking their figures depend on it",
-     /your figures are all in Analytics either way/.test(integrations));
+  // One line, not a block — "and this too from integration section". The
+  // three-bullet guide to getting an address out of Zapier, Slack or a
+  // reporting portal is on the help page, which can do it properly; the page
+  // itself only has to say which of three states it is in.
+  ok("the page still says when it isn't set up", /Not set up yet\./.test(integrations));
+  ok("it says when a send failed, and what to press",
+     /Last send failed/.test(integrations) && /Send a test/.test(integrations));
+  ok("and when it is working, where things go and when",
+     /Set up and ready\./.test(integrations) && /Sending automatically on/.test(integrations));
+  // The URL box still shows a Zapier address as its placeholder, which is
+  // one word of help in the right place. What is gone is the guide ABOVE the
+  // form explaining how to get one out of three different services.
+  ok("in one line rather than a wall",
+     !/Where that address comes from/.test(integrations)
+     && !/Incoming Webhook/.test(integrations)
+     && !/Create Spreadsheet Row/.test(integrations));
+  ok("with the how-to kept where there is room for it",
+     /hooks\.zapier\.com/.test(docs("pages/integrations.md"))
+     && /Incoming Webhook/.test(docs("pages/integrations.md")));
+  ok("and nobody left thinking their figures depend on it",
+     /All your figures are in \[Analytics\]\(\/pages\/analytics\) either way/.test(docs("pages/integrations.md")));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. The rota tells Kyro what is on.");

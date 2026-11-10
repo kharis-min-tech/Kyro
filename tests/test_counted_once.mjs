@@ -97,9 +97,11 @@ const headline = (seen, door, room = 0, everSeen = 0) => {
   // obsolete: room cameras no longer feed the headline at all, so the honest
   // reason is simply that there cannot be more people here than have ever
   // been here. See tests/test_in_out_needs_a_door.mjs.
+  // The explanation moved behind a word — "too much writing, i dont want
+  // it" — but a headline smaller than the sum beside it is still a mystery
+  // unless somebody can find out why, so it is still there to be found.
   ok("and explains it in plain words",
-     /different (person has|people have)/.test(page)
-     && /there cannot be more people here than have ever been here/.test(page));
+     /different people have been seen all service, so that is the figure/.test(page.replace(/\s+/g, " ")));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. One person is one person.");

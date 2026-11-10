@@ -203,8 +203,15 @@ const at = (h, m = 0) => day + h * HOUR + m * 60_000;
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
   ok("the card prefers it over the cameras' tallies",
      /const usingRegister = !!movement && movement\.arrived\.length > 0 && !unverified;/.test(card));
+  // Said in four words rather than three sentences — "too much writing" —
+  // with the full version on hover. It still has to be SAID: the two figures
+  // can be very far apart (one person at a desk counted as eleven), so which
+  // one is on screen is not optional.
   ok("and says plainly which one it is showing",
-     /Each person counted <strong[^>]*>once<\/strong>, from the register of people/.test(card));
+     /\{usingRegister \? "Each person counted once" : "Camera tallies — crossings, not people"\}/.test(card));
+  ok("with the long version kept where it costs nothing",
+     /From the register of people: each person counted once/.test(card)
+     && /which count crossings rather than people/.test(card));
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
   ok("the page hands it over", /movement=\{edge && isToday \?/.test(page));
 }

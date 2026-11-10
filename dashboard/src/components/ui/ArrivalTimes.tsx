@@ -207,13 +207,15 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
             How many people came in and went out in each {minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`}
           </p>
-          {/* Which of the two things on this card is being shown. They can be
-              very far apart — one person at a desk counted as eleven — and
-              the church has to know which it is reading. */}
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3, lineHeight: 1.4 }}>
-            {usingRegister
-              ? <>Each person counted <strong style={{ color: "var(--text-secondary)" }}>once</strong>, from the register of people — not every time a camera became sure of them again.</>
-              : <>From the cameras&apos; own tallies, which count crossings rather than people: somebody who steps out and comes back counts again. The register takes over once a service is running.</>}
+          {/* Which of the two things on this card is being shown — in four
+              words rather than three sentences. They can be very far apart
+              (one person at a desk counted as eleven), so it still has to be
+              said; it does not have to be explained every time. */}
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3 }}
+            title={usingRegister
+              ? "From the register of people: each person counted once, however often a camera becomes sure of them again."
+              : "From the cameras' own tallies, which count crossings rather than people — somebody who steps out and comes back counts again. The register takes over once a service is running."}>
+            {usingRegister ? "Each person counted once" : "Camera tallies — crossings, not people"}
           </p>
           {/* Which stretch of the day these figures cover. Said out loud, so a
               session's figures are never mistaken for the day's. */}
