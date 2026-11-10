@@ -100,9 +100,15 @@ const hereNow = (seen, door, room = 0, everSeen = 0) =>
   ok("the live poll feeds the agreed figure, not a second one",
      /const here = vt\.total_current;/.test(page)
      && !/const here = \(edge \? vt\.in_building/.test(page));
+  // It now names each source rather than calling everything "counted in less
+  // counted out": the doorway's figure, the register's, or — when there is
+  // neither — why there is nothing else to go on. See
+  // tests/test_headline_explains_itself.mjs.
   ok("and explains the one it shows",
-     /Everyone counted in, less everyone counted out/.test(page)
-     && /it can never be fewer than the people plainly in shot/.test(page));
+     /The cameras can see\{" "\}/.test(page)
+     && /Everyone counted in at the entrance, less everyone counted out/.test(page.replace(/\s+/g, " "))
+     && /The register has\{" "\}/.test(page)
+     && /someone can be here without a camera seeing them this second/.test(page));
 
   const sessions = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
   ok("the Sessions page reads the same field", /venue\?\.total_current/.test(sessions));

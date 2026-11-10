@@ -1277,6 +1277,32 @@ export default function AttendancePage() {
   const seenNow = (venueTotal as { seen_now?: number } | null)?.seen_now ?? venueTotal?.total_current ?? 0;
   const countedNet = (venueTotal as { counted_net?: number } | null)?.counted_net ?? 0;
   const netFromDoor = (venueTotal as { counted_net_from_door?: boolean } | null)?.counted_net_from_door ?? false;
+  // Where the second figure came from, now that room cameras no longer stand
+  // in for a doorway: the register of people, or nothing at all.
+  const netFromRegister = (venueTotal as { counted_net_from_register?: boolean } | null)?.counted_net_from_register ?? false;
+  /** Sightings that are one person in front of two cameras at once. */
+  const seenTwice = (venueTotal as { seen_on_two_cameras?: number } | null)?.seen_on_two_cameras ?? 0;
+  /**
+   * Room cameras that are counting, and which rooms they are set to.
+   *
+   * Cameras that share a room name are views of ONE room, so the room takes
+   * the fullest view and nobody is counted twice. Cameras with different room
+   * names are different rooms, and are added together — which is right for a
+   * balcony and a main floor, and wrong for two cameras pointed at the same
+   * desk. A camera that adds itself is given a room named after itself,
+   * because nothing else is known about it yet, so two cameras plugged into
+   * one computer start out as two rooms and their counts start out added.
+   *
+   * That is the likeliest reason for "showing me 2-3 people when it's only
+   * me", and nothing on the page said it. Saying it is the whole fix: the
+   * answer is to give them the same room name, which Kyro cannot decide.
+   */
+  const countingRooms = edge && isToday
+    ? [...new Set((venueTotal?.zones ?? [])
+        .filter((z) => z.location !== "entrance" && z.location !== "queue" && z.is_running && (z.current ?? 0) > 0)
+        .map((z) => z.zone_name))]
+    : [];
+  const addedRooms = countingRooms.length > 1 ? countingRooms : [];
   // The arrivals sum came out higher than the number of different people seen
   // all service, so the register held the headline down. Say so: a smaller
   // headline than the sum printed beneath it is otherwise a mystery.
@@ -1469,26 +1495,62 @@ export default function AttendancePage() {
                       follow people through a doorway, so its count isn&apos;t being added up yet.
                     </p>
                   )}
+                  {/* How this number was reached, in its own words.
+                      "Showing me 2-3 people when it's only me" has to be
+                      answerable from the screen. A headline is only
+                      checkable if it says which rule produced it and what
+                      went into it — otherwise the only thing anyone can do
+                      with a wrong figure is say that it is wrong. It also
+                      used to claim the second figure was "everyone counted
+                      in, less everyone counted out" and credit it to the
+                      room cameras, which stopped being true when they stopped
+                      being asked a question they cannot answer. */}
                   {metric === "people" && isToday && edge && (
                     <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 6, lineHeight: 1.45 }}>
-                      Everyone counted in, less everyone counted out:{" "}
-                      <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>
-                      {netFromDoor ? " at the entrance" : " by the room cameras"}. The cameras can see{" "}
-                      <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong> right now
+                      The cameras can see{" "}
+                      <strong style={{ color: "var(--text-secondary)" }}>{seenNow.toLocaleString()}</strong>
+                      {seenNow === 1 ? " person" : " people"} right now
+                      {seenTwice > 0 && (
+                        <> — {seenTwice === 1 ? "one of them is" : `${seenTwice} of them are`} in view of two cameras at
+                          once and {seenTwice === 1 ? "is" : "are"} counted once</>
+                      )}.{" "}
+                      {netFromDoor
+                        ? <>Everyone counted in at the entrance, less everyone counted out:{" "}
+                            <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>.</>
+                        : netFromRegister
+                        ? <>The register has{" "}
+                            <strong style={{ color: "var(--text-secondary)" }}>{countedNet.toLocaleString()}</strong>
+                            {countedNet === 1 ? " person" : " people"} seen in the last five minutes — somebody behind a
+                            pillar is still here.</>
+                        : !venueTotal?.service_now
+                        ? <>No service is being recorded, so there is no register of people yet — until one starts,
+                            each camera&apos;s count is simply added to the next, and face matching does nothing however
+                            it is set. A service starts by itself when the room fills, when your rota says one is on,
+                            or from <strong>Start a session now</strong> on Sessions.</>
+                        : <>No camera is on a doorway, so there is nothing else to go on.</>}
                       {cappedAt !== null
-                        ? "."
-                        : countedNet >= seenNow
-                        ? "."
-                        : ", which is more, so that is the figure — it can never be fewer than the people plainly in shot."}
+                        ? " "
+                        : countedNet > seenNow
+                        ? " That is more than is in shot, so that is the figure — someone can be here without a camera seeing them this second."
+                        : " "}
                       {cappedAt !== null && (
-                        <> Only{" "}
+                        <>Only{" "}
                           <strong style={{ color: "var(--text-secondary)" }}>{cappedAt.toLocaleString()}</strong>
                           {cappedAt === 1 ? " different person has" : " different people have"} been seen all service,
-                          so that is the figure. A camera on a room has no doorway to watch, so the same person
-                          stepping out of shot and back counts as arriving again — which is why that first number
-                          climbs.
+                          so that is the figure — there cannot be more people here than have ever been here.
                         </>
                       )}
+                    </p>
+                  )}
+                  {/* Two rooms, both with somebody in them, and nothing
+                      saying they might be the same somebody. */}
+                  {metric === "people" && isToday && edge && addedRooms.length > 1 && seenTwice === 0 && (
+                    <p style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45, color: "#fbbf24" }}>
+                      <strong>{addedRooms.slice(0, 3).join(" and ")}</strong>
+                      {addedRooms.length > 3 ? ` and ${addedRooms.length - 3} more` : ""} are set as
+                      {" "}different rooms, so their counts are <strong>added together</strong>. If they are pointed at
+                      the same place, give them the <strong>same room name</strong> on the Cameras page — Kyro then
+                      takes the fullest view instead of adding them, and one person in front of both is one person.
                     </p>
                   )}
                   {showVsYesterday && isToday && (

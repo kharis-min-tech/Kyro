@@ -92,9 +92,14 @@ const headline = (seen, door, room = 0, everSeen = 0) => {
 {
   ok("the worker publishes that it capped the figure", /counted_net_capped: countedNet > hereNow \? everSeen : null,/.test(src));
   ok("the page reads it", /counted_net_capped\?: number \| null/.test(page));
+  // The old wording explained the cap by saying a room camera counts one
+  // person stepping out of shot and back as arriving again. True then, and
+  // obsolete: room cameras no longer feed the headline at all, so the honest
+  // reason is simply that there cannot be more people here than have ever
+  // been here. See tests/test_in_out_needs_a_door.mjs.
   ok("and explains it in plain words",
      /different (person has|people have)/.test(page)
-     && /stepping out of shot and back counts as arriving again/.test(page));
+     && /there cannot be more people here than have ever been here/.test(page));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. One person is one person.");

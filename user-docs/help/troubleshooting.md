@@ -34,6 +34,13 @@ Check whether a manual count was entered for a room a camera already counts. Kyr
 **Arrival & exit times says "Connect the camera system".**
 Arrival times come from the cameras. Without them there's nothing to show yet.
 
+**It says 2 or 3 people and there's only one person there.**
+The figure under the big number on [AI Count](/pages/ai-count) now tells you how it was reached. Three things make one person read as more:
+
+1. **No service is being recorded.** The *register of people* is what knows that the person on camera 1 and the person on camera 2 are the same person — and it only exists while a service is running. Without one, each camera's count is simply **added** to the next, and **face matching does nothing however the switch is set**, because face codes belong to a service. Start one from **Sessions → Start a session now**, or put the time on your [Rota](/pages/rota).
+2. **Two cameras are set as different rooms.** Cameras sharing a **room name** are two views of one room, and Kyro takes the fullest view. Cameras with different room names are different rooms and are added up — right for a balcony and a main floor, wrong for two cameras pointed at the same place. A camera that adds itself is named after itself, so two cameras in one computer start out added together. Give them the **same room name** on [Cameras](/pages/cameras) (the pencil).
+3. **Something that isn't a person is being counted.** On [Cameras](/pages/cameras), the preview under **Counting on this computer** draws a green box round everything it counts. Look at where the extra boxes are: a poster or photo of people, a face on a screen, or **the camera seeing the very screen it's previewing on** all get counted.
+
 ## Cameras
 
 **A camera shows Offline.**
