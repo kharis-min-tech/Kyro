@@ -151,6 +151,18 @@ export function FaceMatching() {
                 className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500">Switch on…</button>}
         </div>
 
+        {/* Where the permission lives. This is the page's natural home: the
+            moment somebody reaches for this switch is the moment the gate
+            matters, and a permanent menu entry for a once-a-year task sits in
+            the way of the pages used every Sunday. */}
+        <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+          Face matching needs the church&apos;s written authorisation before it can be used —{" "}
+          <a href="/data-protection" style={{ color: "#818cf8", textDecoration: "underline" }}>
+            Data protection &amp; authorisation
+          </a>
+          . Face codes last one service and are then deleted.
+        </p>
+
         {asking && !p.face_matching && (
           <div className="rounded-lg p-3 flex flex-col gap-2.5" style={{ background: "var(--bg-hover)" }}>
             <p className="text-xs text-gray-300 leading-relaxed">

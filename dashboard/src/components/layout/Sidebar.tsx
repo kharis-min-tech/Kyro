@@ -13,7 +13,7 @@ import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
   Moon, Sun, Menu, X, Hash, Webhook,
-  CircleHelp, ShieldCheck,
+  CircleHelp,
 } from "lucide-react";
 import { helpUrlFor } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
@@ -51,13 +51,22 @@ const ALL_NAV = [
   { id: "integrations",  href: "/integrations",  label: "Integrations",  Icon: Webhook      },
   { id: "notifications", href: "/notifications", label: "Notifications", Icon: Bell         },
   { id: "users",         href: "/users",         label: "Users",         Icon: Users        },
-  // Permission to read faces: the lawful basis, the DPIA, the notices, the
-  // review date. Face matching will not run until this is approved and in
-  // date — see worker/authorisation.js.
-  { id: "data-protection", href: "/data-protection", label: "Data Protection", Icon: ShieldCheck },
+  // Data protection & authorisation is deliberately NOT in this menu. It is
+  // something a church fills in once and reviews about once a year, and a
+  // permanent button for it sits in the way of the pages used every Sunday.
+  // It is reached from the Face matching card on the Cameras page — which is
+  // where somebody meets the gate — and from the guide. The page itself is
+  // still there, and administrators can still open it directly.
 ] as const;
 
+/**
+ * What this menu can show — which is no longer the same as every page Kyro
+ * has. Data protection & authorisation is a real page with real permissions
+ * and deliberately no menu entry, so the list of pages somebody is allowed
+ * is wider than the list of buttons.
+ */
 type PageId = typeof ALL_NAV[number]["id"];
+type AllowedPage = PageId | "data-protection";
 // Which pages a user may see lives in lib/access.ts (shared with <PageGuard>).
 
 
@@ -159,8 +168,8 @@ export function Sidebar() {
   const pendingReviews = usePendingReviews();
   const hasLiveSession = useHasLiveSession();
 
-  const [allowedPages, setAllowedPages] = useState<PageId[]>(() =>
-    (ROLE_DEFAULT_PAGES[role] as PageId[]) ?? ["seating","cameras"]
+  const [allowedPages, setAllowedPages] = useState<AllowedPage[]>(() =>
+    (ROLE_DEFAULT_PAGES[role] as AllowedPage[]) ?? ["seating","cameras"]
   );
 
   useEffect(() => {
@@ -187,7 +196,7 @@ export function Sidebar() {
 
   // Counting on this computer no longer has a page of its own: it runs for the
   // whole of Kyro and is switched on from the Cameras page.
-  const visibleNav = ALL_NAV.filter((item) => allowedPages.includes(item.id as typeof allowedPages[number]));
+  const visibleNav = ALL_NAV.filter((item) => allowedPages.includes(item.id));
 
   // Mobile drawer state — sidebar is hidden by default at phone widths and
   // slides in when the top-bar hamburger is tapped. Auto-closes when the

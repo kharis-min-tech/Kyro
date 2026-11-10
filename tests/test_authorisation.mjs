@@ -197,6 +197,17 @@ const CONFIRM = { accountable: true, read_dpia: true, basis_is_ours: true, notic
 {
   const access = fs.readFileSync(path.join(root, "dashboard/src/lib/access.ts"), "utf8");
   ok("the page is a known page", /"data-protection",/.test(access));
+  // It has no menu button: a once-a-year task does not belong in the way of
+  // the pages used every Sunday. It is reached from the Face matching card,
+  // which is where somebody meets the gate, and from the guide.
+  const sidebar = fs.readFileSync(path.join(root, "dashboard/src/components/layout/Sidebar.tsx"), "utf8");
+  ok("but it has no permanent menu button",
+     !/href: "\/data-protection"/.test(sidebar));
+  ok("and the menu says why, so nobody adds one back by accident",
+     /deliberately NOT in this menu/.test(sidebar));
+  const faces = fs.readFileSync(path.join(root, "dashboard/src/components/ui/FaceMatching.tsx"), "utf8");
+  ok("it is linked from the switch it gates", /href="\/data-protection"/.test(faces));
+  ok("with the promise beside the link", /Face codes last one service and are then deleted/.test(faces));
   ok("and an administrator always has it, whatever their saved list says",
      /const ALWAYS_FOR_ADMIN: PageId\[\] = \["data-protection"\];/.test(access));
   ok("added to a saved list of pages", /withAdminPages\(p\.pages\.filter/.test(access));
