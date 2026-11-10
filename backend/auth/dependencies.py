@@ -2,8 +2,20 @@
 Kyro — Auth Dependencies
 
 Two-layer auth strategy:
-1. API Key (X-API-Key header or ?api_key= query param) — simple, for machine clients and workers.
+1. API Key (X-API-Key header ONLY) — simple, for machine clients and workers.
 2. JWT Bearer token — for dashboard users (issued by /api/v1/auth/token).
+
+Secrets never travel in a URL. A query string is written to the web server's
+access log, to every proxy in front of it, to the browser's history, and is
+handed to other sites in the Referer header — so a secret in one is a secret
+that has been copied to half a dozen places nobody is watching. That matters
+most for a secret that never expires, which the API key is: one line of an
+access log is a permanent key to the whole machine API.
+
+The single exception is an <img> or a WebSocket, which cannot carry a header
+at all. Those take a SHORT-LIVED, STREAM-ONLY token instead of the session
+token — see create_stream_token below. It still ends up in a log; it is worth
+nothing a few minutes later, and it cannot be used to do anything but watch.
 
 FastAPI dependency inject pattern:
     @router.get("/...", dependencies=[Depends(require_api_key)])
@@ -20,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import Depends, HTTPException, Security, status
-from fastapi.security import APIKeyHeader, APIKeyQuery, HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import APIKeyHeader, HTTPAuthorizationCredentials, HTTPBearer
 
 import jwt
 
@@ -38,8 +50,12 @@ _JWT_EXPIRY_HOURS = int(os.environ.get("KYRO_JWT_EXPIRY_HOURS", "24"))
 # API Key schemes
 # ---------------------------------------------------------------------------
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-_api_key_query  = APIKeyQuery(name="api_key", auto_error=False)
 _bearer_scheme  = HTTPBearer(auto_error=False)
+#: How long a stream token is worth anything. Long enough to open a picture
+#: or a WebSocket and keep it open; short enough that one in an old log line
+#: is useless. The connection is authorised when it opens, so an open stream
+#: is not cut off when its token expires.
+_STREAM_TOKEN_TTL_S = int(os.environ.get("KYRO_STREAM_TOKEN_TTL_S", "300"))
 
 
 def validate_api_key_value(key: str) -> bool:
@@ -49,20 +65,21 @@ def validate_api_key_value(key: str) -> bool:
 
 async def require_api_key(
     header_key: Optional[str] = Security(_api_key_header),
-    query_key:  Optional[str] = Security(_api_key_query),
 ) -> str:
     """
-    FastAPI dependency: validates X-API-Key header or ?api_key= query param.
-    Use on any route that should be machine-protected.
+    FastAPI dependency: validates the X-API-Key header.
+
+    Header only. It used to accept `?api_key=` as well, which put a secret
+    that never expires into every access log, proxy log and browser history
+    it passed through.
     """
-    key = header_key or query_key
-    if not validate_api_key_value(key or ""):
+    if not validate_api_key_value(header_key or ""):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or missing API key",
             headers={"WWW-Authenticate": "ApiKey"},
         )
-    return key  # type: ignore[return-value]
+    return header_key  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------
@@ -104,7 +121,35 @@ async def require_jwt(
             detail="Bearer token required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return decode_jwt(credentials.credentials)
+    claims = decode_jwt(credentials.credentials)
+    # A stream token opens a picture and nothing else. It is deliberately
+    # thrown about in URLs — logs, proxies, browser history — so it must buy
+    # nothing anywhere else, header or not.
+    if claims.get("scope") == "stream":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="That is a stream token. Sign in for anything else.",
+        )
+    return claims
+
+
+def create_stream_token(username: str, role: str = "viewer") -> str:
+    """
+    A token for an <img> or a WebSocket, and nothing else.
+
+    Browsers cannot attach an Authorization header to an element's src, so a
+    picture endpoint has to take its token in the URL — and a URL is written
+    to access logs, proxy logs and browser history. The answer is not to
+    pretend that doesn't happen: it is to put something there that is worth
+    almost nothing. This expires in minutes and carries scope="stream", so it
+    cannot be used to read a figure, change a camera or answer a question.
+    """
+    now = datetime.now(timezone.utc)
+    return jwt.encode(
+        {"sub": username, "role": role, "scope": "stream",
+         "iat": now, "exp": now + timedelta(seconds=_STREAM_TOKEN_TTL_S)},
+        _JWT_SECRET, algorithm=_JWT_ALGORITHM,
+    )
 
 
 async def require_jwt_header_or_query(
@@ -112,19 +157,25 @@ async def require_jwt_header_or_query(
     token: Optional[str] = None,
 ) -> dict:
     """
-    Like require_jwt, but also accepts the token as a `?token=` query param.
+    Like require_jwt, but also accepts a STREAM token as `?token=`.
 
-    Scoped to routes an <img>/<video> tag needs to hit directly (e.g. the
-    MJPEG stream endpoint) — browsers cannot attach an Authorization header
-    to a plain element src, only to fetch()/XHR requests. Query-param tokens
-    can leak via browser history, proxy/access logs, and the Referer header,
-    so this is intentionally NOT used on the general JWT dependency — only
-    where a header truly can't be sent.
+    Scoped to routes an <img>/<video>/WebSocket needs to hit directly —
+    browsers cannot attach an Authorization header to a plain element src.
+    A full session token used to be accepted here, which meant the key to
+    somebody's whole account sat in the URL of every snapshot request. Only a
+    short-lived, watch-only token is taken from the query now; a session token
+    is still accepted, but only in the header, where it belongs.
     """
     if credentials:
         return decode_jwt(credentials.credentials)
     if token:
-        return decode_jwt(token)
+        claims = decode_jwt(token)
+        if claims.get("scope") != "stream":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="That token can't be used in a URL. Ask for a stream token.",
+            )
+        return claims
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Bearer token required",
@@ -162,7 +213,6 @@ async def require_admin_role(claims: dict = Depends(require_jwt)) -> dict:
 async def require_jwt_or_api_key(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
     header_key:  Optional[str] = Security(_api_key_header),
-    query_key:   Optional[str] = Security(_api_key_query),
 ) -> dict:
     """
     Accepts EITHER a dashboard JWT bearer token OR a machine API key.
@@ -172,9 +222,8 @@ async def require_jwt_or_api_key(
     spatial memory. Returns the JWT claims when a token is used, or a
     synthetic worker identity when the API key is used.
     """
-    # Prefer a valid API key (worker path)
-    key = header_key or query_key
-    if key and validate_api_key_value(key):
+    # Prefer a valid API key (worker path). Header only — see require_api_key.
+    if header_key and validate_api_key_value(header_key):
         return {"sub": "worker", "role": "worker"}
 
     # Otherwise fall back to JWT (dashboard path)

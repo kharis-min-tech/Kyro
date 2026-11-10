@@ -10,6 +10,7 @@
  */
 
 import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
+import { streamQuery } from "@/lib/streamToken";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 const DEMO_MODE = process.env.NEXT_PUBLIC_DEMO === "true";
@@ -184,12 +185,12 @@ export const camerasApi = {
     request<import("@/types").CameraStatus>(`/api/v1/cameras/${id}/status`),
   /** Returns the snapshot URL — caller adds ?token= for auth (fallback still image) */
   snapshotUrl: (cameraId: string) => `${API_URL}/api/v1/cameras/${cameraId}/snapshot`,
-  /** Live MJPEG stream URL — an <img> tag can point straight at this, no polling. */
-  streamUrl: (cameraId: string) => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") : null;
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
-    return `${API_URL}/api/v1/cameras/${cameraId}/stream${qs}`;
-  },
+  /** Live MJPEG stream URL — an <img> tag can point straight at this, no polling.
+   *  The token in it is a short-lived, watch-only one: a URL is written to
+   *  access logs and browser history, and the session token used to be what
+   *  went there. See lib/streamToken.ts. */
+  streamUrl: async (cameraId: string) =>
+    `${API_URL}/api/v1/cameras/${cameraId}/stream${await streamQuery()}`,
   venueTotal: () =>
     request<import("@/types").VenueTotal>("/api/v1/venue/total"),
 };
@@ -365,13 +366,11 @@ export const zonesApi = {
 const liveSeats = () => isEdgeLive();
 
 export const seatsApi = {
-  /** Evidence photo URL for a seat-available alert — token as query param
-   *  since this is used directly in an <img> src (can't set headers). */
-  availableSnapshotUrl: (cameraId: string, seatId: string) => {
-    const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") : null;
-    const qs = token ? `?token=${encodeURIComponent(token)}` : "";
-    return `${API_URL}/api/v1/seats/${cameraId}/${seatId}/available-snapshot${qs}`;
-  },
+  /** Evidence photo URL for a seat-available alert — a short-lived,
+   *  watch-only token as a query param, since this is used directly in an
+   *  <img> src and an element cannot carry a header. See lib/streamToken.ts. */
+  availableSnapshotUrl: async (cameraId: string, seatId: string) =>
+    `${API_URL}/api/v1/seats/${cameraId}/${seatId}/available-snapshot${await streamQuery()}`,
   // Live on the Cloudflare build (no Kyro server): layouts are kept by the website
   // itself (worker/venue.js) and the camera computer counts each seat.
   listLayouts: (cameraId: string) => liveSeats()

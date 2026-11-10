@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useStreamSrc } from "@/lib/streamToken";
 import { MapPin, X } from "lucide-react";
 import { useSeatAlertContext, type SeatAlert } from "@/lib/SeatAlertContext";
 import { ZoomableImage } from "@/components/ui/ZoomableImage";
@@ -12,6 +13,39 @@ import { inDemoMode } from "@/lib/liveMode";
  * Shows a stack of compact "Seat X available" cards with a thumbnail —
  * click one to open the full evidence photo with zoom/pan.
  */
+/**
+ * The evidence photo for a seat alert.
+ *
+ * Its own component because the URL now has to be FETCHED rather than built.
+ * An <img src> cannot carry an Authorization header, so it takes its token in
+ * the query string — and a query string is written to the web server's access
+ * log, to every proxy in front of it, and to the browser's history. What used
+ * to go there was the session token: the key to somebody's whole account, in
+ * a log file. It takes a short-lived, watch-only token instead. See
+ * lib/streamToken.ts.
+ */
+function SeatShot({ cameraId, seatId, className, style }: {
+  cameraId: string; seatId: string; className?: string; style?: React.CSSProperties;
+}) {
+  const src = useStreamSrc(() => seatsApi.availableSnapshotUrl(cameraId, seatId), [cameraId, seatId]);
+  if (!src) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={`Seat ${seatId} available`} className={className} style={style}
+      onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+  );
+}
+
+/** The same photo, big, for the expanded alert. */
+function SeatZoom({ cameraId, seatId }: { cameraId: string; seatId: string }) {
+  const src = useStreamSrc(() => seatsApi.availableSnapshotUrl(cameraId, seatId), [cameraId, seatId]);
+  if (!src) return null;
+  return (
+    <ZoomableImage src={src} alt={`Seat ${seatId} available`} maxHeight={420}
+      badge={<><MapPin size={9} /> Seat {seatId}</>} />
+  );
+}
+
 export function GlobalSeatAlertOverlay() {
   const { alerts, dismissAlert } = useSeatAlertContext();
   const [expanded, setExpanded] = useState<SeatAlert | null>(null);
@@ -30,14 +64,8 @@ export function GlobalSeatAlertOverlay() {
             onClick={() => setExpanded(alert)}
           >
             <div className="relative">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={seatsApi.availableSnapshotUrl(alert.camera_id, alert.seat_id)}
-                alt={`Seat ${alert.seat_id} available`}
-                className="w-full object-cover"
-                style={{ height: 90 }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-              />
+              <SeatShot cameraId={alert.camera_id} seatId={alert.seat_id}
+                className="w-full object-cover" style={{ height: 90 }} />
               <button
                 onClick={(e) => { e.stopPropagation(); dismissAlert(alert.alert_id); }}
                 className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full flex items-center justify-center"
@@ -72,12 +100,7 @@ export function GlobalSeatAlertOverlay() {
               </button>
             </div>
             <div className="p-3">
-              <ZoomableImage
-                src={seatsApi.availableSnapshotUrl(expanded.camera_id, expanded.seat_id)}
-                alt={`Seat ${expanded.seat_id} available`}
-                maxHeight={420}
-                badge={<><MapPin size={9} /> Seat {expanded.seat_id}</>}
-              />
+              <SeatZoom cameraId={expanded.camera_id} seatId={expanded.seat_id} />
               <p className="text-xs mt-2" style={{ color: "#6b7280" }}>
                 Scroll or pinch to zoom, drag to pan. Photo captured the moment this seat became available.
               </p>

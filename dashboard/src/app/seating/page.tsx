@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { streamQuery } from "@/lib/streamToken";
 import { useSearchParams } from "next/navigation";
 import { X, Camera as CameraIcon, RotateCcw, Download, Wifi, WifiOff, RefreshCw } from "lucide-react";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
@@ -532,17 +533,18 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
     if (inDemoMode()) { setSnapshotSrc(null); return; }
     setFeedErrored(false);
     setUseSnapshotFallback(false);
-    setSnapshotSrc(camerasApi.streamUrl(cameraId));
+    camerasApi.streamUrl(cameraId).then(setSnapshotSrc).catch(() => {});
   }, [cameraId, seat.seat_id]);
 
   useEffect(() => {
     if (inDemoMode() || !useSnapshotFallback) return;
-    const token = typeof window !== "undefined" ? localStorage.getItem("kyro_token") : null;
-    const bust = () => setSnapshotSrc(
-      `${camerasApi.snapshotUrl(cameraId)}?t=${Date.now()}${token ? `&token=${encodeURIComponent(token)}` : ""}`
+    // A short-lived, watch-only token rather than the session token, which
+    // used to be put in this URL and from there into every access log.
+    const bust = async () => setSnapshotSrc(
+      `${camerasApi.snapshotUrl(cameraId)}?t=${Date.now()}${await streamQuery("&")}`
     );
-    bust();
-    const t = setInterval(bust, 2000);
+    void bust();
+    const t = setInterval(() => { void bust(); }, 2000);
     return () => clearInterval(t);
   }, [cameraId, useSnapshotFallback, seat.seat_id]);
 

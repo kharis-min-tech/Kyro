@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { useStreamSrc } from "@/lib/streamToken";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
@@ -240,6 +241,8 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   const [health, setHealth] = useState<{ is_running: boolean; status: string; error_reason: string | null } | null>(null);
   const [streamErr, setStreamErr] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
+  // Short-lived, watch-only token — see lib/streamToken.ts.
+  const streamSrc = useStreamSrc(() => camerasApi.streamUrl(camera.camera_id), [camera.camera_id, retryKey]);
   const { edge, zones } = useContext(EdgeVenueContext);
   const snap = useEdgeSnapshot(camera.camera_id, edge, 20_000);
 
@@ -326,7 +329,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img
           key={retryKey}
-          src={camerasApi.streamUrl(camera.camera_id)}
+          src={streamSrc}
           alt={camera.zone_name ?? camera.name}
           className="absolute inset-0 w-full h-full object-cover"
           draggable={false}

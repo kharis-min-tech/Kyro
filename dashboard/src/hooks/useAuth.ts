@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { forgetStreamToken } from "@/lib/streamToken";
 import { authApi, ApiError } from "@/lib/api";
 import { DEMO_MODE, DEMO_TOKEN } from "@/lib/demo";
 
@@ -89,9 +90,11 @@ export function useAuth(): AuthState {
           setUsername(payload.sub ?? "");
         } else {
           localStorage.removeItem("kyro_token");
+          forgetStreamToken();   // never hand the next person a token minted for this one
         }
       } catch {
         localStorage.removeItem("kyro_token");
+        forgetStreamToken();   // never hand the next person a token minted for this one
       }
     }
     setHydrated(true);
@@ -187,6 +190,7 @@ export function useAuth(): AuthState {
 
   const logout = useCallback(() => {
     localStorage.removeItem("kyro_token");
+    forgetStreamToken();   // never hand the next person a token minted for this one
     localStorage.removeItem("kyro_demo_role");
     localStorage.removeItem("kyro_demo_last_user");
     localStorage.removeItem("kyro_mode"); // clear mode so login screen shows fresh

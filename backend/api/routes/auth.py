@@ -12,6 +12,7 @@ Authentication priority:
 from __future__ import annotations
 
 import hmac
+import logging
 import os
 import time
 from collections import deque
@@ -21,12 +22,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import select
 
-from backend.auth.dependencies import create_jwt, require_jwt
-from backend.auth.passwords import verify_password
+from backend.auth.dependencies import create_jwt, create_stream_token, require_jwt
+from backend.auth.passwords import hash_password, needs_rehash, verify_password
 from backend.database.connection import get_db
 from backend.database.models import User
 from sqlalchemy.ext.asyncio import AsyncSession
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/auth", tags=["Auth"])
 
 _DASHBOARD_USER = os.environ.get("KYRO_DASHBOARD_USER", "admin")
@@ -92,6 +94,20 @@ async def login(body: TokenRequest, request: Request, db: AsyncSession = Depends
     if db_user:
         if not verify_password(body.password, db_user.hashed_password):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+        # The password was right, so this is the one moment the plaintext is
+        # in hand and it can be stored properly. Old rows were a single fast
+        # SHA-256 — guessable at billions of tries a second if the database
+        # ever leaked — and nothing ever replaced them, so a weak hash stayed
+        # weak for ever. Signing in upgrades it. NOBODY'S PASSWORD CHANGES:
+        # the same password now has a slow hash behind it.
+        if needs_rehash(db_user.hashed_password):
+            try:
+                db_user.hashed_password = hash_password(body.password)
+                await db.commit()
+                logger.info("auth: upgraded the stored password hash for %s", db_user.username)
+            except Exception:
+                await db.rollback()
+                logger.warning("auth: couldn't upgrade the password hash for %s", db_user.username, exc_info=True)
         role = db_user.role
         display_name = db_user.display_name or db_user.username
     else:
@@ -115,4 +131,33 @@ async def me(claims: dict = Depends(require_jwt)):
         display_name=claims.get("display_name", claims["sub"]),
         role=claims.get("role", "operator"),
         authenticated_at=datetime.now(timezone.utc),
+    )
+
+
+# ─── A token for an <img> or a WebSocket ─────────────────────────────────────
+
+class StreamTokenResponse(BaseModel):
+    token: str
+    expires_in: int
+
+
+@router.post("/stream-token", response_model=StreamTokenResponse)
+async def stream_token(claims: dict = Depends(require_jwt)):
+    """
+    A short-lived, watch-only token for a URL.
+
+    A browser cannot put an Authorization header on an <img src> or a
+    WebSocket, so those endpoints have to take their token in the query
+    string — where it is written to the web server's access log, to every
+    proxy in front of it, and to the browser's history.
+
+    The session token used to be what went there: the key to somebody's whole
+    account, in a log file, for ever. This is the replacement. It expires in
+    minutes, it carries scope="stream", and the only thing it opens is a
+    picture.
+    """
+    from backend.auth.dependencies import _STREAM_TOKEN_TTL_S  # noqa: PLC0415 — one constant, one place
+    return StreamTokenResponse(
+        token=create_stream_token(claims.get("sub", ""), claims.get("role", "viewer")),
+        expires_in=_STREAM_TOKEN_TTL_S,
     )

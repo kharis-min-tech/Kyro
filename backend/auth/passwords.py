@@ -15,7 +15,10 @@ audited baseline (NIST SP 800-63B) and requires no new dependency here.
 
 Stored format: "pbkdf2_sha256$<iterations>$<salt_hex>$<hash_hex>"
 Legacy format ("<salt_hex>:<sha256_hex>") is still verified so existing
-hashed_password rows keep working, but is never produced for new hashes.
+hashed_password rows keep working, but is never produced for new hashes —
+and `needs_rehash` marks one so that signing in replaces it. Accepting a weak
+hash for ever, with nothing to upgrade it, meant a leaked database stayed
+cheap to crack however long ago the weakness was fixed.
 """
 
 from __future__ import annotations
@@ -36,6 +39,29 @@ def hash_password(password: str) -> str:
         "sha256", password.encode("utf-8"), bytes.fromhex(salt), _ITERATIONS
     ).hex()
     return f"{_ALGORITHM}${_ITERATIONS}${salt}${digest}"
+
+
+def needs_rehash(hashed: str) -> bool:
+    """
+    Is this stored hash weaker than what Kyro would write today?
+
+    True for the legacy "salt:sha256" rows — a single fast hash, guessable at
+    billions of tries a second if the database ever leaked — and for a PBKDF2
+    row written with fewer rounds than the current setting. Accepting those
+    for ever was the fault: a weak hash stayed weak until somebody happened to
+    change their password, which for most people is never.
+
+    Used at sign-in, which is the one moment the plaintext is in hand and the
+    row can be rewritten properly. Nobody's password changes.
+    """
+    if not isinstance(hashed, str) or not hashed:
+        return False
+    if not hashed.startswith(f"{_ALGORITHM}$"):
+        return True                       # legacy, or something unrecognised
+    try:
+        return int(hashed.split("$", 2)[1]) < _ITERATIONS
+    except (ValueError, IndexError):
+        return True
 
 
 def verify_password(password: str, hashed: str) -> bool:

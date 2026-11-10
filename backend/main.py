@@ -58,10 +58,19 @@ app = FastAPI(
 _DEFAULT_JWT_SECRET = "kyro-jwt-secret-change-in-production"  # keep in sync with auth/dependencies.py
 _DEFAULT_API_KEY    = "kyro-dev-key-change-in-production"     # keep in sync with docker-compose default
 if os.environ.get("KYRO_JWT_SECRET", _DEFAULT_JWT_SECRET) == _DEFAULT_JWT_SECRET:
+    # Refusing to start is right — that secret signs every session token, so a
+    # published one means anybody can forge a session for any account. What was
+    # wrong was leaving somebody with a RuntimeError and no idea what to do
+    # about it: setup.sh writes the secret, and nothing told you to load it.
     raise RuntimeError(
-        "KYRO_JWT_SECRET is unset or still the default value. "
-        "Set a strong random secret (e.g. `openssl rand -hex 32`) in your environment "
-        "before starting the API — otherwise session tokens are forgeable."
+        "KYRO_JWT_SECRET is unset or still the placeholder, so Kyro will not start — "
+        "that secret signs every session token, and a known one means anybody can "
+        "forge a session for any account.\n\n"
+        "If you have run setup.sh, the secret is already in .env and only needs "
+        "loading into this shell:\n"
+        "    set -a && source .env && set +a\n\n"
+        "If you haven't, run `bash setup.sh` from the project root — it generates "
+        "the secrets for you. By hand: KYRO_JWT_SECRET=$(openssl rand -hex 32)."
     )
 if os.environ.get("KYRO_API_KEY", _DEFAULT_API_KEY) == _DEFAULT_API_KEY:
     logger.warning(

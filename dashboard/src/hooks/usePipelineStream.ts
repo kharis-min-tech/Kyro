@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { streamToken } from "@/lib/streamToken";
 import type { PipelineUpdate, ReviewRequest } from "@/types";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { DEMO_MODE, DemoFeed, DEMO_REVIEWS, getNextDemoReviews, registerDemoFeed, resetDemoFeed } from "@/lib/demo";
@@ -176,7 +177,7 @@ export function usePipelineStream(
     if (isEdgeLive()) return;
     mountedRef.current = true;
 
-    function connect() {
+    async function connect() {
       if (!mountedRef.current) return;
 
       if (wsRef.current) {
@@ -188,11 +189,12 @@ export function usePipelineStream(
         wsRef.current = null;
       }
 
-      const token =
-        typeof window !== "undefined"
-          ? (localStorage.getItem("kyro_token") ?? "")
-          : "";
-
+      // A WebSocket URL cannot carry a header either, and it is logged like
+      // any other. A short-lived, watch-only token goes in it rather than the
+      // session token, which used to. See lib/streamToken.ts.
+      const token = (await streamToken()) ?? "";
+      // Fetching the token is a round trip; the component may have gone.
+      if (!mountedRef.current) return;
       const url = `${getWsBase()}/ws/${cameraIdRef.current}?token=${encodeURIComponent(token)}`;
       const ws  = new WebSocket(url);
       wsRef.current = ws;
@@ -283,7 +285,7 @@ export function usePipelineStream(
       ws.onclose = () => {
         if (!mountedRef.current) return;
         setConnected(false);
-        retryRef.current = setTimeout(connect, RECONNECT_DELAY_MS);
+        retryRef.current = setTimeout(() => { void connect(); }, RECONNECT_DELAY_MS);
       };
 
       ws.onerror = () => {
@@ -292,7 +294,7 @@ export function usePipelineStream(
       };
     }
 
-    connect();
+    void connect();
 
     return () => {
       mountedRef.current = false;

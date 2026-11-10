@@ -13,6 +13,7 @@
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { useStreamSrc } from "@/lib/streamToken";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useCameras } from "@/hooks/useCameras";
 import { usePipelineStream } from "@/hooks/usePipelineStream";
@@ -206,6 +207,10 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   const [err, setErr] = useState(false);
   // key forces the <img> to reconnect the MJPEG stream if it drops
   const [retryKey, setRetryKey] = useState(0);
+  // The token in this URL is a short-lived, watch-only one — a URL ends up in
+  // access logs and browser history, and the session token used to be what
+  // went there. Fetched, so the src arrives a moment after the render.
+  const streamSrc = useStreamSrc(() => camerasApi.streamUrl(cameraId), [cameraId, retryKey]);
   const { edge, zones: zonesHere } = useContext(EdgeLiveContext);
   // Is THIS browser the one counting this camera? If so it has the live
   // picture and should show it. On any other device — a phone, or a second
@@ -299,7 +304,7 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   return (
     <img
       key={retryKey}
-      src={camerasApi.streamUrl(cameraId)}
+      src={streamSrc}
       alt="live camera feed"
       className="w-full h-full object-cover"
       draggable={false}

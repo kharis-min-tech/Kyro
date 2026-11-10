@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
-import redis
+import redis.asyncio as redis
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -34,17 +34,18 @@ from backend.services.pipeline_registry import pipeline_registry
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Review"])
 
-_redis = redis.Redis(
+# Asynchronous on purpose. These calls sit inside `async def` handlers, and
+# the synchronous client blocks the whole event loop while it waits on the
+# socket — every other request, and every open camera WebSocket, stalls with
+# it. One connection kwargs dict so the two clients cannot drift apart: they
+# differ only in whether they decode to str or hand back bytes.
+_REDIS_KWARGS = dict(
     host=os.environ.get("REDIS_HOST", "localhost"),
     port=int(os.environ.get("REDIS_PORT", "6379")),
-    decode_responses=True,
 )
 
-_redis_bytes = redis.Redis(
-    host=os.environ.get("REDIS_HOST", "localhost"),
-    port=int(os.environ.get("REDIS_PORT", "6379")),
-    decode_responses=False,
-)
+_redis = redis.Redis(**_REDIS_KWARGS, decode_responses=True)
+_redis_bytes = redis.Redis(**_REDIS_KWARGS, decode_responses=False)
 
 
 # ─── Require admin ────────────────────────────────────────────────────────────
@@ -56,10 +57,56 @@ async def require_admin(claims: dict = Depends(require_jwt)) -> dict:
     return claims
 
 
-async def require_admin_or_operator(claims: dict = Depends(require_jwt)) -> dict:
-    if claims.get("role") not in ("admin", "operator"):
-        raise HTTPException(403, "Access restricted")
-    return claims
+# `require_admin_or_operator` is imported from backend.auth.dependencies at
+# the top of this file. It used to be redefined here as well, which silently
+# shadowed the import: two checks with the same name, in the same module, free
+# to drift apart — and the one every route actually got was whichever happened
+# to be defined last. The shared one is the only one now.
+
+
+# ─── What kind of question is this? ──────────────────────────────────────────
+
+#: Questions about the SHAPE OF THE BUILDING — where the stage is, where a
+#: zone should be drawn. They change what every future service counts, so only
+#: an administrator may answer them.
+_ADMIN_ONLY_REVIEWS = ("stage_question", "zone_proposal")
+
+
+async def _review_type(camera_id: str, review_id: str) -> Optional[str]:
+    """
+    The kind of a pending review question, or None when Kyro cannot tell.
+
+    None is a real answer and the caller must treat it as such — see
+    answer_review. It is not "probably harmless".
+    """
+    try:
+        raw = await _redis.get(f"kyro:review:{camera_id}:{review_id}")
+        if raw:
+            rt = json.loads(raw).get("review_type")
+            if isinstance(rt, str) and rt:
+                return rt
+    except Exception:
+        logger.warning("review: couldn't read %s from Redis to check its type", review_id, exc_info=True)
+
+    # Redis couldn't say. The pipeline for this camera holds the same
+    # questions in memory, and in embedded mode it is right here.
+    try:
+        pipeline = pipeline_registry.get(camera_id)
+        queue = getattr(getattr(pipeline, "_movement", None), "review_queue", None)
+        pending = getattr(queue, "pending", None)
+        if callable(pending):
+            pending = pending()
+        for q in (pending or []):
+            qid = getattr(q, "review_id", None) or (q.get("review_id") if isinstance(q, dict) else None)
+            if qid != review_id:
+                continue
+            rt = getattr(q, "review_type", None) or (q.get("review_type") if isinstance(q, dict) else None)
+            if isinstance(rt, str) and rt:
+                return rt
+    except Exception:
+        logger.warning("review: couldn't read %s from the pipeline either", review_id, exc_info=True)
+
+    return None
 
 
 # ─── Schemas ─────────────────────────────────────────────────────────────────
@@ -106,19 +153,31 @@ async def answer_review(
     if role not in ("admin", "operator"):
         raise HTTPException(403, "Insufficient role — admin or operator required")
 
-    # Enforce per-type role: spatial questions are admin-only
-    # We check the stored request's review_type if available
-    raw = _redis.get(f"kyro:review:{camera_id}:{body.review_id}")
-    if raw:
-        try:
-            req_data = json.loads(raw)
-            rt = req_data.get("review_type", "")
-            if rt in ("stage_question", "zone_proposal") and role != "admin":
-                raise HTTPException(403, "Only admins can answer spatial review questions")
-        except HTTPException:
-            raise
-        except Exception:
-            pass
+    # Enforce per-type role: spatial questions are admin-only.
+    #
+    # This used to be written as "check the stored request's review_type IF
+    # AVAILABLE", and that `if` was an authorisation bypass. The restriction
+    # held only while the question could be read back out of Redis. If the key
+    # had expired, had never been written, was malformed, or Redis was simply
+    # unreachable, the whole check was skipped and an OPERATOR could answer a
+    # spatial question — the one thing this route exists to prevent. Worse, it
+    # was skippable on purpose: wait out the key's TTL, then answer.
+    #
+    # A rule that is enforced only when a cache happens to be warm is not a
+    # rule. So: Redis first, the in-process pipeline second, and if neither can
+    # say what kind of question this is, admin is required. Failing closed
+    # costs an operator one refusal on a question nobody can classify; failing
+    # open costs the restriction entirely.
+    review_type = await _review_type(camera_id, body.review_id)
+    if review_type is None:
+        if role != "admin":
+            raise HTTPException(
+                403,
+                "Kyro can't tell what kind of question this is — it may be a spatial one, "
+                "which only an administrator may answer. Ask an administrator, or try again.",
+            )
+    elif review_type in _ADMIN_ONLY_REVIEWS and role != "admin":
+        raise HTTPException(403, "Only admins can answer spatial review questions")
 
     cam_result = await db.execute(select(Camera).where(Camera.camera_id == camera_id))
     cam = cam_result.scalar_one_or_none()
@@ -135,11 +194,11 @@ async def answer_review(
         to_persist = pipeline._movement.review_queue.drain_persist_queue()
     else:
         # External worker — send answer via Redis, reconstruct result from stored request
-        _redis.publish(
+        await _redis.publish(
             f"kyro:review_answer:{camera_id}",
             json.dumps({"type": "review_answer", "review_id": body.review_id, "answer": body.answer}),
         )
-        raw = _redis.get(f"kyro:review:{camera_id}:{body.review_id}")
+        raw = await _redis.get(f"kyro:review:{camera_id}:{body.review_id}")
         if raw:
             req_data = json.loads(raw)
             result_data = {
@@ -152,7 +211,7 @@ async def answer_review(
                 "bbox_hint":    req_data.get("bbox_hint"),
                 "position":     req_data.get("position", [0.0, 0.0]),
             }
-            _redis.delete(f"kyro:review:{camera_id}:{body.review_id}")
+            await _redis.delete(f"kyro:review:{camera_id}:{body.review_id}")
         # Build persistence item from the request data
         to_persist = []
         if result_data and result_data.get("movement") in ("stage_move", "exit", "absence"):
@@ -214,7 +273,7 @@ async def get_review_snapshot(
     role = claims.get("role", "viewer")
     if role not in ("admin", "operator"):
         raise HTTPException(403, "Insufficient role")
-    data = _redis_bytes.get(f"kyro:review_snap:{camera_id}:{review_id}")
+    data = await _redis_bytes.get(f"kyro:review_snap:{camera_id}:{review_id}")
     if not data:
         return Response(status_code=204)
     return Response(
@@ -246,10 +305,10 @@ async def get_pending_reviews(
     if pipeline:
         return {"pending": [r for r in pipeline._movement.review_queue.pending_requests() if visible(r)]}
 
-    keys    = _redis.keys(f"kyro:review:{camera_id}:*")
+    keys    = await _redis.keys(f"kyro:review:{camera_id}:*")
     pending = []
     for key in keys:
-        raw = _redis.get(key)
+        raw = await _redis.get(key)
         if raw:
             try:
                 r = json.loads(raw)
@@ -422,7 +481,7 @@ async def _persist_memory_item(
         )
 
         # Notify dashboard via Redis
-        _redis.publish(
+        await _redis.publish(
             f"kyro:camera:{camera_id}",
             json.dumps({
                 "type":    "zone_auto_created",
