@@ -35,18 +35,19 @@ For each camera, an administrator can:
 
 For Wi-Fi security cameras, press **Find cameras** (under **Wi-Fi cameras**). The camera computer at church lists the cameras on its Wi-Fi; click **Add** next to one and type the camera's own username and password. See [Wi-Fi security cameras](/guides/camera-setup#with-wi-fi-security-cameras-best-for-several-cameras) for the full steps.
 
-### Face matching across cameras
+### Face matching
 
-Where two cameras see the same part of the hall, the same person could be counted twice. With **face matching** switched on, someone whose face both cameras see clearly at the same time is counted once.
+Face matching answers one question Kyro cannot otherwise answer: is the person who just walked in somebody already counted? Without it, an usher holding the door all morning is counted every time they step through, and a choir in matching robes cannot be told apart at all.
 
-It's **off** until an administrator switches it on (Cameras page → **Face matching across cameras** → **Switch on…**), after ticking that the church has:
+It is **off** until the church has completed [Data Protection & Authorisation](/pages/data-protection) and the responsible person has approved it. That page is where the lawful basis, the Article 9 condition, the DPIA, the notices and the review date are recorded — and until it is approved and in date, Kyro will not switch this on.
 
-1. completed and approved a **data protection impact assessment (DPIA)** for face matching, and
-2. put clear **notices at every entrance** saying cameras use face matching to count attendance, and how to opt out.
+Even then it only runs **during a service** (Kyro records services by itself — see [Sessions](/pages/sessions)).
 
-Kyro records who switched it on and when. Even when switched on, it only runs **during a service** (Kyro records services by itself, see [Sessions](/pages/sessions)), and everything it used is wiped the moment the service ends.
+**What Kyro keeps.** No photographs. Each clearly visible face becomes a list of 128 numbers. Kyro does not know who anybody is and never compares a face against any list of people.
 
-What Kyro keeps: **no photos of faces**. Each clearly visible face becomes a number code that's compared between cameras for a few seconds and never saved. Kyro doesn't know who anyone is and doesn't compare faces with any list of people.
+Those numbers are kept for **the length of one service**, so that people are still recognised if the system restarts mid-service — they used to be held in memory only, and every restart lost them, which meant people already counted were counted again. They are deleted when the service ends, when a different service starts, the moment face matching is switched off, when the authorisation is withdrawn or expires, and **within twelve hours whatever else happens**.
+
+[Read the full arrangement →](/pages/data-protection)
 
 How well it works (measured on 6,000 standard face-photo pairs): when Kyro says two faces are the same person it was right every time, so it doesn't wrongly merge different people. It only works for faces turned towards a camera and big enough in the picture (about 30 pixels wide or more), so cameras facing the congregation from the front help most; cameras behind people mostly see the backs of heads.
 

@@ -53,6 +53,7 @@ export default defineConfig({
           { text: "Integrations", link: "/pages/integrations" },
           { text: "Notifications", link: "/pages/notifications" },
           { text: "Users", link: "/pages/users" },
+          { text: "Data Protection", link: "/pages/data-protection" },
         ],
       },
       {
