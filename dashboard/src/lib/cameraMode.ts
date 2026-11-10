@@ -277,7 +277,7 @@ export async function sendReport(
   faces: { error?: string | null; ready?: boolean } = {},
   /** Whatever has gone wrong in this browser since the last report. */
   problems: { where: string; what: string; detail?: string }[] = [],
-): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null }> {
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -310,6 +310,10 @@ export async function sendReport(
     service: typeof body.service === "string" ? body.service : null,
     // "auto", or an operator saying everybody at the door is arriving/leaving.
     doorMode: body.door_mode === "in" || body.door_mode === "out" ? body.door_mode : null,
+    // How many of this computer's sightings are one person seen by two of its
+    // cameras. A camera cannot know this; the website can, because it sees
+    // every camera at once. See seen_twice in worker/venue.js.
+    seenTwice: Math.max(0, Number(body.seen_twice) || 0),
   };
 }
 

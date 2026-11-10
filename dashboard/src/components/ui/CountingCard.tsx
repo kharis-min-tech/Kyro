@@ -15,7 +15,7 @@ export function CountingCard() {
   const c = useCounting();
   if (!c || !c.allowed) return null;
 
-  const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, demo, streamFor } = c;
+  const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, seenTwice, secondsPerCount, start, stop, demo, streamFor } = c;
   const on = phase === "running";
   const busy = phase === "starting";
   const live = views.filter((v) => v.streaming);
@@ -40,6 +40,16 @@ export function CountingCard() {
                 <span className="text-sm font-normal" style={{ color: "var(--text-secondary)" }}>
                   {total === 1 ? "person now" : "people now"}
                 </span>
+              </p>
+            )}
+            {/* Two cameras on one person is one person. Said out loud, or a
+                figure smaller than the cameras add up to looks like a bug —
+                which is exactly how the figure that DID add them up got
+                reported as one. */}
+            {on && seenTwice > 0 && (
+              <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
+                {seenTwice === 1 ? "One person is" : `${seenTwice} people are`} in view of two cameras at once,
+                and {seenTwice === 1 ? "is" : "are"} counted once.
               </p>
             )}
             <p className="text-xs mt-1 leading-relaxed" style={{ color: "var(--text-secondary)" }}>

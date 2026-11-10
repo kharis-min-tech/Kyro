@@ -387,6 +387,18 @@ export class IdentityRegistry {
       firstAt: now, lastAt: now,
       cameras: new Set([cameraId]),
       lastCamera: cameraId,
+      /**
+       * When each camera last saw this person.
+       *
+       * Not history — the last few seconds. It answers one question nothing
+       * else here can: at this moment, how many of these sightings are the
+       * SAME person? Two cameras pointed at one face reported "2 people now",
+       * because the only thing adding them up was addition.
+       *
+       * Transient on purpose: it is rebuilt by the next report and never
+       * written down.
+       */
+      seenAt: new Map([[cameraId, now]]),
       looks: [], faces: [],
       seen: 1,
       uncertain: 0,
@@ -440,12 +452,45 @@ export class IdentityRegistry {
     p.lastAt = now;
     p.lastCamera = cameraId;
     p.cameras.add(cameraId);
+    if (!p.seenAt) p.seenAt = new Map();
+    p.seenAt.set(cameraId, now);
     p.seen++;
     // Keep a few readings each, so somebody is recognised in the light they
     // are standing in rather than the light they first appeared in.
     if (o.look) keep(p.looks, o.look);
     if (o.face) keep(p.faces, o.face);
     return p;
+  }
+
+  /**
+   * At this moment, across these cameras: how many sightings there are, and
+   * how many DIFFERENT people they are.
+   *
+   * Two cameras on one face is two sightings and one person. Every figure
+   * that adds cameras together needs this, and nothing else in Kyro can
+   * answer it — a camera only knows what it can see, and the one thing it
+   * cannot know is whether the camera next to it is looking at the same
+   * person.
+   *
+   * It works whether or not face matching is switched on: the register uses
+   * whatever evidence it has, and a face is the strongest of several.
+   *
+   * `duplicates` is deliberately never more than it can prove. A camera
+   * sends at most the nearest forty people, so in a full hall the register
+   * sees fewer sightings than the cameras counted — subtracting duplicates
+   * it HAS found from the cameras' own total is then still right, where
+   * trusting its people count as the answer would lose everybody it never
+   * heard about.
+   */
+  seenNow(cameraIds, now = Date.now(), within = CO_SEEN_MS) {
+    let sightings = 0, people = 0;
+    for (const p of this.people.values()) {
+      if (!p.seenAt) continue;
+      let n = 0;
+      for (const [cam, at] of p.seenAt) if (cameraIds.has(cam) && now - at <= within) n++;
+      if (n) { sightings += n; people++; }
+    }
+    return { sightings, people, duplicates: Math.max(0, sightings - people) };
   }
 
   /** Everything the dashboard may show. No faces, no pictures, no names. */
@@ -539,6 +584,9 @@ export class IdentityRegistry {
       if (!id) continue;
       const seatKey = p.sk ?? p.seatKey ?? null;
       this.people.set(id, {
+        // Who was seen a moment ago is a question about now, not about the
+        // service so far, so it starts empty and the next report fills it.
+        seenAt: new Map(),
         id, firstAt: p.f ?? p.firstAt ?? 0, lastAt: p.l ?? p.lastAt ?? 0,
         seen: p.n ?? p.seen ?? 1, uncertain: p.u ?? p.uncertain ?? 0,
         cameras: new Set(p.c ?? p.cameras ?? []), lastCamera: p.k ?? p.lastCamera ?? "",

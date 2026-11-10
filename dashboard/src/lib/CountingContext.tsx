@@ -136,6 +136,9 @@ interface CountingValue {
   needsPermission: boolean;
   views: CamView[];
   total: number;
+  /** How many of the cameras' sightings were one person seen twice, already
+   *  taken off `total`. Shown so the figure is never a mystery. */
+  seenTwice: number;
   /** Slowest seconds-per-count across the cameras — 0 before the first count. */
   secondsPerCount: number;
   start: () => Promise<void>;
@@ -204,6 +207,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     // ahead of time, where there is no browser and no localStorage.
     try { freshApplied.current = Number(localStorage.getItem(FRESH_KEY)) || 0; } catch { /* fine without it */ }
   }, []);
+  /** How many of this computer's sightings are one person on two cameras, as
+   *  the website's register works it out. 0 until it has told us. */
+  const [seenTwice, setSeenTwice] = useState(0);
   const faceLoading = useRef(false);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -626,8 +632,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       });
       });
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current);
+        setSeenTwice(twice);
         problems.current = [];
         // A different service, or none: forget everybody seen in the last one.
         // People are remembered only for as long as one service runs — see
@@ -762,11 +769,20 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   }, [phase]);
 
   const streamFor = useCallback((key: string) => cams.current.get(key)?.stream ?? null, []);
-  const total = views.filter((v) => v.streaming).reduce((n, v) => n + v.count, 0);
+  // What this computer can see, with nobody counted twice.
+  //
+  // Adding the cameras up is the one thing a camera cannot do for itself: it
+  // knows what is in front of it and cannot know whether the camera beside it
+  // is looking at the same person. Two cameras pointed at one face read
+  // "2 people now". The website's register sees every camera at once and
+  // sends back how many of these sightings are the same person — see
+  // seen_twice in worker/venue.js.
+  const sum = views.filter((v) => v.streaming).reduce((n, v) => n + v.count, 0);
+  const total = Math.max(0, sum - Math.min(seenTwice, Math.max(0, sum - 1)));
   const secondsPerCount = views.reduce((m, v) => Math.max(m, v.secondsPerCount), 0);
 
   return (
-    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, secondsPerCount, start, stop, streamFor }}>
+    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, seenTwice, secondsPerCount, start, stop, streamFor }}>
       {children}
       {/* The cameras' own video elements: on the page everywhere, visible nowhere. */}
       <div ref={holder} aria-hidden style={{ position: "fixed", width: 1, height: 1, overflow: "hidden", opacity: 0, pointerEvents: "none" }} />

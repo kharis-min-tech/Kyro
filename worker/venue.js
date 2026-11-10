@@ -130,7 +130,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-9d722683b1dc";
+const VENUE_CODE = "venue-647493d334bd";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -915,6 +915,21 @@ export class VenueHub extends DurableObject {
       // this one yet puts its arrivals and departures back to zero — so "Start
       // fresh" pressed on a phone reaches the computer doing the counting.
       count_from: await this.get("count_from", 0),
+      /**
+       * How many of this computer's sightings right now are the same person
+       * seen by two of its cameras.
+       *
+       * The card on the Cameras page adds its cameras together, which is the
+       * one thing a camera cannot do for itself: two cameras pointed at one
+       * face said "2 people now". The register can tell — it is the only
+       * part of Kyro that sees every camera at once — so it tells the
+       * browser, and the browser takes it off its own total.
+       */
+      seen_twice: this.register
+        ? this.register.seenNow(new Set(Object.values(cams)
+            .filter((c) => c.device_id === device.id && c.location !== "entrance" && !c.hidden)
+            .map((c) => c.camera_id))).duplicates
+        : 0,
       // "auto" = work out which way each person went. "in"/"out" = an operator
       // has said everybody crossing is arriving, or leaving.
       door_mode: (await this.get("door_mode", null))?.mode ?? "auto",
@@ -1625,7 +1640,14 @@ export class VenueHub extends DurableObject {
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);
     const faceOn = (await this.privacy()).face_matching && !!serviceNow;
-    let twice = faceOn ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
+    const runningIds = new Set(running.map((z) => z.camera_id));
+    // How many of the cameras' sightings right now are the same person seen
+    // twice. The register answers this whether or not face matching is on —
+    // it uses whatever evidence it has, and a face is the strongest of
+    // several. Face codes alone are kept as a floor, because a clear face
+    // match is proof and the register is allowed to be cautious.
+    const overlap = this.register ? this.register.seenNow(runningIds).duplicates : 0;
+    let twice = Math.max(overlap, faceOn ? this.sameFaces(runningIds) : 0);
     // Overlap inside one room is already gone; only people seen in two
     // different rooms at once are left to take out, and never more than the
     // smaller rooms hold.
