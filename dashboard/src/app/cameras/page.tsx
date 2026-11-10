@@ -390,11 +390,17 @@ interface DetectedDevice {
   label: string;   // Human label, e.g. "FaceTime HD Camera"
 }
 
-function DetectedDeviceCard({ device, onPick, picked, onReject }: {
+function DetectedDeviceCard({ device, onPick, picked, onReject, action, isNew, already }: {
   device: DetectedDevice;
   onPick: () => void;
   picked: boolean;
   onReject?: () => void;
+  /** What picking it does. In Live mode it starts counting, there and then. */
+  action?: string;
+  /** Plugged in since this page was opened. */
+  isNew?: boolean;
+  /** Kyro is already counting with this one. */
+  already?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [state, setState] = useState<"idle" | "starting" | "preview" | "needs-tap" | "denied" | "error">("idle");
@@ -540,11 +546,18 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
       </div>
       <div className="p-3 flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-white truncate">{device.label}</p>
+          <p className="text-sm font-medium text-white truncate flex items-center gap-1.5">
+            <span className="truncate">{device.label}</span>
+            {isNew && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
+                style={{ background: "rgba(99,102,241,0.18)", color: "#a5b4fc" }}>Just plugged in</span>
+            )}
+          </p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
             {state === "preview" ? "Preview live — this is what the system sees"
               : state === "needs-tap" ? "Autoplay was blocked — tap the tile to play"
               : state === "starting" ? "Opening camera…"
+              : already ? "Kyro is counting with this camera already"
               : "Tap preview to confirm it's the right one"}
           </p>
         </div>
@@ -564,7 +577,7 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
         <button type="button" onClick={onPick}
           className="text-xs px-3 py-1.5 rounded-lg text-white font-medium"
           style={{ background: picked ? "#16a34a" : "#4f46e5" }}>
-          {picked ? <><Check size={12} className="inline -mt-0.5 mr-0.5" /> Picked</> : "Use this"}
+          {picked ? <><Check size={12} className="inline -mt-0.5 mr-0.5" /> Picked</> : already ? "Already counting" : action ?? "Use this"}
         </button>
         {onReject && (
           <button type="button" onClick={() => { stop(); onReject(); }}
@@ -582,7 +595,10 @@ function DetectedDeviceCard({ device, onPick, picked, onReject }: {
 
 function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCount: number }) {
   const { addCamera } = useCameras();
-  const startCounting = useCounting()?.start;
+  const counting = useCounting();
+  const startCounting = counting?.start;
+  /** Cameras this computer is already counting with, by the browser's own id. */
+  const countingKeys = (counting?.views ?? []).filter((v) => v.streaming).map((v) => v.deviceId);
   // Default-open the panel every time so the operator sees the mode
   // picker (plug-and-play, IP camera, wireless transmitter, advanced)
   // immediately. Previously it was collapsed whenever any camera already
@@ -630,6 +646,12 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
   // and dressing it up as a warning is what made a working camera look broken.
   const [detectNote, setDetectNote]   = useState<string | null>(null);
   const [scanned, setScanned]         = useState(false);
+  /** In Live mode: the camera counting was just switched on for. */
+  const [started, setStarted]         = useState<string | null>(null);
+  // Read after mounting, never while rendering: this page is also built ahead
+  // of time, where there is no browser and no localStorage to read it from.
+  const [edge, setEdge]               = useState(false);
+  useEffect(() => { setEdge(isEdgeLive()); }, []);
 
   const supportsMediaDevices = typeof navigator !== "undefined"
     && !!navigator.mediaDevices?.enumerateDevices
@@ -690,6 +712,26 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
   }, [supportsMediaDevices, baselineIds]);
 
   function pickDevice(d: DetectedDevice) {
+    // ── Live mode: one tap, and it is counting ──────────────────────────
+    //
+    // There was a form under this. Picking a camera filled in a stream
+    // address nobody can be expected to know — a USB camera has no address
+    // at all — and then waited for a name and an "Add camera" button further
+    // down the page. Walk away from that page and the pick was gone with it,
+    // which is exactly what happened: "i click use this, and i go to another
+    // section and the button has disappeared... so i cant see it on my
+    // system nor is it counting".
+    //
+    // In Live mode a camera plugged into this computer doesn't need a record
+    // typed in. It needs counting switched on, and then it adds ITSELF
+    // within a few seconds, with its own name, ready to be renamed with the
+    // pencil. So that is all picking it does.
+    if (isEdgeLive()) {
+      setPickedId(d.id);
+      setStarted(d.label || "that camera");
+      startCounting?.();
+      return;
+    }
     setPickedId(d.id);
     // Browser-source identifier the vision worker can distinguish from
     // RTSP input. Format: webcam://<deviceId> — reserved by this app.
@@ -804,7 +846,13 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                     Plugged into this device <span className="text-xs font-normal" style={{ color: "var(--text-muted)" }}>· recommended</span>
                   </p>
                   <p className="text-xs mt-0.5" style={{ color: "var(--text-tertiary)" }}>
-                    Phone or laptop camera, USB webcam. Kyro will scan and show you a live preview — just pick the one you want.
+                    {edge
+                      /* The honest answer to "how would one even be able to
+                         know their stream address": a camera plugged in here
+                         hasn't got one, and Kyro should never have asked. */
+                      ? <>USB webcam, capture card, action camera. <strong>No stream address needed</strong> — there isn&apos;t
+                          one. Kyro scans, shows you a live preview, and one tap starts counting with it.</>
+                      : <>Phone or laptop camera, USB webcam. Kyro will scan and show you a live preview — just pick the one you want.</>}
                   </p>
                 </div>
               </button>
@@ -964,7 +1012,9 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                       ) : (
                         <>
                           Connect your USB webcam, phone, or any camera to this device, then tap&nbsp;
-                          <strong>Scan</strong>. Kyro will show you only the one you just connected.
+                          <strong>Scan</strong>. Kyro lists every camera it can see here, with anything plugged in since
+                          you opened this page marked <em>just plugged in</em>.
+                          {edge && <> One tap on the one you want and it starts counting — there is nothing to fill in.</>}
                         </>
                       )}
                     </p>
@@ -993,9 +1043,9 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                 <>
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: "var(--text-muted)" }}>
-                      {newDevices.length > 0
-                        ? `New camera${newDevices.length !== 1 ? "s" : ""} detected`
-                        : allDevices.length > 0 ? "Cameras on this computer" : "Scan result"}
+                      {allDevices.length > 0
+                        ? `Camera${allDevices.length !== 1 ? "s" : ""} on this computer (${allDevices.length})`
+                        : "Scan result"}
                     </p>
                     <button type="button" onClick={detect} disabled={detecting}
                       className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg disabled:opacity-50"
@@ -1022,47 +1072,43 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                     </p>
                   )}
 
-                  {newDevices.length > 0 && (
+                  {started && (
+                    <div className="rounded-xl p-3 flex items-start gap-2"
+                      style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.35)" }}>
+                      <Check size={14} className="shrink-0 mt-0.5" style={{ color: "#4ade80" }} />
+                      <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                        <strong style={{ color: "var(--text-primary)" }}>Counting on this computer is on.</strong>{" "}
+                        It uses every camera plugged in here, including {started}. Each one appears in the list above by
+                        itself within a few seconds — give it a name and a room with the pencil. Nothing else to fill in:
+                        a camera plugged into this computer has no stream address.
+                        {" "}Keep this tab on screen while it counts.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Every camera found, in one list, with the ones plugged in
+                      since this page was opened flagged.
+                      
+                      It used to show ONLY the new ones, and hid everything
+                      else behind "Show already-connected cameras". So a camera
+                      that was already plugged in simply wasn't there — "the
+                      other goodmans camera wouldnt come up" — and the way to
+                      make it come up was a grey line of text that read like a
+                      footnote. A list of cameras should list the cameras. */}
+                  {allDevices.length > 0 && (
                     <div className="flex flex-col gap-3">
-                      {newDevices.map((d) => (
+                      {allDevices.map((d) => (
                         <DetectedDeviceCard
                           key={d.id}
                           device={d}
                           picked={pickedId === d.id}
+                          isNew={!!newDevices.find((n) => n.id === d.id)}
+                          already={edge && !!countingKeys.find((k) => k === d.id)}
+                          action={edge ? "Count with this" : "Use this"}
                           onPick={() => pickDevice(d)}
                           onReject={() => rejectDevice(d.id)}
                         />
                       ))}
-                    </div>
-                  )}
-
-                  {/* Escape hatch — the user may genuinely want to use a
-                      camera that was already connected before they opened
-                      this page. Hidden by default so built-ins don't clutter
-                      the common path. */}
-                  {allDevices.length > newDevices.length && (
-                    <div>
-                      <button type="button" onClick={() => setShowAll((v) => !v)}
-                        className="text-xs" style={{ color: "var(--text-muted)" }}>
-                        {showAll
-                          ? "Hide the full list"
-                          : `Show already-connected cameras (${allDevices.length - newDevices.length})`}
-                      </button>
-                      {showAll && (
-                        <div className="flex flex-col gap-3 mt-2">
-                          {allDevices
-                            .filter((d) => !newDevices.find((n) => n.id === d.id))
-                            .map((d) => (
-                              <DetectedDeviceCard
-                                key={d.id}
-                                device={d}
-                                picked={pickedId === d.id}
-                                onPick={() => pickDevice(d)}
-                                onReject={() => rejectDevice(d.id)}
-                              />
-                            ))}
-                        </div>
-                      )}
                     </div>
                   )}
                 </>
@@ -1080,6 +1126,38 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                   ← Back
                 </button>
               </div>
+              {/* Where the address comes from.
+                  
+                  The help pages have told people for months to "open How do I
+                  find my camera's stream address? on the page" — and there was
+                  no such thing on the page. Asked directly: "how would one
+                  even be able to know their stream address". */}
+              <details className="rounded-xl" style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                <summary className="px-3 py-2.5 text-xs cursor-pointer" style={{ color: "var(--text-secondary)" }}>
+                  How do I find my camera&apos;s stream address?
+                </summary>
+                <div className="px-3 pb-3 flex flex-col gap-2 text-xs leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
+                  <p>
+                    It is printed by the camera, not by Kyro. Open the camera&apos;s own app or its web page (the
+                    address on the sticker, typed into a browser on the same Wi-Fi), and look under
+                    <strong> Settings → Network → RTSP</strong>. Copy what it shows.
+                  </p>
+                  <p>
+                    It looks like <span className="font-mono" style={{ color: "var(--text-secondary)" }}>rtsp://192.168.1.64:554/stream1</span>.
+                    If the camera asks for a username and password, they go in front of the address:
+                    <span className="font-mono" style={{ color: "var(--text-secondary)" }}> rtsp://user:pass@192.168.1.64:554/stream1</span>.
+                  </p>
+                  <p>
+                    Can&apos;t find it? For most Wi-Fi cameras you don&apos;t need to: close this and use
+                    <strong> Find cameras</strong> under <em>Wi-Fi cameras</em> — the camera computer at church looks
+                    them up on its own network and you just type the camera&apos;s username and password.
+                  </p>
+                  <p style={{ color: "var(--text-muted)" }}>
+                    A camera plugged into a computer by USB has no stream address at all. Use
+                    <strong> Plugged into this device</strong> instead.
+                  </p>
+                </div>
+              </details>
               {transmitterPath === "network" && (
                 <div className="rounded-xl px-3 py-2.5 text-xs flex items-start gap-2"
                   style={{ background: "rgba(236,72,153,0.08)", border: "1px solid rgba(236,72,153,0.3)", color: "var(--text-tertiary)" }}>
@@ -1116,7 +1194,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
           {/* Shared name + zone + capacity form — shown once a mode is chosen
               and (for IP/advanced) a type is selected OR (for detect) a device
               is picked. Writes to the same storage either way. */}
-          {(mode === "ip" || mode === "advanced" || (mode === "detect" && pickedId)) && (
+          {(mode === "ip" || mode === "advanced" || (mode === "detect" && pickedId && !edge)) && (
             <form onSubmit={handleAdd} className="flex flex-col gap-3">
 
               {/* Name + zone */}

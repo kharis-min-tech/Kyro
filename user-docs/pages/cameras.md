@@ -31,6 +31,18 @@ For each camera, an administrator can:
 - tap the **pencil** to set its **name**, the **room** (zone) it covers and the room's **seat count**. Set the seat count so **Seats left** and the **filling up** phone alerts work.
 - tap **Switch off** to stop counting a camera you don't want. (A computer's own built-in camera is never used, so it never appears here.) Switched-off cameras are listed under **Switched off**, with **Switch back on**.
 
+### Adding a camera plugged into this computer
+
+**Add a camera → Plugged into this device → Scan.** Kyro lists every camera it can see on that computer, with anything plugged in since you opened the page marked *just plugged in*. Tap **Preview** to check it's the right one, then **Count with this**.
+
+That's the whole thing. Counting switches on, the camera appears in the list above within a few seconds with its own name, and you give it a proper name and a room with the **pencil**.
+
+::: tip There is no stream address
+A camera plugged into a computer by USB — a webcam, a capture card, an action camera — hasn't got a stream address, and Kyro doesn't ask for one. Stream addresses are only for cameras on the network, which don't plug into anything.
+:::
+
+If a camera doesn't appear in the scan: check it's pushed in at both ends and plugged straight into the computer rather than through a hub, close anything else that might be using it (Zoom, Teams, Photo Booth, FaceTime), then tap **Scan again**.
+
 ### Wi-Fi cameras: Find cameras
 
 For Wi-Fi security cameras, press **Find cameras** (under **Wi-Fi cameras**). The camera computer at church lists the cameras on its Wi-Fi; click **Add** next to one and type the camera's own username and password. See [Wi-Fi security cameras](/guides/camera-setup#with-wi-fi-security-cameras-best-for-several-cameras) for the full steps.
@@ -88,10 +100,11 @@ When you give an indoor camera a seat capacity, Kyro creates a starter seat layo
 
 ## Finding the stream address
 
-Open **How do I find my camera's stream address?** on the page for help.
+Only network cameras have one. Open **How do I find my camera's stream address?** on the Add a camera form for the full steps.
 
-- **IP / network camera:** open the camera's own app → Settings → Network, and copy the **RTSP** address.
-- **USB webcam:** enter **0** for the first webcam plugged into the Kyro computer, **1** for a second one.
+- **IP / network camera:** open the camera's own app, or its web page (the address on its sticker, typed into a browser on the same Wi-Fi) → **Settings → Network → RTSP**, and copy what it shows. It looks like `rtsp://192.168.1.64:554/stream1`. If the camera wants a username and password they go in front: `rtsp://user:pass@192.168.1.64:554/stream1`.
+- **Can't find it?** For most Wi-Fi cameras you don't need to — use **Find cameras** instead (above), and just type the camera's username and password.
+- **USB webcam:** there isn't one. Use **Plugged into this device**.
 
 ## Edit or delete a camera
 

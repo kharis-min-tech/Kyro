@@ -117,7 +117,11 @@ interface Cam {
 }
 
 export interface CamView {
-  key: string; label: string; count: number; people: Person[]; rawPeople: Person[];
+  key: string;
+  /** The browser's own id for this camera, so a page that has just scanned
+   *  for cameras can tell which of them are already being counted. */
+  deviceId: string;
+  label: string; count: number; people: Person[]; rawPeople: Person[];
   countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean;
 }
 
@@ -216,7 +220,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
 
   const refreshViews = useCallback(() => {
     setViews([...cams.current.values()].map((c) => ({
-      key: c.key, label: c.label, count: c.count, people: c.people, rawPeople: c.rawPeople,
+      key: c.key, deviceId: c.deviceId, label: c.label, count: c.count, people: c.people, rawPeople: c.rawPeople,
       countedAt: c.countedAt, secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
