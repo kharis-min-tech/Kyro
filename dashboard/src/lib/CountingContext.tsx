@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import {
   loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
-  sendReport, sendPicture, type Engine, type CameraReport, type Zone,
+  sendReport, sendPicture, sendPersonPicture, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
@@ -214,6 +214,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   /** How many of this computer's sightings are one person on two cameras, as
    *  the website's register works it out. 0 until it has told us. */
   const [seenTwice, setSeenTwice] = useState(0);
+  /**
+   * People Kyro wants a picture of, for "is this the same person?".
+   *
+   * The only place a picture of a particular person exists is here — the
+   * video never leaves the computer the camera is plugged into. So the
+   * website asks in its reply, and the next count sends what it can: the
+   * crop round that one track, if that track is still in shot. The website
+   * goes on asking for a minute, so a person who looked away for a second
+   * still gets their picture taken.
+   */
+  const wantPics = useRef<WantedPicture[]>([]);
   const faceLoading = useRef(false);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -599,6 +610,32 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // camera Kyro never noticed — and the one thing the operator needed was
       // the reason. It reports with its reason and no figures.
       const list = [...cams.current.values()];
+
+      // Crops Kyro has asked for, sent before the report is built and kept
+      // well away from it.
+      //
+      // A routine report carries numbers and nothing else — eight for an
+      // appearance, and a face code only while face matching is on. That is
+      // guarded by a test, and the guard reads the report-building code, so
+      // anything to do with a picture stays out of it. A crop only ever
+      // leaves this computer because somebody is being asked to look at it,
+      // one person at a time, by name of question. See sendPersonPicture.
+      if (wantPics.current.length) {
+        for (const c of list) {
+          if (!c.grabCanvas || !c.stream) continue;
+          const mine = wantPics.current.filter((w) => w.key === c.key);
+          if (!mine.length) continue;
+          const here = c.tracker.seenNow();
+          for (const want of mine) {
+            const who = here.find((x) => x.track === want.track);
+            if (!who) continue;      // looked away; the website asks again
+            sendPersonPicture(want.id, want.side, c.grabCanvas, who.box as [number, number, number, number])
+              .catch(() => { /* a missing picture only means the question isn't asked */ });
+            wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
+          }
+        }
+      }
+
       const reports: CameraReport[] = list.map((c) => {
         if (!c.stream || !c.video) return {
           key: c.key, label: c.label, current: 0, peak: c.peak,
@@ -663,8 +700,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           && !!c.countedAt && Date.now() - c.countedAt < 60_000)
         .map((c) => c.label);
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);
+        // Merged rather than replaced: the website keeps asking until the
+        // pictures arrive, and one that is already on its way must not be
+        // dropped because the next reply happened to leave it out.
+        for (const w of wantPictures) {
+          if (!wantPics.current.some((x) => x.id === w.id && x.side === w.side)) wantPics.current.push(w);
+        }
+        wantPics.current = wantPics.current.slice(-24);
         setSeenTwice(twice);
         problems.current = [];
         // A different service, or none: forget everybody seen in the last one.

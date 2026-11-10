@@ -267,6 +267,9 @@ export interface CameraReport {
 
 export type Zone = [number, number, number, number];
 
+/** A crop of one person that Kyro wants, for a question somebody will answer. */
+export interface WantedPicture { id: string; side: "a" | "b"; key: string; track: number }
+
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
  *  the AI must be before someone is counted (the admin's Counting sensitivity). */
@@ -285,7 +288,7 @@ export async function sendReport(
    *  a problem is only ever cleared by the thing that failed working again,
    *  and nothing was saying when a camera came right. */
   well: string[] = [],
-): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number }> {
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number ; wantPictures: WantedPicture[] }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -322,6 +325,14 @@ export async function sendReport(
     // cameras. A camera cannot know this; the website can, because it sees
     // every camera at once. See seen_twice in worker/venue.js.
     seenTwice: Math.max(0, Number(body.seen_twice) || 0),
+    // People Kyro wants a human to look at. See sendPersonPicture.
+    wantPictures: (Array.isArray(body.want_pictures) ? body.want_pictures : [])
+      .filter((w: unknown): w is WantedPicture => {
+        const x = w as WantedPicture;
+        return !!x && typeof x.id === "string" && (x.side === "a" || x.side === "b")
+          && typeof x.key === "string" && Number.isFinite(x.track);
+      })
+      .slice(0, 24),
   };
 }
 
@@ -342,6 +353,42 @@ export async function sendSeats(key: string, seats: unknown[], stage: "top" | "b
     body: JSON.stringify({ camera: key, seats, stage }),
   });
   return res.ok ? res.json().catch(() => null) : null;
+}
+
+/**
+ * A crop of one person, for an "is this the same person?" question.
+ *
+ * The only place a picture of a particular person exists is the browser doing
+ * the counting — the video never leaves the computer it is plugged into. So
+ * when Kyro wants a human to look at two sightings, it asks here.
+ *
+ * Cropped to the box round that one person and nobody else, with a little
+ * room around them so a coat and a build are visible, and small. It is
+ * deleted the moment the question is answered.
+ */
+export async function sendPersonPicture(
+  id: string, side: "a" | "b", canvas: HTMLCanvasElement,
+  box: [number, number, number, number],
+): Promise<void> {
+  const dev = savedDevice();
+  if (!dev) return;
+  const [x1, y1, x2, y2] = box;
+  const pad = Math.max(8, (x2 - x1) * 0.25);
+  const sx = Math.max(0, Math.round(x1 - pad)), sy = Math.max(0, Math.round(y1 - pad));
+  const sw = Math.min(canvas.width - sx, Math.round(x2 - x1 + pad * 2));
+  const sh = Math.min(canvas.height - sy, Math.round(y2 - y1 + pad * 2));
+  if (sw < 8 || sh < 8) return;
+  // Big enough to recognise somebody by, small enough to be nothing else.
+  const scale = Math.min(1, 320 / sw);
+  const out = document.createElement("canvas");
+  out.width = Math.max(1, Math.round(sw * scale));
+  out.height = Math.max(1, Math.round(sh * scale));
+  out.getContext("2d")!.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  const blob = await new Promise<Blob | null>((r) => out.toBlob(r, "image/jpeg", 0.72));
+  if (!blob) return;
+  await fetch(`/api/devices/question-snapshot?id=${encodeURIComponent(id)}&side=${side}`, {
+    method: "PUT", headers: { "Content-Type": "image/jpeg", Authorization: `Bearer ${dev.token}` }, body: blob,
+  }).catch(() => {});
 }
 
 export async function sendPicture(key: string, canvas: HTMLCanvasElement): Promise<void> {

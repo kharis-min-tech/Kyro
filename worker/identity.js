@@ -103,6 +103,21 @@ export const LOOK_ALONE = 0.92;
 /** An appearance match weaker than this is never used, however clear. */
 export const LOOK_UNCERTAIN = 0.82;
 /**
+ * Below this, two appearances are not worth asking a human about.
+ *
+ * Measured. Two readings of the SAME person at different distances and poses
+ * ran from about 0.69 (across the room, turned away) to 0.95 (same spot,
+ * facing the same way). Two DIFFERENT people ran from 0.06 to about 0.75.
+ * The two ranges overlap between roughly 0.69 and 0.75 — and an overlap is
+ * precisely where no threshold can help and a person glancing at two pictures
+ * can settle it instantly.
+ *
+ * So: a new entry in the register, created while somebody on file scored this
+ * well, is worth one question. Below it, Kyro is not guessing — they are
+ * plainly different people and asking would be noise.
+ */
+export const LOOK_ASK = 0.7;
+/**
  * A uniform.
  *
  * The choir wear the same robes. The ushers wear the same jackets. When this
@@ -316,6 +331,18 @@ export class IdentityRegistry {
      */
     this.onSameChair = opts.onSameChair ?? (() => {});
     this.overlapping = opts.overlapping ?? ((a, b) => this.zoneOf(a) === this.zoneOf(b));
+    /**
+     * How alike two appearances have to be to call them one person.
+     *
+     * LOOK_SAME is a measurement, not a law: it came from simulated readings
+     * whose spread is tighter than a real camera's, and the note on it says
+     * so. A church that answers "is this the same person?" is handing Kyro
+     * labelled examples from its own hall, its own lighting and its own
+     * coats — which is exactly what sets a threshold properly. So a venue
+     * can carry its own, and the measured one is the starting point rather
+     * than the answer. See askLearning() in worker/venue.js.
+     */
+    this.lookSame = typeof opts.lookSame === "number" ? opts.lookSame : LOOK_SAME;
     this.people = new Map();      // id → identity
     this.byTrack = new Map();     // "camera#track" → { id, at }
     /**
@@ -339,6 +366,39 @@ export class IdentityRegistry {
      * register once Kyro has had time to find out who they are.
      */
     this.waiting = new Map();
+    /**
+     * Decisions Kyro is not sure about, waiting to be asked about.
+     *
+     * ── Why this exists ──────────────────────────────────────────────────
+     *
+     * "uno the system can rather ask me questions like is this the same
+     * person? and screenshot them just for the AI count to be more trained
+     * and for it to not double count".
+     *
+     * Kyro already knows when it is guessing. A sighting that matches
+     * somebody's coat well but not clearly, a sighting that matches two
+     * filed people equally, a sighting that matches nobody and becomes a new
+     * person while scoring just under the line — each of those is a coin
+     * toss that silently becomes a number on a screen. Until now the only
+     * trace was a counter called "uncertain".
+     *
+     * A human being can settle any of them in a second, from two pictures.
+     * So the guess is still made — the live figure must never stall waiting
+     * for an answer — and the question is put to somebody. When the answer
+     * comes back, the register is corrected: two entries become one, or one
+     * becomes two, and the attendance figure moves with it.
+     *
+     * Drained by the venue hub, which has somewhere to put them and a way to
+     * ask the camera for pictures. Nothing here ever waits for an answer.
+     */
+    this.asks = [];
+    /**
+     * Pairs an operator has already ruled on, so the same two people are not
+     * asked about over and over. "camera#track|camera#track" → true (same) or
+     * false (different). Lives and dies with the service, like everything
+     * else here.
+     */
+    this.ruled = new Map();
     this.nextId = 1;
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
     this.service = null;
@@ -357,6 +417,8 @@ export class IdentityRegistry {
     this.byTrack.clear();
     this.seats.clear();
     this.waiting.clear();
+    this.asks = [];
+    this.ruled.clear();
     this.nextId = 1;
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
   }
@@ -464,8 +526,37 @@ export class IdentityRegistry {
       return bestAgainst(p.looks, lookReads[lookReads.length - 1], alikeLook);
     };
 
-    /** Matched after all: it was never a new person, so it stops waiting. */
+      /** Matched after all: it was never a new person, so it stops waiting. */
     const matched = (id) => { this.waiting.delete(wkey); return id; };
+
+    /**
+     * Kyro has guessed. Ask somebody whether it guessed right.
+     *
+     * The guess stands meanwhile: a figure that stalls waiting for an answer
+     * is worse than a figure that is occasionally one out and says so.
+     *
+     * @param guess  "same" (this sighting was attached to `other`) or
+     *               "different" (it became somebody new)
+     * @param other  the identity it was weighed against
+     * @param why    what the evidence actually was, for the record
+     */
+    const askAbout = (guess, other, why) => {
+      if (!other) return;
+      const pair = `${cameraId}#${o.track}|${other.id}`;
+      if (this.ruled.has(pair)) return;              // already settled
+      if (this.asks.some((a) => a.pair === pair)) return;
+      this.ruled.set(pair, null);                    // asked, not yet answered
+      this.asks.push({
+        pair, at: now, guess,
+        camera: cameraId, track: o.track,
+        person: other.id,
+        /** The camera and track the OTHER person was last seen on, so a
+         *  picture of them can be asked for too. */
+        other_camera: other.lastCamera ?? cameraId, other_track: other.lastTrack ?? null,
+        ...why,
+      });
+      if (this.asks.length > 40) this.asks.shift();
+    };
 
     const scored = [];
     for (const p of this.people.values()) {
@@ -491,7 +582,7 @@ export class IdentityRegistry {
     // A uniform: too many people who are HERE look like this one, so what
     // they are wearing says nothing about which of them this is. Only people
     // seen in the last minute count towards it — see UNIFORM_SEEN_MS.
-    const alike = scored.filter((x) => x.look >= LOOK_SAME && now - x.p.lastAt <= UNIFORM_SEEN_MS).length;
+    const alike = scored.filter((x) => x.look >= this.lookSame && now - x.p.lastAt <= UNIFORM_SEEN_MS).length;
     const uniform = alike >= UNIFORM_CROWD;
     if (uniform) this.stats.uniformed++;
 
@@ -516,7 +607,7 @@ export class IdentityRegistry {
       const clear = looks.length < 2
         ? best.look + help >= LOOK_ALONE
         : best.look - second + help >= LOOK_MARGIN;
-      if (best.look + help >= LOOK_SAME && clear) {
+      if (best.look + help >= this.lookSame && clear) {
         this.stats.matchedByLook++;
         if (best.sameSeat) this.stats.helpedBySeat++;
         return matched(this.touch(best.p.id, cameraId, o, now, w).id);
@@ -526,6 +617,7 @@ export class IdentityRegistry {
       // exactly like somebody arriving, while a flagged merge can be checked.
       if (best.look >= LOOK_UNCERTAIN && clear) {
         this.stats.uncertain++;
+        askAbout("same", best.p, { score: Math.round(best.look * 1000) / 1000, had_face: faceReads.length > 0, reason: "close on appearance" });
         const p = this.touch(best.p.id, cameraId, o, now, w);
         p.uncertain++;
         return matched(p.id);
@@ -552,10 +644,12 @@ export class IdentityRegistry {
       // however the duplicates are eventually sorted out. In a choir stand
       // the look-alikes ARE present, so this does not apply and the uniform
       // rule above has already taken over.
-      const rivals = looks.filter((x) => x.look >= LOOK_SAME);
+      const rivals = looks.filter((x) => x.look >= this.lookSame);
       const anyHere = rivals.some((x) => now - x.p.lastAt <= UNIFORM_SEEN_MS);
-      if (rivals.length > 1 && !anyHere && best.look >= LOOK_SAME) {
+      if (rivals.length > 1 && !anyHere && best.look >= this.lookSame) {
         this.stats.mergedLookAlikes++;
+        askAbout("same", best.p, { score: Math.round(best.look * 1000) / 1000, had_face: faceReads.length > 0,
+          reason: `${rivals.length} people on file look like this, and none of them is here` });
         const p = this.touch(best.p.id, cameraId, o, now, w);
         p.uncertain++;
         return matched(p.id);
@@ -591,7 +685,32 @@ export class IdentityRegistry {
     }
     if (w.seen < (w.faces ? NEW_PERSON_WITH_FACE : NEW_PERSON_NO_FACE)) return null;
     this.waiting.delete(wkey);
-    return this.create(cameraId, o, now, w).id;
+    const made = this.create(cameraId, o, now, w);
+    // Somebody new — but somebody on file looked quite like them, or everyone
+    // in the room is dressed the same and appearance was refused outright.
+    // This is the half that causes double counting, and the half a person can
+    // settle from two pictures in a second. See LOOK_ASK.
+    const near = (uniform ? scored.filter((x) => x.look > 0).sort((a, b) => b.look - a.look)[0] : looks[0]) ?? null;
+    if (near && near.look >= LOOK_ASK) {
+      const pair = `${cameraId}#${o.track}|${near.p.id}`;
+      if (!this.ruled.has(pair) && !this.asks.some((a) => a.pair === pair)) {
+        this.ruled.set(pair, null);
+        this.asks.push({
+          pair, at: now, guess: "different",
+          camera: cameraId, track: o.track, person: near.p.id,
+          other_camera: near.p.lastCamera ?? cameraId, other_track: near.p.lastTrack ?? null,
+          score: Math.round(near.look * 1000) / 1000,
+          had_face: faceReads.length > 0,
+          reason: uniform
+            ? "everybody here is dressed alike, so their clothes said nothing"
+            : "close on appearance, but not close enough to be sure",
+          /** The new entry, so answering "same" can undo it. */
+          made: made.id,
+        });
+        if (this.asks.length > 40) this.asks.shift();
+      }
+    }
+    return made.id;
   }
 
   /**
@@ -616,6 +735,9 @@ export class IdentityRegistry {
       firstAt: now, lastAt: now,
       cameras: new Set([cameraId]),
       lastCamera: cameraId,
+      /** …and the camera's own id for them there, so a picture of this
+       *  person can be asked for when Kyro wants a human to look. */
+      lastTrack: o.track ?? null,
       /**
        * When each camera last saw this person.
        *
@@ -687,6 +809,7 @@ export class IdentityRegistry {
     this.setSeat(p, cameraId, o.seat ?? null, now);
     p.lastAt = now;
     p.lastCamera = cameraId;
+    p.lastTrack = o.track ?? p.lastTrack ?? null;
     p.cameras.add(cameraId);
     if (!p.seenAt) p.seenAt = new Map();
     p.seenAt.set(cameraId, now);
@@ -725,6 +848,131 @@ export class IdentityRegistry {
    * trusting its people count as the answer would lose everybody it never
    * heard about.
    */
+  /**
+   * Questions waiting to be put to somebody, taken away by the caller.
+   *
+   * Drained rather than read, because the hub stores them and must not end up
+   * asking the same thing twice.
+   */
+  takeAsks() {
+    const out = this.asks;
+    this.asks = [];
+    return out;
+  }
+
+  /**
+   * Somebody has looked at two pictures and said.
+   *
+   * This is where an answer becomes an attendance figure. Kyro's guess was
+   * already applied — the live count never waits — so the work here is only
+   * ever to undo a guess that turned out wrong:
+   *
+   *   guessed "same", answer "different"  → the sighting is pulled off that
+   *                                         person and becomes their own
+   *                                         entry. Attendance goes up by one.
+   *   guessed "different", answer "same"  → the entry Kyro invented is folded
+   *                                         back in. Attendance goes down by
+   *                                         one.
+   *
+   * Either way the pair is remembered, so the same two are never asked about
+   * again for the rest of the service.
+   *
+   * @returns what actually changed, for the page to report honestly.
+   */
+  answerAsk(ask, same, now = Date.now()) {
+    if (!ask || !ask.pair) return { changed: false };
+    this.ruled.set(ask.pair, !!same);
+    const wasRight = (ask.guess === "same") === !!same;
+    if (wasRight) return { changed: false, agreed: true };
+
+    if (same) {
+      // Kyro made somebody new; they were the same person after all.
+      const keep = this.people.get(ask.person);
+      const drop = this.people.get(ask.made ?? this.idOfTrack(ask.camera, ask.track));
+      if (!keep || !drop || keep.id === drop.id) return { changed: false, agreed: false };
+      this.mergeInto(keep.id, drop.id);
+      this.stats.correctedMerges = (this.stats.correctedMerges || 0) + 1;
+      return { changed: true, agreed: false, action: "merged", people: this.size };
+    }
+    // Kyro attached the sighting to somebody; they were two different people.
+    const made = this.splitTrack(ask.camera, ask.track, now);
+    if (!made) return { changed: false, agreed: false };
+    this.stats.correctedSplits = (this.stats.correctedSplits || 0) + 1;
+    return { changed: true, agreed: false, action: "split", people: this.size };
+  }
+
+  /** Which identity a camera's track currently belongs to. */
+  idOfTrack(cameraId, track) {
+    return this.byTrack.get(`${cameraId}#${track}`)?.id ?? null;
+  }
+
+  /**
+   * Two entries were one person. Fold the second into the first.
+   *
+   * Everything the dropped entry knew is kept — its readings, the cameras
+   * that saw it, the seat it was in, and the earlier of the two first-seen
+   * times, because that is when this person actually arrived.
+   */
+  mergeInto(keepId, dropId) {
+    const keep = this.people.get(keepId), drop = this.people.get(dropId);
+    if (!keep || !drop || keep === drop) return false;
+    keep.firstAt = Math.min(keep.firstAt, drop.firstAt);
+    if (drop.lastAt > keep.lastAt) {
+      keep.lastAt = drop.lastAt; keep.lastCamera = drop.lastCamera; keep.lastTrack = drop.lastTrack;
+    }
+    for (const c of drop.cameras) keep.cameras.add(c);
+    if (drop.seenAt) { keep.seenAt ??= new Map(); for (const [c, at] of drop.seenAt) keep.seenAt.set(c, Math.max(keep.seenAt.get(c) ?? 0, at)); }
+    for (const l of drop.looks) keep.looks.push(l);
+    keep.looks.splice(0, Math.max(0, keep.looks.length - LOOK_SAMPLES));
+    for (const f of drop.faces) keep.faces.push(f);
+    keep.faces.splice(0, Math.max(0, keep.faces.length - SAMPLES));
+    keep.seen += drop.seen;
+    keep.uncertain += drop.uncertain;
+    if (!keep.seatKey && drop.seatKey) {
+      keep.seat = drop.seat; keep.seatKey = drop.seatKey; keep.seatAt = drop.seatAt; keep.seatCamera = drop.seatCamera;
+    }
+    // Every track that pointed at the dropped entry now points at the kept one.
+    for (const [k, v] of this.byTrack) if (v.id === dropId) v.id = keepId;
+    for (const [k, v] of this.seats) if (v === dropId) this.seats.set(k, keepId);
+    this.people.delete(dropId);
+    return true;
+  }
+
+  /**
+   * That sighting was somebody else. Give it an entry of its own.
+   *
+   * Only the track is moved, with the readings it is carrying now — the
+   * person it was wrongly attached to keeps everything else, because
+   * everything else was really theirs.
+   */
+  splitTrack(cameraId, track, now = Date.now()) {
+    const key = `${cameraId}#${track}`;
+    const link = this.byTrack.get(key);
+    const from = link && this.people.get(link.id);
+    if (!from) return null;
+    const p = {
+      id: this.nextId++,
+      firstAt: now, lastAt: now,
+      cameras: new Set([cameraId]),
+      lastCamera: cameraId, lastTrack: track,
+      seenAt: new Map([[cameraId, now]]),
+      // The newest reading each: the one that was in front of the camera when
+      // the question was asked.
+      looks: from.looks.slice(-1), faces: from.faces.slice(-1),
+      seen: 1, uncertain: 0,
+      seat: null, seatKey: null, seatAt: 0, seatCamera: "",
+    };
+    this.people.set(p.id, p);
+    link.id = p.id;
+    if (from.seatKey && from.seatCamera === cameraId) {
+      // The seat went with the sighting, so it goes with the split.
+      this.seats.set(from.seatKey, p.id);
+      p.seat = from.seat; p.seatKey = from.seatKey; p.seatAt = from.seatAt; p.seatCamera = from.seatCamera;
+      from.seat = null; from.seatKey = null; from.seatAt = 0; from.seatCamera = "";
+    }
+    return p.id;
+  }
+
   /**
    * How many of the people on the register are still here.
    *

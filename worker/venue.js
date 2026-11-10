@@ -10,7 +10,7 @@
  */
 import { DurableObject } from "cloudflare:workers";
 import { notifyCount } from "./index.js";
-import { IdentityRegistry } from "./identity.js";
+import { IdentityRegistry, LOOK_SAME } from "./identity.js";
 import { Building } from "./building.js";
 import { Trouble, cameraHealth } from "./health.js";
 
@@ -158,7 +158,28 @@ const MIN_FPS_FOR_DOOR = 3;       // a doorway needs more: people cross it in a 
 const MOVED_AFTER_MS = 10 * 60_000;  // a camera must be gone this long before another computer claims it
 const MAX_WEB_DEVICES = 50;       // Camera Mode browsers kept at once
 const FACE_SAME = 0.5;                // SFace cosine similarity for "same person" (strict: no false merges)
-const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question"];
+const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_question", "zone_proposal", "altar_call_question", "seat_question", "same_person_question"];
+/**
+ * How long Kyro waits for a picture of each side of "is this the same
+ * person?" before giving up on the question.
+ *
+ * The pictures come from the browser doing the counting, which is asked for
+ * them in its next reply — a few seconds away. Without both, the question is
+ * two names and a number, which nobody can answer, so it is not shown.
+ */
+const ASK_PICTURE_WAIT_MS = 60_000;
+/** How many "same person?" questions are kept waiting at once. More than this
+ *  on screen is not a job anybody will finish. */
+const MOST_ASKS = 12;
+/**
+ * How many answers before Kyro will move the line it matches people on.
+ *
+ * Few enough that a church sees it happen within a service or two of
+ * answering; many enough that one odd answer, or one unusual pair of coats,
+ * cannot move it. Below this the answers are still collected and still shown
+ * — they simply do not change anything yet.
+ */
+const ANSWERS_BEFORE_LEARNING = 25;
 /**
  * Arrivals and departures for one recorded reading.
  *
@@ -511,7 +532,10 @@ export class VenueHub extends DurableObject {
       const qm = p.match(/^\/api\/live\/questions\/([\w-]+)\/(answer|snapshot)$/);
       // A question's photo shows people in the building: only those it's asked of may see it.
       if (qm && role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators see AI questions" }, 403);
-      if (qm && qm[2] === "snapshot" && request.method === "GET") return this.getQuestionSnapshot(qm[1], role);
+      if (qm && qm[2] === "snapshot" && request.method === "GET") {
+        const side = ["a", "b"].includes(url.searchParams.get("side")) ? url.searchParams.get("side") : null;
+        return this.getQuestionSnapshot(qm[1], role, side);
+      }
       if (qm && qm[2] === "answer" && request.method === "POST") return this.answerQuestion(qm[1], role, user, request);
       if (p === "/api/live/rota" && request.method === "GET") return json(await this.get("rota", []));
       if (p.startsWith("/api/live/zones/") && request.method === "GET") return json((await this.get("seat_zones", {}))[decodeURIComponent(p.split("/").pop())] ?? []);
@@ -600,6 +624,11 @@ export class VenueHub extends DurableObject {
           ? await this.putAsideAll(user)
           : await this.putAside(clean(b.where, 60), b.what ? clean(b.what, 200) : null, user);
         return json({ put_aside: n });
+      }
+      // What the "is this the same person?" answers add up to.
+      if (p === "/api/live/learning" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json({ ...(await this.askLearning()), changes: await this.get("look_same_log", []) });
       }
       if (p === "/api/live/identity" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
@@ -976,6 +1005,10 @@ export class VenueHub extends DurableObject {
     // Requests waiting for this computer ("Find cameras", "Add this camera").
     const jobs = await this.jobsFor(device.id);
     if (newQuestions.length) await this.addQuestions(newQuestions);
+    // "Is this the same person?" — the register's own guesses, turned into
+    // questions somebody can answer from two pictures. See askAbout in
+    // worker/identity.js and makeAsks below.
+    const wantPictures = await this.makeAsks(cams, now);
     // Answers to the AI's questions, for this computer's cameras (delivered once).
     const answers = await this.takeAnswers(device.id);
     // Rota holds and stage / ignore areas, per camera (small; sent every time).
@@ -1005,6 +1038,11 @@ export class VenueHub extends DurableObject {
       if (a) seat_layouts[c.key] = `${a.id}.${a.version ?? 0}`;
     }
     return json({ ok: true, allowed, disabled: off, streams, ignore_zones, jobs, seat_layouts, answers, rota: rotaFor, seat_zones: zonesFor, doorways,
+      // Crops of particular people Kyro wants a human to look at. Only ever
+      // for this computer's own cameras, and only while the question is
+      // waiting — see ASK_PICTURE_WAIT_MS.
+      want_pictures: wantPictures.filter((w) => w.camera_id.startsWith(`${device.id}:`))
+        .map((w) => ({ id: w.id, side: w.side, key: w.camera_id.slice(device.id.length + 1), track: w.track })),
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
       // When a fresh start was last asked for. A counter that hasn't applied
       // this one yet puts its arrivals and departures back to zero — so "Start
@@ -1084,6 +1122,9 @@ export class VenueHub extends DurableObject {
         // two seats are one chair. The building decides what to do with it,
         // and never merges anything without an administrator.
         onSameChair: (a, b) => { this.building?.sameChairEvidence(a, b, true); },
+        // The line this church's own answers say is right, if it has given
+        // Kyro enough of them. See askLearning() and ANSWERS_BEFORE_LEARNING.
+        lookSame: (await this.get("look_same", null))?.value ?? LOOK_SAME,
       });
       const saved = await this.get("register", null);
       if (saved && saved.service === service) this.register.restore(saved);
@@ -2581,28 +2622,117 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("questions", Object.fromEntries(keep.map((q) => [q.review_id, q])));
   }
 
+  /**
+   * The register's guesses, turned into questions a human can answer.
+   *
+   * ── Why ─────────────────────────────────────────────────────────────────
+   *
+   * "uno the system can rather ask me questions like is this the same person?
+   * and screenshot them just for the AI count to be more trained and for it
+   * to not double count".
+   *
+   * Kyro already knows when it is guessing — a coat that matched well but not
+   * clearly, a new entry made while somebody on file looked almost the same.
+   * Those guesses became numbers on a screen with nothing to show for them.
+   * Now each one becomes a question with two pictures, and the answer
+   * corrects the register there and then.
+   *
+   * The pictures are asked for from the browser doing the counting, which is
+   * the only thing that has them. A question with only one side, or none, is
+   * never shown: two names and a similarity score is not something anybody
+   * can answer.
+   *
+   * @returns what pictures to ask for, for this report's reply.
+   */
+  async makeAsks(cams, now) {
+    const wanted = [];
+    const asks = this.register?.takeAsks?.() ?? [];
+    if (asks.length) {
+      const qs = await this.get("questions", {});
+      let live = Object.values(qs).filter((q) => q.review_type === "same_person_question" && !q.answer).length;
+      for (const a of asks) {
+        if (live >= MOST_ASKS) break;
+        const id = `same-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
+        const cam = cams[a.camera];
+        const otherCam = cams[a.other_camera] ?? cam;
+        qs[id] = {
+          type: "review_request", review_id: id, camera_id: a.camera,
+          review_type: "same_person_question", target_role: "operator",
+          question: "Is this the same person?",
+          // What Kyro did and why, in the words of the thing that did it.
+          guess: a.guess, score: a.score ?? null, had_face: !!a.had_face,
+          why: clean(a.reason, 120),
+          where: clean(cam?.zone_name || cam?.name || "", 60),
+          other_where: clean(otherCam?.zone_name || otherCam?.name || "", 60),
+          /** What to correct if the answer disagrees. Never shown. */
+          ask: { pair: a.pair, guess: a.guess, camera: a.camera, track: a.track, person: a.person, made: a.made ?? null },
+          track_id: a.track, position: [0, 0], bbox_hint: null,
+          confidence: a.score ?? 0, best_guess: a.guess === "same" ? "Same person" : "Different people",
+          options: ["Same person", "Different people", "Not sure"],
+          created_at: now / 1000,
+          /** No pictures yet. Until both arrive the question is not shown. */
+          pictures: 0,
+        };
+        live++;
+        wanted.push({ id, side: "a", camera_id: a.camera, track: a.track });
+        if (a.other_track !== null && a.other_track !== undefined) {
+          wanted.push({ id, side: "b", camera_id: a.other_camera, track: a.other_track });
+        }
+      }
+      await this.ctx.storage.put("questions", qs);
+      this.wantPictures = wanted;
+      this.wantPicturesAt = now;
+    }
+    // Keep asking until the pictures arrive or the question gives up.
+    if (!wanted.length && this.wantPictures?.length && now - (this.wantPicturesAt ?? 0) < ASK_PICTURE_WAIT_MS) {
+      return this.wantPictures;
+    }
+    if (!wanted.length && now - (this.wantPicturesAt ?? 0) >= ASK_PICTURE_WAIT_MS) this.wantPictures = [];
+    return wanted;
+  }
+
   async listQuestions(role) {
     const now = Date.now() / 1000;
     return Object.values(await this.get("questions", {}))
       .filter((q) => !q.answer && now - q.created_at < QUESTION_TTL_MS / 1000 && (role === "admin" || q.target_role !== "admin"))
+      // "Is this the same person?" without the two pictures is two names and
+      // a number. Nobody can answer that, so it is not asked.
+      .filter((q) => q.review_type !== "same_person_question" || (q.pictures ?? 0) >= 2)
       .sort((a, b) => a.created_at - b.created_at)
       .map(({ answer, answered_by, answered_at, ...q }) => q);
   }
 
   async questionSnapshot(device, request, url) {
     const id = clean(url.searchParams.get("id"), 60);
+    // "Is this the same person?" has two pictures, not one. Any other
+    // question still has exactly one, under its own key, as before.
+    const side = ["a", "b"].includes(url.searchParams.get("side")) ? url.searchParams.get("side") : null;
     const buf = await request.arrayBuffer();
     if (!id || buf.byteLength > 120_000) return json({ error: "Bad picture" }, 400);   // storage values are ≤128 KB
     const qs = await this.get("questions", {});
-    if (!qs[id] || !qs[id].camera_id.startsWith(`${device.id}:`)) return json({ error: "No such question" }, 404);
-    await this.ctx.storage.put(`qsnap:${id}`, new Uint8Array(buf));
+    const q = qs[id];
+    if (!q) return json({ error: "No such question" }, 404);
+    // A picture for a same-person question may come from a DIFFERENT camera
+    // than the one the question is filed under — the two sides are two
+    // sightings, and the whole point is that they may be on two cameras. It
+    // still has to be a camera on the computer that is sending it.
+    const mine = q.camera_id.startsWith(`${device.id}:`)
+      || (side && [q.ask?.camera, q.ask?.other_camera].some((c) => c && c.startsWith(`${device.id}:`)));
+    if (!mine) return json({ error: "No such question" }, 404);
+    await this.ctx.storage.put(`qsnap:${id}${side ? `:${side}` : ""}`, new Uint8Array(buf));
+    if (side) {
+      // Shown only once both sides have arrived.
+      const have = await this.ctx.storage.get(`qsnap:${id}:${side === "a" ? "b" : "a"}`);
+      q.pictures = have ? 2 : 1;
+      await this.ctx.storage.put("questions", qs);
+    }
     return json({ ok: true });
   }
 
-  async getQuestionSnapshot(id, role) {
+  async getQuestionSnapshot(id, role, side = null) {
     const q = (await this.get("questions", {}))[id];
     if (q && q.target_role === "admin" && role !== "admin") return json({ error: "Only an administrator sees this one" }, 403);
-    const img = await this.ctx.storage.get(`qsnap:${id}`);
+    const img = await this.ctx.storage.get(`qsnap:${id}${side ? `:${side}` : ""}`);
     if (!img) return new Response(null, { status: 204 });
     return new Response(img, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
   }
@@ -2617,12 +2747,140 @@ export class VenueHub extends DurableObject {
     if (q.answer) return json({ ok: true, already: true });
     q.answer = clean(body.answer, 40) || "ignore";
     q.answered_by = clean(user, 60); q.answered_at = Date.now();
+
+    // "Is this the same person?" is answered here rather than sent back to a
+    // camera: it is the REGISTER that guessed, so the register is what has to
+    // be corrected — and it is corrected now, so the attendance figure moves
+    // while the person who answered is still looking at it.
+    let result = null;
+    if (q.review_type === "same_person_question") {
+      const said = /^same/i.test(q.answer) ? true : /^different/i.test(q.answer) ? false : null;
+      if (said !== null && this.register && q.ask) {
+        result = this.register.answerAsk(q.ask, said);
+        await this.learnFromAnswer(q, said, result);
+        await this.maybeMoveTheLine();
+        try {
+          await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+        } catch (e) {
+          await this.wrong("Register of people", "Couldn't save the correction you just made", e && e.message);
+        }
+      }
+      await this.ctx.storage.put("questions", qs);
+      // Both pictures go the moment the question is answered. They were only
+      // ever here to be looked at once.
+      await this.ctx.storage.delete(`qsnap:${id}:a`);
+      await this.ctx.storage.delete(`qsnap:${id}:b`);
+      await this.ctx.storage.delete(`qsnap:${id}`);
+      return json({ ok: true, ...(result ?? {}) });
+    }
+
     await this.ctx.storage.put("questions", qs);
     const pending = await this.get("answers", []);
     pending.push({ device_id: q.camera_id.split(":")[0], key: q.camera_id.slice(q.camera_id.indexOf(":") + 1), review_id: id, answer: q.answer, kind: q.review_type });
     await this.ctx.storage.put("answers", pending.slice(-200));
     await this.ctx.storage.delete(`qsnap:${id}`);
     return json({ ok: true });
+  }
+
+  /**
+   * What the answer taught Kyro.
+   *
+   * ── What this is, and what it is not ────────────────────────────────────
+   *
+   * "just for the AI count to be more trained ... and eventually the system
+   * will be more trained enough to know".
+   *
+   * It is not retraining the AI. Nothing here changes the model that finds
+   * people or the one that reads faces: those are fixed files, the same in
+   * every church, and a few hundred answers could not move them.
+   *
+   * What it does do is real and measurable. Every answer is one labelled
+   * example — "two sightings that scored 0.84 alike were / were not the same
+   * person" — in THIS building, in THIS lighting, with THESE coats. The
+   * number that decides a match is a threshold, and a threshold is exactly
+   * the kind of thing a few dozen labelled examples can set properly. So the
+   * answers are kept as a score and a yes/no, and the line that would have
+   * got the most of them right is worked out from them.
+   *
+   * Nothing about a person is kept: no picture — both are deleted the moment
+   * the question is answered — no face code, no name. A similarity score and
+   * a yes or a no.
+   */
+  async learnFromAnswer(q, same, result) {
+    if (typeof q.score !== "number") return;
+    const log = await this.get("ask_answers", []);
+    log.push({
+      at: Date.now(), score: q.score, face: !!q.had_face, same: !!same,
+      guess: q.guess, agreed: !!result?.agreed,
+    });
+    await this.ctx.storage.put("ask_answers", log.slice(-500));
+  }
+
+  /**
+   * What the answers add up to: how often Kyro was right, and where the line
+   * between "same person" and "two people" really sits in this building.
+   *
+   * The best line is found by trying every answered score as a cut and
+   * counting how many answers it would have got right. With few answers that
+   * is a weak suggestion and it says so; it is only ever acted on once there
+   * are enough of them to mean something. See LOOK_SAME in identity.js for
+   * the measured starting point it would be replacing.
+   */
+  async askLearning() {
+    const log = await this.get("ask_answers", []);
+    const scored = log.filter((a) => typeof a.score === "number");
+    const answered = log.length;
+    const agreed = log.filter((a) => a.agreed).length;
+    let suggest = null, right = 0;
+    if (scored.length >= 8) {
+      const cuts = [...new Set(scored.map((a) => a.score))].sort((a, b) => a - b);
+      for (const c of cuts) {
+        const n = scored.filter((a) => (a.score >= c) === a.same).length;
+        if (n > right) { right = n; suggest = c; }
+      }
+    }
+    const using = await this.get("look_same", null);
+    return {
+      answered,
+      agreed,
+      /** The line Kyro is actually using, and where it came from. */
+      using: using?.value ?? LOOK_SAME,
+      using_from: using ? "your answers" : "measured on standard photographs",
+      /** The line these answers say would be best, and how sure that is. */
+      suggested: suggest,
+      suggested_right: scored.length ? Math.round((right / scored.length) * 100) : null,
+      examples: scored.length,
+      /** Enough answers to be worth acting on. */
+      enough: ANSWERS_BEFORE_LEARNING,
+    };
+  }
+
+  /**
+   * Move the line Kyro matches people on, once the answers say so.
+   *
+   * Only when there are enough of them (ANSWERS_BEFORE_LEARNING), only when
+   * the suggested line would get MORE of those answers right than the one in
+   * use, and only in small steps — a threshold that lurches about because of
+   * one odd pair of coats is worse than one that is slightly wrong and
+   * steady. Everything is written down, so a church can see what changed and
+   * why, and put it back.
+   */
+  async maybeMoveTheLine() {
+    const l = await this.askLearning();
+    if (l.examples < ANSWERS_BEFORE_LEARNING || l.suggested === null) return null;
+    const log = (await this.get("ask_answers", [])).filter((a) => typeof a.score === "number");
+    const rightAt = (cut) => log.filter((a) => (a.score >= cut) === a.same).length;
+    const now = l.using, better = l.suggested;
+    if (rightAt(better) <= rightAt(now)) return null;
+    // A step at a time, never a jump.
+    const next = Math.round(Math.min(0.95, Math.max(0.70, now + Math.sign(better - now) * 0.01)) * 1000) / 1000;
+    if (next === now) return null;
+    await this.ctx.storage.put("look_same", { value: next, at: Date.now(), from: l.examples });
+    if (this.register) this.register.lookSame = next;
+    const hist = await this.get("look_same_log", []);
+    hist.unshift({ at: new Date().toISOString(), from: now, to: next, answers: l.examples, right: rightAt(next) });
+    await this.ctx.storage.put("look_same_log", hist.slice(0, 50));
+    return next;
   }
 
   async takeAnswers(device_id) {

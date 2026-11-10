@@ -142,8 +142,8 @@ function herEvening({ trips, cams = ["cam1"], oneRoom = true, stay = 5 }) {
   ok("a uniform is people who are HERE, not people on file",
      /now - x\.p\.lastAt <= UNIFORM_SEEN_MS/.test(src) && UNIFORM_SEEN_MS === 60_000);
   ok("look-alikes nobody has seen are one person, not a new one",
-     /const rivals = looks\.filter\(\(x\) => x\.look >= LOOK_SAME\);/.test(src)
-     && /if \(rivals\.length > 1 && !anyHere && best\.look >= LOOK_SAME\) \{/.test(src));
+     /const rivals = looks\.filter\(\(x\) => x\.look >= this\.lookSame\);/.test(src)
+     && /if \(rivals\.length > 1 && !anyHere && best\.look >= this\.lookSame\) \{/.test(src));
   ok("and that is counted, so it can be looked at", /this\.stats\.mergedLookAlikes\+\+/.test(src));
 
   ok("appearance is remembered across distances, not just the last half minute",

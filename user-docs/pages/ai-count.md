@@ -5,6 +5,28 @@ AI Count is the main dashboard. It shows how many people are in the building, ho
 <Shot name="ai-count" alt="AI Count page: total people in building, chart of the day, arrival and exit times, Live Overview, AI Alerts and System Status" />
 
 
+## Is this the same person?
+
+When Kyro has to guess whether two sightings are the same person, it now **asks you** — with a picture of each.
+
+It still makes its guess, so the count never stalls waiting for an answer. Your answer **corrects the register straight away**: two entries become one, or one becomes two, and the attendance figure moves while you're looking at it. The panel tells you what changed — *"Counted as one person. 48 different people this service."*
+
+Each question says what Kyro thought and why: how alike the two looked, whether a face was readable, and whether everyone in the room was dressed alike. Three answers: **Same person**, **Different people**, **Can't tell**.
+
+::: info What's kept, and what isn't
+**Both pictures are deleted the moment you answer.** What's kept is how alike the two looked and what you said — no photograph, no face code, no name.
+:::
+
+### Does it actually learn?
+
+Yes, but narrowly, and it's worth being precise about it.
+
+**It does not retrain the AI.** The model that finds people and the one that reads faces are fixed files, the same in every church. A few hundred answers couldn't move them.
+
+**What it does set is the line.** Kyro calls two people the same when they look a certain percentage alike. That number started as a measurement taken on standard photographs — not on your hall, your lighting or your congregation's coats. Every answer you give is one labelled example from *your* building, and a threshold is exactly the kind of thing a few dozen labelled examples can set properly.
+
+So after **25 answers** Kyro starts moving that line to fit your building, one small step at a time, and only when the move would get more of your own answers right. Every change is recorded. The panel shows you the line it's using, where it came from, and how often Kyro was already right without you.
+
 ## On the rota
 
 While something on your [Rota](/pages/rota) is running, an **On the rota** panel appears beside the figures: what's on, its times, and **what Kyro is recording it as**. If it says nothing is being recorded yet, no camera has seen anybody — check a camera is counting.

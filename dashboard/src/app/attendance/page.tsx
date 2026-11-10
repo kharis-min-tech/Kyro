@@ -17,6 +17,7 @@ import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { DoorLog, IdentityHealth } from "@/components/ui/DoorLog";
 import { SystemHealth } from "@/components/ui/SystemHealth";
 import { WhatsOn } from "@/components/ui/WhatsOn";
+import { SamePerson } from "@/components/ui/SamePerson";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint, type PeopleMovement } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
@@ -1646,6 +1647,9 @@ export default function AttendancePage() {
             {/* Every decision the entrance made, in words — so the figures
                 above can be checked against the door itself. */}
             {/* Whether Kyro is working, above everything that depends on it. */}
+            {/* The guesses Kyro wants a human to settle, above the panels
+                that only describe how it is doing. */}
+            {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <SamePerson />}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <SystemHealth />}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <DoorLog />}
             {hydrated && edge && !userChoseDemo() && (role === "admin" || role === "operator") && <IdentityHealth />}

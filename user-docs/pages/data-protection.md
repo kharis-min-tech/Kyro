@@ -10,6 +10,17 @@ Nobody has to remember to delete anything. Kyro does it.
 
 This page explains exactly what face matching does, so your church can decide whether to use it and tell people what happens.
 
+## "Is this the same person?" pictures
+
+When Kyro has to guess whether two sightings are one person, it can ask an administrator or operator to look at two pictures and say.
+
+- Each picture is a **crop around one person** — not the whole room — taken from the camera's own live view.
+- It is held only while the question is waiting, **at most ten minutes**, and is **deleted the moment the question is answered**.
+- Nothing else about the picture is kept. What survives the answer is a similarity score and your yes or no: no photograph, no face code, no name.
+- Only administrators and operators ever see them, and only while signed in.
+- They are never used to identify anybody. Kyro does not know who anybody is.
+
+
 ## What it is for
 
 Kyro counts people without reading a single face, and that is what it does by default.

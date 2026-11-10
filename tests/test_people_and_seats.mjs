@@ -362,7 +362,13 @@ const reg = (zones = {}) => new IdentityRegistry({ zoneOf: (c) => zones[c] ?? c 
   ok("14. and what it adds is small", /export const SEAT_HELPS = 0\.0\d;/.test(src));
   ok("14. appearance is refused outright in a uniform", /const looks = uniform \? \[\] : scored/.test(src));
   ok("14. which cancels the seat's help with it",
-     /const alike = scored\.filter\(\(x\) => x\.look >= LOOK_SAME && now - x\.p\.lastAt <= UNIFORM_SEEN_MS\)\.length;/.test(src));
+     /const alike = scored\.filter\(\(x\) => x\.look >= this\.lookSame && now - x\.p\.lastAt <= UNIFORM_SEEN_MS\)\.length;/.test(src));
+  // The threshold is a measurement, not a law: a church that answers "is
+  // this the same person?" is handing Kyro labelled examples from its own
+  // hall, and the register can carry the line those set. The measured one is
+  // the starting point. See tests/test_same_person_question.mjs.
+  ok("14. and the line itself can be set by a church's own answers",
+     /this\.lookSame = typeof opts\.lookSame === "number" \? opts\.lookSame : LOOK_SAME;/.test(src));
   ok("14. and a uniform means people who are actually here", /export const UNIFORM_SEEN_MS = 60_000;/.test(src));
   ok("14. a uniform is more than two people looking alike", UNIFORM_CROWD >= 3, `${UNIFORM_CROWD}`);
 }
