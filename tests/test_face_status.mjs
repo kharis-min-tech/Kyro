@@ -76,7 +76,20 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
 {
   ok("faces are read only during a service",
      /const faceOn = \(await this\.privacy\(\)\)\.face_matching && !!\(await this\.get\("service_live", null\)\)/.test(worker));
-  ok("and wiped when it ends", /Face matching data belongs to the service: wiped as soon as it ends\.\s*\n\s*this\.faceCodes\.clear\(\);/.test(worker));
+  // Wiped when it ends — BOTH the live copies and the ones written down. Face
+  // codes are now kept for the length of a service rather than only in
+  // memory, because holding them in memory alone meant a restart lost them
+  // and people already counted were counted again. Keeping them is only
+  // defensible if ending the service really removes them.
+  ok("and wiped when it ends, in memory and on disk",
+     /this\.faceCodes\.clear\(\);\s*\n\s*this\.wipeFaces\(\);/.test(worker));
+  ok("switching face matching off wipes them too",
+     /Switched off means switched off[\s\S]{0,200}this\.wipeFaces\(\);/.test(worker));
+  ok("and nothing is written while it is off",
+     /const facesAllowed = \(await this\.privacy\(\)\)\.face_matching;[\s\S]{0,120}else this\.wipeFaces\(\);/.test(worker));
+  ok("with a limit that does not depend on anything working",
+     /const FACE_MAX_AGE_MS = /.test(worker)
+     && /DELETE FROM faces WHERE service != \? OR at <= \?/.test(worker));
 }
 
 // 5. Reading faces often enough to be worth having.

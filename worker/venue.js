@@ -62,6 +62,17 @@ const FACE_FRESH_MS = 10_000;
 const DOOR_LOG_KEEP = 200;
 /** How often the register of people is written down, so a restart keeps it. */
 const REGISTER_SAVE_MS = 30_000;
+/**
+ * Face codes are deleted this long after they were written, whatever else
+ * happens.
+ *
+ * The promise is that face data lives for one service. Ending a service
+ * deletes it — but a service that never ends properly (a camera computer
+ * switched off mid-morning, a timer that failed) would otherwise keep
+ * biometric data alive indefinitely, which is the one thing that must not be
+ * possible. So there is a limit that depends on nothing working correctly.
+ */
+const FACE_MAX_AGE_MS = 12 * 60 * 60_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
@@ -90,7 +101,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-83b8e997e9c8";
+const VENUE_CODE = "venue-663390cd5e4f";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -303,6 +314,25 @@ export class VenueHub extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
+        /*
+         * Face codes, for the length of ONE service.
+         *
+         * They were held in memory only, which sounded like the careful
+         * choice and was not: when the live-cameras server restarts mid
+         * service — which it does, on every deploy — every face is lost, and
+         * the congregation has to be recognised by their coats alone. Twenty
+         * five people became twenty nine. Four of them were counted twice
+         * because of a privacy measure that protected nobody: the data was
+         * being processed either way, just badly.
+         *
+         * So they are written down, and they belong to the service. The row
+         * carries which service it is for, so ending that service deletes
+         * them, and so does a hard age limit that does not care whether a
+         * service ever ended properly — see FACE_MAX_AGE_MS. A face code is
+         * 128 numbers describing a face. It is not a photograph, it is not a
+         * name, and it cannot be turned back into either.
+         */
+        "CREATE TABLE IF NOT EXISTS faces (service TEXT NOT NULL, person INTEGER NOT NULL, code TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (service, person))",
       );
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
       // Deleting a day marks its rows instead of removing them, so it can be
@@ -886,6 +916,14 @@ export class VenueHub extends DurableObject {
       // altogether. They stay in the register and stay counted; they just
       // can't be recognised by appearance afterwards.
       await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+      // Faces go in their own table, one row each, so they can be deleted on
+      // their own the moment the service ends.
+      const facesAllowed = (await this.privacy()).face_matching;
+      if (facesAllowed) this.saveFaces(service, now);
+      else this.wipeFaces();
+      // And whatever else happens — a service that never ended, a timer that
+      // failed — nothing older than FACE_MAX_AGE_MS survives this line.
+      this.wipeFaces(service, now);
     }
   }
 
@@ -995,6 +1033,80 @@ export class VenueHub extends DurableObject {
     const was = t.broken;
     t.ok(where);
     if (was !== t.broken) await this.ctx.storage.put("trouble", t.save());
+  }
+
+  /**
+   * Keep the register's face codes for this service.
+   *
+   * Only people whose face reading has changed are written, so this is a few
+   * rows every half minute rather than the whole congregation each time.
+   */
+  saveFaces(service, now) {
+    if (!service || !this.register) return 0;
+    this.facesSaved ??= new Map();
+    let wrote = 0;
+    for (const p of this.register.people.values()) {
+      const face = p.faces[p.faces.length - 1];
+      if (!face) continue;
+      // Keyed by service AND person: person numbers start again at 1 in a new
+      // service, so remembering "person 1 is already saved" by number alone
+      // would skip a different person in the next one.
+      if (this.facesSaved.get(`${service}#${p.id}`) === p.faces.length) continue;
+      this.ctx.storage.sql.exec(
+        "INSERT OR REPLACE INTO faces (service, person, code, at) VALUES (?, ?, ?, ?)",
+        service, p.id, packFace(face), now);
+      this.facesSaved.set(`${service}#${p.id}`, p.faces.length);
+      wrote++;
+    }
+    return wrote;
+  }
+
+  /**
+   * Give the register back the faces it had before the restart.
+   *
+   * This is the whole point of writing them down. Without it a restart leaves
+   * the congregation to be recognised by their coats alone, and people who
+   * were already counted are counted again — twenty five became twenty nine.
+   */
+  loadFaces(service, now) {
+    if (!service || !this.register) return 0;
+    const rows = this.ctx.storage.sql.exec(
+      "SELECT person, code FROM faces WHERE service = ? AND at > ?", service, now - FACE_MAX_AGE_MS).toArray();
+    let back = 0;
+    this.facesSaved ??= new Map();
+    for (const r of rows) {
+      const p = this.register.people.get(r.person);
+      const code = r.code ? unpackFace(r.code) : null;
+      if (!p || !code) continue;
+      p.faces = [code];
+      this.facesSaved.set(`${service}#${p.id}`, 1);
+      back++;
+    }
+    return back;
+  }
+
+  /**
+   * Face data goes.
+   *
+   * With no service named, all of it — that is the end of a service, and face
+   * matching being switched off. With one named, everything belonging to any
+   * other service, and anything older than FACE_MAX_AGE_MS whatever service
+   * it belongs to: a limit that holds even when a service never ended
+   * properly, which is exactly the case this has to survive.
+   */
+  wipeFaces(keepService = null, now = Date.now()) {
+    try {
+      if (keepService) {
+        this.ctx.storage.sql.exec("DELETE FROM faces WHERE service != ? OR at <= ?", keepService, now - FACE_MAX_AGE_MS);
+      } else {
+        this.ctx.storage.sql.exec("DELETE FROM faces");
+      }
+      this.facesSaved = new Map();
+    } catch (e) {
+      // Failing to delete biometric data is not something to carry on quietly
+      // past. It goes where it will be seen, like everything else.
+      this.wrong("Face data", "Couldn't delete the face codes for a finished service", e && e.message).catch(() => {});
+    }
   }
 
   async theBuilding() {
@@ -2111,7 +2223,13 @@ export class VenueHub extends DurableObject {
     await this.ctx.storage.put("services", list.slice(0, 200));   // ~76 KB, inside the 128 KB limit
     await this.ctx.storage.delete("service_live");
     // Face matching data belongs to the service: wiped as soon as it ends.
+    // Both the live copies and the written-down ones — the promise is that it
+    // does not outlive the service, and a row in a table is not an exception
+    // to that.
     this.faceCodes.clear();
+    this.wipeFaces();
+    this.register?.startService(null);
+    await this.ctx.storage.delete("register");
   }
 
   /**
@@ -2260,6 +2378,9 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.put("privacy", { face_matching: false, switched_off_by: clean(user, 60) || "an administrator",
         switched_off_at: new Date().toISOString(), last_switched_on_by: prev.switched_on_by ?? null });
       this.faceCodes.clear();
+      // Switched off means switched off: the face codes already written down
+      // for this service go with it, not at the end of the service.
+      this.wipeFaces();
     }
     return json(await this.privacy());
   }

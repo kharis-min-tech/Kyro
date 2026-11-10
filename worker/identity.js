@@ -544,7 +544,11 @@ export class IdentityRegistry {
         cameras: new Set(p.c ?? p.cameras ?? []), lastCamera: p.k ?? p.lastCamera ?? "",
         seat: p.s ?? p.seat ?? null, seatKey, seatAt: p.sa ?? p.seatAt ?? 0,
         seatCamera: p.sc ?? p.seatCamera ?? "",
-        looks: p.b ?? p.looks ?? [], faces: [],
+        looks: p.b ?? p.looks ?? [],
+        // Faces are not in the snapshot: they are kept in their own table, so
+        // they can be deleted on their own the moment the service ends. The
+        // worker puts them back here after restoring — see loadFaces.
+        faces: [],
       });
       // Who is in which seat is rebuilt from the people, so the two can never
       // disagree after a restart.

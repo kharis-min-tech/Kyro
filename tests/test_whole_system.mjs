@@ -232,22 +232,22 @@ function church() {
   ok("14. and it is still the same service", r2.service === "svc-1");
   // The congregation carries on being seen, on new track numbers.
   //
-  // THIS IS THE HONEST LIMIT, measured rather than asserted away. A restart
-  // deliberately does not reload face codes: they are biometric data, they
-  // stay in memory, and they die with the process. So after a backend restart
-  // Kyro has to recognise everybody by appearance alone — and a few people
-  // whose coats aren't distinctive enough are counted a second time.
+  // This measures the register ALONE, without the face codes the worker keeps
+  // for the service and gives back after a restart — see
+  // tests/test_face_memory.mjs, where the same twenty five people come back as
+  // twenty five.
   //
-  // The fix would be to store face codes, or to let "they are in the seat they
-  // were in before" count as proof of identity. The first trades a privacy
-  // promise for a number. The second is the thing that merges a choir. Neither
-  // is worth it, so the cost is paid and shown.
+  // It is kept because it is worth knowing what the appearance matching can do
+  // by itself: it is what Kyro falls back on when face matching is switched
+  // off, when a face was never readable, and in the first moments after a
+  // restart before the faces are reloaded.
   for (let i = 1; i <= 25; i++) {
     for (let f = 0; f < 3; f++) { t += 400; r2.observe("west", [{ track: 3000 + i, look: look(i), face: face(i), seat: `K${i}` }], t); }
   }
   const extra = r2.size - people;
-  console.log(`\n  After a backend restart, ${people} people seen again on new track numbers`
-    + ` became ${r2.size} — ${extra} counted twice, because face codes are deliberately not stored.\n`);
+  console.log(`\n  Appearance matching alone, after a restart: ${people} people seen again`
+    + ` became ${r2.size} — ${extra} counted twice. With the service's face codes`
+    + ` reloaded, this is ${people} (test_face_memory.mjs).\n`);
   ok("14. a backend restart duplicates nobody it can recognise", extra <= 5, `${extra} duplicated`);
   ok("14. and most of the congregation is still recognised", extra / people < 0.25, `${Math.round(extra / people * 100)}%`);
 }

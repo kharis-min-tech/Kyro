@@ -77,7 +77,11 @@ export function FaceMatching() {
             <p className="text-xs text-gray-400 leading-relaxed mt-0.5">
               Stops the same person being counted twice: once if they step out and come back (so they aren&apos;t a new arrival),
               and once if two cameras both see them. Kyro keeps no photos of faces and doesn&apos;t know who anyone is — each face
-              becomes a list of numbers, compared for a few seconds and never saved. Adds a 10 MB download the first time.
+              becomes a list of numbers. Those numbers are kept for the length of the service and deleted when it ends, so that
+              Kyro can still recognise people after a restart; before, a restart lost them and people already counted were
+              counted again. They are deleted when the service ends, when a different service starts, the moment face matching
+              is switched off, and in any case within twelve hours — whether or not a service ever ended properly.
+              Adds a 10 MB download the first time.
             </p>
             {p.face_matching && (
               <p className="text-xs text-gray-500 mt-1.5">
@@ -154,7 +158,8 @@ export function FaceMatching() {
             </p>
             <label className="flex items-start gap-2 text-xs text-gray-300">
               <input type="checkbox" checked={dpia} onChange={(e) => setDpia(e.target.checked)} className="mt-0.5" />
-              A data protection impact assessment (DPIA) for face matching has been completed and approved by the church.
+              A data protection impact assessment (DPIA) for face matching has been completed and approved by the church,
+              covering face codes being kept for the length of a service and deleted when it ends.
             </label>
             <label className="flex items-start gap-2 text-xs text-gray-300">
               <input type="checkbox" checked={notices} onChange={(e) => setNotices(e.target.checked)} className="mt-0.5" />
