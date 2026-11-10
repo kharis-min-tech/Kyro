@@ -120,6 +120,30 @@ export const LOOK_UNCERTAIN = 0.82;
  */
 export const UNIFORM_CROWD = 3;
 /**
+ * …and all of them have to actually be AROUND.
+ *
+ * This was the hole, and it made the register run away with itself. The
+ * uniform rule counted every identity on file that looked alike, whether or
+ * not anybody had seen them for the last half-hour. So:
+ *
+ *   one person walks in and out of shot a few times;
+ *   a couple of returns aren't recognised, and become new entries;
+ *   now three entries on file look alike — because they are all her;
+ *   the uniform rule fires, and appearance is refused from then on;
+ *   so every single return afterwards is somebody new.
+ *
+ * One person in front of two cameras for an evening came out as 31 people,
+ * and would have gone on climbing for as long as the camera was running. The
+ * rule meant to stop a choir being merged was manufacturing a congregation.
+ *
+ * A uniform is a crowd — people dressed alike who are THERE, at the same
+ * time, which is when telling them apart by their clothes really is
+ * hopeless. Three entries that look alike and have not been seen for a minute
+ * are not a crowd; they are a history, and much the likeliest explanation is
+ * that they are one person who keeps being missed.
+ */
+export const UNIFORM_SEEN_MS = 60_000;
+/**
  * Where somebody was sitting, as SUPPORTING evidence.
  *
  * The same seat, moments later, is usually the same person — but only usually,
@@ -181,8 +205,38 @@ export const NEW_PERSON_WITH_FACE = 2;
 export const NEW_PERSON_NO_FACE = 4;
 /** A sighting that stopped coming before it earned a place in the register. */
 export const WAITING_STALE_MS = 60_000;
-/** Faces and appearances kept per identity, so one bad reading can't define them. */
+/** Faces kept per identity, so one bad reading can't define anybody. */
 export const SAMPLES = 5;
+/**
+ * And this many appearance readings each.
+ *
+ * Far more than the faces, because an appearance reading is far less
+ * informative and changes with everything. The same person looks different
+ * from six feet away and from across the hall — the box round them is half
+ * the height, and the height of the box is part of the reading. Keeping the
+ * five newest meant keeping five readings from wherever they happened to be
+ * standing for the last half minute, and everything Kyro had learned about
+ * how they look from further off was thrown away before they walked back into
+ * shot. So they failed to match themselves and became somebody new, over and
+ * over: one person in front of a camera all evening came out as 31 people.
+ *
+ * Twenty readings covers the distances, poses and patches of light a person
+ * has actually been seen in. Measured rather than chosen: on a simulated
+ * 120-person service with no face matching it changes nothing at all — the
+ * same 112 counted, the same 8 merges, no new splits — while one person
+ * walking in and out of shot thirty times goes from eleven people to one.
+ * (Keeping the most DIFFERENT readings instead of the newest fixed her case
+ * too, and cost four extra merges and four extra splits at the service: a
+ * wrong reading, once absorbed, was then kept for ever and became a magnet.
+ * Plain recency, more of it, is better.)
+ *
+ * They are only this many in memory. The copy written to storage — which
+ * exists so that a restart mid-service doesn't lose everybody — is trimmed to
+ * fit, oldest people losing theirs first. See snapshot().
+ */
+export const LOOK_SAMPLES = 20;
+/** How many of them the stored copy starts with before trimming. */
+export const LOOK_SAMPLES_SAVED = 8;
 /** Nobody crosses a building in less than this, so two cameras that don't
  *  overlap cannot both see the same person inside it. */
 export const TRAVEL_MS = 1_500;
@@ -286,7 +340,7 @@ export class IdentityRegistry {
      */
     this.waiting = new Map();
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
     this.service = null;
   }
 
@@ -304,7 +358,7 @@ export class IdentityRegistry {
     this.seats.clear();
     this.waiting.clear();
     this.nextId = 1;
-    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0 };
+    this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
   }
 
   /**
@@ -434,9 +488,10 @@ export class IdentityRegistry {
       scored.push({ p, face, look, sameSeat });
     }
 
-    // A uniform: too many people Kyro knows look like this one, so what they
-    // are wearing says nothing about which of them this is. See UNIFORM_CROWD.
-    const alike = scored.filter((x) => x.look >= LOOK_SAME).length;
+    // A uniform: too many people who are HERE look like this one, so what
+    // they are wearing says nothing about which of them this is. Only people
+    // seen in the last minute count towards it — see UNIFORM_SEEN_MS.
+    const alike = scored.filter((x) => x.look >= LOOK_SAME && now - x.p.lastAt <= UNIFORM_SEEN_MS).length;
     const uniform = alike >= UNIFORM_CROWD;
     if (uniform) this.stats.uniformed++;
 
@@ -471,6 +526,36 @@ export class IdentityRegistry {
       // exactly like somebody arriving, while a flagged merge can be checked.
       if (best.look >= LOOK_UNCERTAIN && clear) {
         this.stats.uncertain++;
+        const p = this.touch(best.p.id, cameraId, o, now, w);
+        p.uncertain++;
+        return matched(p.id);
+      }
+
+      // Several people on file look like this one, none of them is here, and
+      // none stands apart from the others.
+      //
+      // This is the loop that ran away with the register, and it feeds
+      // itself. The margin test asks a candidate to stand clear of the
+      // runner-up — and when the runner-up is the SAME PERSON, filed twice,
+      // standing clear is impossible. So no match is made, somebody new is
+      // created, and now there are three copies on file and the next return
+      // is harder still. One person in front of two cameras for an evening
+      // came out as 31 people, climbing by two a trip and showing no sign of
+      // stopping.
+      //
+      // The way out is the principle this file already states: appearance is
+      // weak evidence in BOTH directions. If it cannot tell two filed people
+      // apart, it cannot tell you that this is a third one either. When every
+      // look-alike disappeared some time ago — nobody present to confuse this
+      // with — much the likeliest reading is that they are one person who
+      // keeps being missed, and attaching to the best of them is right
+      // however the duplicates are eventually sorted out. In a choir stand
+      // the look-alikes ARE present, so this does not apply and the uniform
+      // rule above has already taken over.
+      const rivals = looks.filter((x) => x.look >= LOOK_SAME);
+      const anyHere = rivals.some((x) => now - x.p.lastAt <= UNIFORM_SEEN_MS);
+      if (rivals.length > 1 && !anyHere && best.look >= LOOK_SAME) {
+        this.stats.mergedLookAlikes++;
         const p = this.touch(best.p.id, cameraId, o, now, w);
         p.uncertain++;
         return matched(p.id);
@@ -552,11 +637,11 @@ export class IdentityRegistry {
     // Everything seen while they were waiting to be accounted for, oldest
     // first, so the newest reading is the one kept if there are too many.
     if (waited) {
-      for (const l of waited.looks) keep(p.looks, l);
+      for (const l of waited.looks) keep(p.looks, l, LOOK_SAMPLES);
       for (const f of waited.faceCodes) keep(p.faces, f);
       if (waited.first) p.firstAt = waited.first;
     }
-    if (o.look) keep(p.looks, o.look);
+    if (o.look) keep(p.looks, o.look, LOOK_SAMPLES);
     if (o.face) keep(p.faces, o.face);
     this.people.set(p.id, p);
     this.stats.created++;
@@ -612,10 +697,10 @@ export class IdentityRegistry {
     // Including anything seen while this sighting was waiting to be placed:
     // it turned out to be this person, so it is readings of this person.
     if (waited) {
-      for (const l of waited.looks) keep(p.looks, l);
+      for (const l of waited.looks) keep(p.looks, l, LOOK_SAMPLES);
       for (const f of waited.faceCodes) keep(p.faces, f);
     }
-    if (o.look) keep(p.looks, o.look);
+    if (o.look) keep(p.looks, o.look, LOOK_SAMPLES);
     if (o.face) keep(p.faces, o.face);
     return p;
   }
@@ -714,12 +799,12 @@ export class IdentityRegistry {
           return o;
         }),
     });
-    if (!maxBytes) return base(SAMPLES);
+    if (!maxBytes) return base(LOOK_SAMPLES_SAVED);
     // Trim until it fits where it has to be kept. Fewer readings each first;
     // then the people seen longest ago lose their readings altogether. Nobody
     // is ever dropped from the register — losing a person loses attendance,
     // losing their coat only costs the chance of recognising it later.
-    for (const each of [SAMPLES, 3, 2, 1]) {
+    for (const each of [LOOK_SAMPLES_SAVED, 5, 3, 2, 1]) {
       const snap = base(each);
       if (JSON.stringify(snap).length <= maxBytes) return snap;
     }

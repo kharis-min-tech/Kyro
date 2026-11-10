@@ -117,8 +117,14 @@ const settle = (tr, boxes, t, faces, times = 4) => {
   ok("and the page is told which it is", /people_from_register: !!this\.register\?\.size,/.test(worker));
   ok("each camera's own tally is kept for comparison", /people_seen_by_camera: sum\("people"\),/.test(worker));
   ok("a doorway's own register is offered, not added", /people_seen_at_door: sumDoors\("people"\),/.test(worker));
+  // The arrivals card used to repeat it in a tile of its own. Removed at the
+  // church's request: two places showing one figure means that when the
+  // register is wrong it is wrong twice, with nothing to say which to
+  // believe. It is shown once, as the attendance headline.
+  const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
+  ok("and the page shows it as the attendance headline", /people_seen/.test(page));
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
-  ok("and the page leads with it", /Different people, this service/.test(card));
+  ok("and not a second time on the arrivals card", !/Different people, this service/.test(card));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

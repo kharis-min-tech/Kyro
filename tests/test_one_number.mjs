@@ -71,8 +71,14 @@ const hereNow = (seen, door, room = 0, everSeen = 0) =>
 // 4. The rule lives in the website, once, and the parts are published with it
 //    so the figure can always be taken apart.
 {
-  ok("the rule is in venueTotal", /const hereNow = Math\.min\(Math\.max\(seenNow, countedNet\), ceiling\);/.test(src));
+  ok("the rule is in venueTotal", /const hereNow = anyRunning \? Math\.min\(Math\.max\(seenNow, countedNet\), ceiling\) : 0;/.test(src));
   ok("and the sum behind it is published", /counted_net: countedNet,/.test(src));
+  // With nothing counting, there is no figure to give. "Counted in less
+  // counted out" goes on being true about earlier long after it stops being
+  // true about now: every camera off, and the headline still read 1, with
+  // CAMERAS 0/2 live printed beside it.
+  ok("and with nothing counting at all, it is none",
+     /const anyRunning = zones\.some\(\(z\) => z\.is_running\);/.test(src));
   ok("every page reads the same field", /      total_current: hereNow,/.test(src));
   ok("what the cameras see is published too", /seen_now: seenNow,/.test(src));
   ok("and the door's own figure", /in_building: doorNet,/.test(src));

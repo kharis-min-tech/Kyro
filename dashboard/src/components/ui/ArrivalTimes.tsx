@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, peopleSeen, movement }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -108,7 +108,6 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   /** Who said so, for the line that says it is still on. */
   doorModeBy?: string;
   /** Different people seen this service, counted once each. */
-  peopleSeen?: number | null;
   /**
    * Arrivals and departures as the register of people counts them — once each
    * — in quarter-hour slots. When this is here it is what the card shows,
@@ -415,19 +414,12 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 here before, as small print under "Half had arrived by" and
                 "First arrivals" — which is no place for the number most people
                 open this card to find. */}
-            {typeof peopleSeen === "number" && (
-              /* The figure a church actually wants: different people, counted
-                 once each. First, because everything beside it counts
-                 crossings — and one person who steps out for a phone call
-                 crosses four times. */
-              <div className="rounded-xl px-3 py-2.5 min-w-0" style={{ background: "rgba(79,70,229,0.08)", border: "1px solid rgba(79,70,229,0.35)" }}>
-                <p style={{ fontSize: 11, color: "var(--text-muted)" }}>Different people, this service</p>
-                <p className="font-semibold" style={{ fontSize: 20, color: "#4f46e5", marginTop: 2 }}>{peopleSeen.toLocaleString()}</p>
-                <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.35 }}>
-                  Counted once each, however often they move, stand up or come back
-                </p>
-              </div>
-            )}
+            {/* A tile counting the register's people used to lead this row.
+                Removed at the church's request: it repeated the attendance
+                headline further up the same page, so when the register was
+                wrong it was wrong twice, in two places, with nothing to say
+                which to believe. Attendance still comes from the register —
+                it is the same number, said once, where people look for it. */}
             <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={summary.totalArrived.toLocaleString()}
               sub={usingRegister

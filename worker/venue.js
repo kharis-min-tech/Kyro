@@ -729,6 +729,8 @@ export class VenueHub extends DurableObject {
     // whatever its browser's own tally happens to read right now. See below.
     const counters = await this.get("counters", {});
     let changed = false, countersChanged = false;
+    /** Cameras that said goodbye in this report. See the end of this method. */
+    const stopped = [];
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
@@ -774,6 +776,7 @@ export class VenueHub extends DurableObject {
         await this.working(cams[camera_id].name);
         if (cams[camera_id].label) await this.working(cams[camera_id].label);
         changed = true;
+        stopped.push(camera_id);
         continue;
       }
       // Running totals that survive the counting browser being reloaded.
@@ -905,9 +908,24 @@ export class VenueHub extends DurableObject {
     }
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
-    await this.capacityAlerts(cams, live);
+    // The last camera anywhere has been switched off, so the session is over.
+    //
+    // "When I end my session or camera, this should all be refreshed too."
+    // Nothing more can be counted once the last camera stops, so the figures
+    // on the screen stop being a description of now and become a description
+    // of earlier — under a heading that says "this session". The service is
+    // written into the record and the session's figures go back to zero.
+    //
+    // Only when NOTHING is left counting, anywhere: stopping one camera of
+    // three, or reloading the page on a second computer, must not end a
+    // service that is still being counted somewhere else.
+    const lastCameraOff = stopped.length > 0 && !this.anyCameraOn(cams, live, now);
     try {
-      await this.trackService(now);
+      // Ending the session is itself the service decision for this report —
+      // trackService would only look at an empty room and reach the same
+      // conclusion more slowly.
+      if (lastCameraOff) await this.endSession(now);
+      else await this.trackService(now);
       await this.working("Services");
     } catch (e) {
       await this.wrong("Services",
@@ -1006,6 +1024,33 @@ export class VenueHub extends DurableObject {
       this.register = new IdentityRegistry({
         zoneOf: (id) => (cams[id]?.zone_name || cams[id]?.name || id),
         createsIdentities: (id) => cams[id]?.location !== "entrance",
+        /**
+         * Can these two cameras see the same spot?
+         *
+         * "Different room" is a veto: somebody on a camera at one end of the
+         * building cannot be on a camera at the other end a second later, so
+         * that candidate is skipped and a new person is created instead.
+         *
+         * A camera that adds itself gets a room named after itself, because
+         * nothing else is known about it yet. Two cameras plugged into one
+         * computer therefore counted as two different rooms — and one person
+         * sitting in front of both was two people, every time, with the veto
+         * guaranteeing they could never be joined up again. That is where
+         * half of "31 different people" came from.
+         *
+         * A USB cable is two metres long. Two cameras on one computer are in
+         * one place, until somebody says which rooms they watch. Getting this
+         * wrong the generous way only means the veto doesn't fire and the
+         * face and the coat are left to decide, which they are good at;
+         * getting it wrong the strict way duplicates somebody for ever.
+         */
+        overlapping: (a, b) => {
+          if (a === b) return true;
+          const ca = cams[a], cb = cams[b];
+          if (!ca || !cb) return false;
+          if (ca.device_id && ca.device_id === cb.device_id) return true;
+          return (ca.zone_name || ca.name || a) === (cb.zone_name || cb.name || b);
+        },
         // One person in two cameras' seats at one moment: evidence that those
         // two seats are one chair. The building decides what to do with it,
         // and never merges anything without an administrator.
@@ -1633,6 +1678,16 @@ export class VenueHub extends DurableObject {
 
   isOnline(l) { return !!l && Date.now() - l.updated_at < OFFLINE_AFTER_MS && l.status !== "offline"; }
 
+  /** Is any camera, on any computer, still counting? */
+  anyCameraOn(cams, live, now = Date.now()) {
+    for (const c of Object.values(cams)) {
+      if (c.hidden || c.pending) continue;
+      const l = live[c.camera_id];
+      if (l && now - l.updated_at < OFFLINE_AFTER_MS && l.status !== "offline") return true;
+    }
+    return false;
+  }
+
   /**
    * Every decision the door cameras made recently, newest first, with the
    * camera's name — and a tally of what it adds up to, including how many
@@ -1796,7 +1851,16 @@ export class VenueHub extends DurableObject {
     // somebody standing in shot.
     const everSeen = this.register?.size || 0;
     const ceiling = everSeen ? Math.max(everSeen, seenNow) : Infinity;
-    const hereNow = Math.min(Math.max(seenNow, countedNet), ceiling);
+    // Nothing is counting, so nobody is being seen.
+    //
+    // With every camera off, "in venue" was still showing 1 — it came from
+    // "counted in less counted out", a sum that goes on being true about
+    // earlier long after it has stopped being true about now. The page said
+    // CAMERAS 0/2 live directly beside it. A figure that outlives the thing
+    // measuring it is worse than no figure: Kyro cannot see anybody, so the
+    // honest answer is none.
+    const anyRunning = zones.some((z) => z.is_running);
+    const hereNow = anyRunning ? Math.min(Math.max(seenNow, countedNet), ceiling) : 0;
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
@@ -2862,9 +2926,35 @@ export class VenueHub extends DurableObject {
   async endServiceNow(id) {
     const live = await this.get("service_live", null);
     if (!live || live.id !== id) return json({ error: "That service isn't running" }, 404);
-    await this.finishService(live, Date.now());
-    await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
+    await this.endSession(Date.now());
     return json({ ended: true });
+  }
+
+  /**
+   * The session is over — and everything that was about it goes back to zero.
+   *
+   * Ending a service used to put away the register and nothing else. The card
+   * underneath kept the last session's "came in", "went out", "busiest arrival
+   * time" and "half had arrived by", because those are measured from a
+   * starting line that nobody had moved. So a session that ended at six
+   * o'clock was still on the screen at seven, under the heading "this
+   * session", describing a session that had finished.
+   *
+   * Asked for in so many words: "when I end my session or camera, this should
+   * all be refreshed too".
+   *
+   * Nothing is deleted. finishService writes the service into the record, the
+   * people rows keep the service they belonged to, and freshStart only moves
+   * the starting line — the whole day can still be looked at. See freshStart.
+   */
+  async endSession(now = Date.now()) {
+    const live = await this.get("service_live", null);
+    if (live) await this.finishService(live, now);
+    await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
+    await this.freshStart(now, false);
+    this.recentTotals = [];
+    this.movementCache = null;
+    return { ended: !!live };
   }
 
   // ── Face matching across cameras (off unless an admin switches it on) ─────

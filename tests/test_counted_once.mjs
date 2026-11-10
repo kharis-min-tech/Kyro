@@ -83,7 +83,7 @@ const headline = (seen, door, room = 0, everSeen = 0) => {
   ok("the ceiling comes from the register", /const everSeen = this\.register\?\.size \|\| 0;/.test(src));
   ok("and never falls below what is in shot",
      /const ceiling = everSeen \? Math\.max\(everSeen, seenNow\) : Infinity;/.test(src));
-  ok("the headline applies it", /const hereNow = Math\.min\(Math\.max\(seenNow, countedNet\), ceiling\);/.test(src));
+  ok("the headline applies it", /const hereNow = anyRunning \? Math\.min\(Math\.max\(seenNow, countedNet\), ceiling\) : 0;/.test(src));
 }
 
 // 6. When it bites, the page says so. A headline smaller than the sum printed

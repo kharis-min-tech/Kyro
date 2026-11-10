@@ -1111,6 +1111,53 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                       ))}
                     </div>
                   )}
+
+                  {/* The camera that isn't in the list.
+                      "i tried to unplug and replug my goodmans camera, its
+                      still not working". Everything above this is about
+                      choosing between cameras Kyro can see; none of it helps
+                      when the one you want is not among them, and the page
+                      had nothing to say about that at all. The list above IS
+                      every camera the browser will admit to, so the question
+                      is why the browser can't see it — and for an action
+                      camera the answer is nearly always the same one. */}
+                  {scanned && (
+                    <details className="rounded-xl" style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+                      <summary className="px-3 py-2.5 cursor-pointer text-sm font-medium" style={{ color: "var(--text-secondary)" }}>
+                        My camera isn&apos;t in this list
+                      </summary>
+                      <div className="px-3 pb-3 flex flex-col gap-2 text-xs leading-relaxed" style={{ color: "var(--text-tertiary)" }}>
+                        <p>
+                          The {allDevices.length === 1 ? "one above is" : `${allDevices.length} above are`} every camera
+                          this browser will admit to. A camera it can&apos;t see can&apos;t be reached by Kyro or by any
+                          other website on this computer, so the thing to fix is on the camera or the cable.
+                        </p>
+                        <p>
+                          <strong style={{ color: "var(--text-secondary)" }}>An action camera or a dash cam?</strong> Plugging
+                          it in usually puts it into <strong>storage mode</strong>, where it offers its memory card and
+                          nothing else — no computer sees a camera. On the camera&apos;s own screen, choose the mode
+                          called <strong>PC Camera</strong>, <strong>Webcam</strong>, <strong>UVC</strong> or
+                          {" "}<strong>USB Camera</strong>. Some ask the moment you plug the cable in and give up after a
+                          few seconds; some need it set in the menu before you plug it in at all.
+                        </p>
+                        <p><strong style={{ color: "var(--text-secondary)" }}>Then, in order:</strong></p>
+                        <ul className="flex flex-col gap-1 pl-4" style={{ listStyle: "disc" }}>
+                          <li>Straight into the computer, not through a hub, dock or extension lead.</li>
+                          <li>A different socket, and a different cable — a charging-only cable carries no picture, and
+                            they look identical.</li>
+                          <li>Close anything else that might be holding it: Zoom, Teams, FaceTime, Photo Booth, OBS,
+                            and any other browser tab showing a camera.</li>
+                          <li>If the camera has its own power switch, switch it on before plugging it in.</li>
+                          <li>Then tap <strong>Scan again</strong>. Kyro re-asks the browser each time.</li>
+                        </ul>
+                        <p>
+                          Still nothing? Open your computer&apos;s own camera app (Photo Booth on a Mac, Camera on
+                          Windows) and see whether it lists the camera. If it doesn&apos;t, nothing Kyro does will help —
+                          the computer isn&apos;t seeing it either, and that is a cable, a mode or a port.
+                        </p>
+                      </div>
+                    </details>
+                  )}
                 </>
               )}
             </div>

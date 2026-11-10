@@ -1565,7 +1565,6 @@ export default function AttendancePage() {
                 onFreshStart={edge && !userChoseDemo() ? startFresh : undefined}
                 byCamera={arrivalByCamera}
                 onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined}
-                peopleSeen={edge && isToday ? (venueTotal as { people_seen?: number } | null)?.people_seen ?? null : null}
                 /* Arrivals and departures that count each person once. When
                    this is here the card uses it instead of the cameras' own
                    tallies — see the note in lib/arrivals.ts. */

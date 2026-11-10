@@ -41,7 +41,15 @@ That's the whole thing. Counting switches on, the camera appears in the list abo
 A camera plugged into a computer by USB — a webcam, a capture card, an action camera — hasn't got a stream address, and Kyro doesn't ask for one. Stream addresses are only for cameras on the network, which don't plug into anything.
 :::
 
-If a camera doesn't appear in the scan: check it's pushed in at both ends and plugged straight into the computer rather than through a hub, close anything else that might be using it (Zoom, Teams, Photo Booth, FaceTime), then tap **Scan again**.
+If a camera doesn't appear in the scan, open **My camera isn't in this list** under the results. The list Kyro shows is every camera the browser will admit to, so a camera that's missing is missing from the computer, not from Kyro.
+
+::: warning Action cameras and dash cams: storage mode
+Plugging one in usually puts it into **storage mode**, where it offers its memory card and nothing else — no computer sees a camera. On the camera's own screen choose **PC Camera**, **Webcam**, **UVC** or **USB Camera**. Some ask the moment you plug the cable in and give up after a few seconds; some want it set in the menu before you plug it in at all.
+:::
+
+Then, in order: plug it straight into the computer rather than through a hub or dock; try a different socket and a different **cable** (a charging-only cable carries no picture and looks identical); close anything else that might be holding it (Zoom, Teams, FaceTime, Photo Booth, OBS, another browser tab); switch the camera on before plugging it in if it has its own power switch; then tap **Scan again**.
+
+Still nothing? Open your computer's own camera app — **Photo Booth** on a Mac, **Camera** on Windows — and see whether that lists it. If it doesn't, the computer isn't seeing the camera either, and nothing Kyro does will change that.
 
 ### Wi-Fi cameras: Find cameras
 

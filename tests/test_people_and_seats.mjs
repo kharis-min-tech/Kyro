@@ -219,9 +219,54 @@ const reg = (zones = {}) => new IdentityRegistry({ zoneOf: (c) => zones[c] ?? c 
     t += 1000;
     r.observe("choir", [{ track: 900, look: wobble(robe(7), f), face: null, seat: "K7" }], t);
   }
-  ok("11. appearance was refused, because they are all dressed alike",
+  // The uniform rule did not fire, and should not have: a uniform is a CROWD
+  // of people dressed alike who are THERE. Three minutes have passed with the
+  // camera seeing nobody, so there is no crowd to be confused by — see
+  // UNIFORM_SEEN_MS. What there is, is twenty people in robes on file and one
+  // person in a robe in front of the camera, and the overwhelmingly likely
+  // reading is that they are one of the twenty.
+  ok("11. with nobody in shot, there is no crowd to be confused by",
+     r.diagnostics().in_a_uniform === 0, `${r.diagnostics().in_a_uniform}`);
+  // This used to cost one extra person: unable to say WHICH of the twenty had
+  // come back, Kyro created a twenty-first. It was the wrong way round. Not
+  // knowing which of twenty somebody is does not make them a new person — it
+  // makes them one of the twenty, and attendance is twenty either way. (Which
+  // of them gets the sighting may well be wrong, and that is a different and
+  // much smaller thing than a figure that climbs.)
+  ok("11. a singer coming back is one of the twenty, not a twenty-first",
+     r.size === 20, `got ${r.size}`);
+}
+
+// 11a. And the crowd that the rule IS for: twenty robed singers standing
+//      there, in shot, while a twenty-first arrives. Now the look-alikes are
+//      present, appearance really is hopeless, and nothing may merge them.
+{
+  const r = reg();
+  let t = 0;
+  const choir = Array.from({ length: 20 }, (_, i) => i + 1);
+  // The wobble must not grow with the frame number: a reading of one garment
+  // varies, but it does not vary MORE the longer you look. See the note on
+  // wobble above — getting that wrong stops a uniform looking like a uniform,
+  // which is the one thing this test is about.
+  const see = (f, extra = []) => {
+    t += 2000;
+    r.observe("choir", choir.map((n) => ({ track: n, look: wobble(robe(n), f), face: null, seat: `K${n}` })).concat(extra), t);
+  };
+  for (let f = 0; f < 10; f++) see(f);
+  ok("11a. twenty in robes are twenty", r.size === 20, `got ${r.size}`);
+  // A twenty-first walks up in the same robes. Half the stand is behind the
+  // others for the moment, so those ten are not claimed by a sighting of
+  // their own — they are simply people in robes who were there seconds ago,
+  // which is exactly the crowd the uniform rule is for.
+  const half = choir.slice(0, 10);
+  for (let f = 0; f < 6; f++) {
+    t += 2000;
+    r.observe("choir", half.map((n) => ({ track: n, look: wobble(robe(n), f), face: null, seat: `K${n}` }))
+      .concat([{ track: 901, look: wobble(robe(21), f), face: null, seat: "K21" }]), t);
+  }
+  ok("11a. the uniform rule fires when the crowd is actually there",
      r.diagnostics().in_a_uniform > 0, `${r.diagnostics().in_a_uniform}`);
-  ok("11. one unrecognised return costs one person, not twenty", r.size === 21, `got ${r.size}`);
+  ok("11a. and nobody is merged into anybody", r.size === 21, `got ${r.size}`);
 }
 
 // 11b. The worst case, measured rather than assumed: the camera drops and
@@ -260,7 +305,18 @@ const reg = (zones = {}) => new IdentityRegistry({ zoneOf: (c) => zones[c] ?? c 
     + ` without faces Kyro counts ${noFaces.size}, with faces ${withFaces.size}\n`);
   ok("11b. without faces, nobody is merged away", noFaces.size >= 20, `got ${noFaces.size}`);
   ok("11b. with faces, it is exactly right", withFaces.size === 20, `got ${withFaces.size}`);
-  ok("11b. so faces are what make a choir countable", withFaces.size < noFaces.size);
+  // This used to read "faces are what make a choir countable", because
+  // without them the reconnect counted some singers twice. It no longer does:
+  // twenty new tracks arrive at once, none of the twenty on file has been
+  // seen for two minutes, and each new track attaches to one of them — one
+  // each, because an identity can be claimed by only one sighting from a
+  // camera at a time. WHICH robe goes with which identity may well be
+  // scrambled; the attendance figure is right either way, and that is what
+  // this number is.
+  ok("11b. and without them a reconnect no longer costs anybody",
+     noFaces.size === 20, `got ${noFaces.size}`);
+  ok("11b. faces are still what tell one singer from another",
+     withFaces.diagnostics().matched_by_face > 0);
 }
 
 // 12. The same choir WITH faces: the robes say nothing, the faces say
@@ -305,7 +361,9 @@ const reg = (zones = {}) => new IdentityRegistry({ zoneOf: (c) => zones[c] ?? c 
   ok("14. a seat only ever adds to an appearance match", /const help = best\.sameSeat \? SEAT_HELPS : 0;/.test(src));
   ok("14. and what it adds is small", /export const SEAT_HELPS = 0\.0\d;/.test(src));
   ok("14. appearance is refused outright in a uniform", /const looks = uniform \? \[\] : scored/.test(src));
-  ok("14. which cancels the seat's help with it", /const alike = scored\.filter\(\(x\) => x\.look >= LOOK_SAME\)\.length;/.test(src));
+  ok("14. which cancels the seat's help with it",
+     /const alike = scored\.filter\(\(x\) => x\.look >= LOOK_SAME && now - x\.p\.lastAt <= UNIFORM_SEEN_MS\)\.length;/.test(src));
+  ok("14. and a uniform means people who are actually here", /export const UNIFORM_SEEN_MS = 60_000;/.test(src));
   ok("14. a uniform is more than two people looking alike", UNIFORM_CROWD >= 3, `${UNIFORM_CROWD}`);
 }
 

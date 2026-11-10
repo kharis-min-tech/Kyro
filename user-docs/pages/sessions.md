@@ -48,6 +48,20 @@ Tap the red **End session** on the camera's card. You'll see **Session ended —
 If the green dot next to **Sessions** is still pulsing after the service, a session is still running. End it so the numbers stay accurate.
 :::
 
+### What ending it resets
+
+Ending a session writes it into **Past sessions** and then starts the live figures again from nothing:
+
+- **Came in / went out, this session**, the **busiest arrival and exit times** and **half had arrived by** all go back to zero.
+- The register of people is put away, so attendance starts again at nobody for whatever happens next.
+- **In venue** goes to none.
+
+**Nothing is deleted.** The session's own record, every reading behind it and the whole day's figures stay exactly as they were — Analytics still shows all of it. Only the starting line moves, so an afternoon service doesn't open with the morning's arrivals already in it.
+
+::: tip Switching the last camera off does the same thing
+If you stop **Counting on this computer**, or unplug the last camera that was counting anywhere, there is nothing left that could count anybody — so Kyro ends the session for you and resets the same figures. Stopping one camera of several doesn't: the others are still counting, so the session carries on.
+:::
+
 ## Past sessions
 
 Finished sessions are listed under **Past sessions**, with the date, how long they ran, the peak, the number of entries and the capacity.

@@ -112,5 +112,26 @@ const { scanOutcome } = await import(path.join(tmp, "cameraScan.js"));
      /already \? "Already counting"/.test(page));
 }
 
+
+// ── The camera that is not in the list at all ──────────────────────────────
+//
+// "i tried to unplug and replug my goodmans camera, its still not working".
+// Everything else on this panel helps you choose BETWEEN the cameras Kyro can
+// see. None of it helps when the one you want is not among them, and the page
+// said nothing about that case — which for an action camera is nearly always
+// one thing: it came up in storage mode, offering its memory card, and no
+// computer sees a camera at all.
+{
+  ok("the page answers 'my camera isn't in this list'", /My camera isn&apos;t in this list/.test(page));
+  ok("it says plainly that the list IS everything the browser can see",
+     /every camera\s*\n?\s*this browser will admit to/.test(page.replace(/\s+/g, " ")) || /every camera this browser will admit to/.test(page.replace(/\s+/g, " ")));
+  ok("it names the action-camera cause first", /storage mode/.test(page) && /PC Camera/.test(page) && /UVC/.test(page));
+  ok("then the cable and the hub", /not through a hub/.test(page) && /charging-only cable carries no picture/.test(page));
+  ok("then whatever else is holding the camera", /Zoom, Teams, FaceTime, Photo Booth, OBS/.test(page));
+  ok("and ends somewhere Kyro cannot be blamed or credited",
+     /Photo Booth on a Mac, Camera on\s*\n?\s*Windows/.test(page) || /Photo Booth on a Mac, Camera on Windows/.test(page.replace(/\s+/g, " ")));
+  ok("it only appears once a scan has actually run", /\{scanned && \(\s*\n?\s*<details/.test(page));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Use this uses it.");
 process.exit(fails ? 1 : 0);
