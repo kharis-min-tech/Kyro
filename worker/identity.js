@@ -134,6 +134,8 @@ export const UNIFORM_CROWD = 3;
 export const SEAT_HELPS = 0.04;
 /** How long a seat stays believable as a hint about who somebody is. */
 export const SEAT_FRESH_MS = 60_000;
+/** Two cameras reporting one person this close together is the same moment. */
+export const CO_SEEN_MS = 6_000;
 /** A camera's own track stays attached to its identity for this long. */
 export const TRACK_LINK_MS = 5 * 60_000;
 /** Faces and appearances kept per identity, so one bad reading can't define them. */
@@ -208,6 +210,14 @@ export class IdentityRegistry {
      * is good at, and attendance is the register the room cameras build.
      */
     this.createsIdentities = opts.createsIdentities ?? (() => true);
+    /**
+     * Called when one person is found in one camera's seat and then, moments
+     * later, in another camera's seat. Nobody is in two places at once, so
+     * those two seats are very likely the same chair — which is how the
+     * building works out that two cameras are looking at one piece of
+     * furniture, without anybody measuring anything. See worker/building.js.
+     */
+    this.onSameChair = opts.onSameChair ?? (() => {});
     this.overlapping = opts.overlapping ?? ((a, b) => this.zoneOf(a) === this.zoneOf(b));
     this.people = new Map();      // id → identity
     this.byTrack = new Map();     // "camera#track" → { id, at }
@@ -412,7 +422,13 @@ export class IdentityRegistry {
       if (now - (other.seatAt || 0) < SEAT_FRESH_MS) return;   // still theirs
       other.seatKey = null; other.seat = null;
     }
-    if (p.seatKey) this.stats.movedSeat++;
+    // A different camera, moments later, is not somebody changing seats: it is
+    // two cameras seeing one chair. Evidence for the building, not a move.
+    if (p.seatKey && p.seatCamera && p.seatCamera !== cameraId && now - (p.seatAt || 0) < CO_SEEN_MS) {
+      this.onSameChair(p.seatKey, key);
+    } else if (p.seatKey) {
+      this.stats.movedSeat++;
+    }
     this.seats.set(key, p.id);
     p.seatKey = key; p.seat = seat; p.seatAt = now; p.seatCamera = cameraId;
   }

@@ -8,6 +8,7 @@ import { useCameras } from "@/hooks/useCameras";
 import { useAuth } from "@/hooks/useAuth";
 import { useReviewContext } from "@/lib/ReviewContext";
 import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef } from "@/lib/api";
+import { SeatManager } from "@/components/ui/SeatManager";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
 import { useEdgeVenue, useEdgeSeatStates, edgeVenueApi } from "@/lib/edgeVenue";
@@ -768,6 +769,9 @@ function ResetDialog({ zoneName, reservedCount, onConfirm, onCancel }: {
 // ─── Camera seat view ─────────────────────────────────────────────────────────
 function CameraSeatView({ camera }: { camera: Camera }) {
   const { role } = useAuth();
+  // Every camera that can have seats, for the stage question — a doorway
+  // camera has none, and is left out of it.
+  const { cameras: seatCameras } = useCameras();
   const streamRole = (role === "admin" || role === "operator") ? role as "admin"|"operator" : "viewer" as const;
   const { data, connected } = usePipelineStream(camera.camera_id, streamRole);
   // Edge Live (Cloudflare build): these cameras count people per room, so
@@ -989,6 +993,10 @@ function CameraSeatView({ camera }: { camera: Camera }) {
             <p style={{ fontSize: 11, color: "#f87171" }}>Couldn&apos;t load the room&apos;s count ({edgeError}).</p>
           )}
         </div>
+
+        {/* Correcting what Kyro worked out: confirm, reject, merge duplicates
+            seen by two cameras, and tell it where the stage is. */}
+        {edge && <SeatManager cameras={seatCameras} />}
         </>) : (<>
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">

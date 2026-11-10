@@ -11,6 +11,7 @@
 import { DurableObject } from "cloudflare:workers";
 import { notifyCount } from "./index.js";
 import { IdentityRegistry } from "./identity.js";
+import { Building } from "./building.js";
 
 const enc = new TextEncoder();
 const json = (body, status = 200) =>
@@ -279,6 +280,13 @@ export class VenueHub extends DurableObject {
      */
     this.register = null;
     this.registerSavedAt = 0;
+    /**
+     * The building: one master seat per physical chair, whatever number of
+     * cameras can see it. See worker/building.js. Loaded on first use and
+     * written whenever it changes.
+     */
+    this.building = null;
+    this.buildingSavedAt = 0;
     /** camera → the last few door decisions, for the "what was counted" panel. */
     this.doorLog = new Map();
     // Who is signed in right now: username → deviceId → { name, role, device, at }.
@@ -410,6 +418,19 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/door-log" && request.method === "GET") return json(await this.doorLogFor());
       // How the register of people is doing: counts and confidences, never a
       // face, a picture or anything about who anybody is.
+      // ── The building: one master seat per physical chair ──────────────
+      //
+      // Reading it is for administrators and operators; changing it is for
+      // administrators, which is how deleting a service and changing a
+      // camera already work.
+      if (p === "/api/live/building" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json((await this.theBuilding()).overview());
+      }
+      if (p === "/api/live/building" && request.method === "POST") {
+        if (role !== "admin") return json({ error: "Only administrators can change the seating" }, 403);
+        return json(await this.changeBuilding(request, user));
+      }
       if (p === "/api/live/identity" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
         return json(this.register ? this.register.diagnostics() : { unique_people: 0, service: null });
@@ -754,6 +775,10 @@ export class VenueHub extends DurableObject {
       this.register = new IdentityRegistry({
         zoneOf: (id) => (cams[id]?.zone_name || cams[id]?.name || id),
         createsIdentities: (id) => cams[id]?.location !== "entrance",
+        // One person in two cameras' seats at one moment: evidence that those
+        // two seats are one chair. The building decides what to do with it,
+        // and never merges anything without an administrator.
+        onSameChair: (a, b) => { this.building?.sameChairEvidence(a, b, true); },
       });
       const saved = await this.get("register", null);
       if (saved && saved.service === service) this.register.restore(saved);
@@ -768,6 +793,7 @@ export class VenueHub extends DurableObject {
     // Nothing is recorded outside a service: a register of people needs a
     // reason to exist, and "somebody left a camera running" is not one.
     if (!service) return;
+    await this.theBuilding();     // so the register has somewhere to send evidence
 
     const faceOk = (await this.privacy()).face_matching;
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
@@ -810,6 +836,69 @@ export class VenueHub extends DurableObject {
       // can't be recognised by appearance afterwards.
       await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
     }
+  }
+
+  /**
+   * One administrator's correction.
+   *
+   * Every change carries the version of the building it was made against, so
+   * a second administrator working from a page opened ten minutes ago is told
+   * to reload rather than silently undoing the first one's work.
+   */
+  async changeBuilding(request, user) {
+    const b = await this.theBuilding();
+    const body = await request.json().catch(() => ({}));
+    const v = body.version;
+    const id = clean(body.seat, 24), other = clean(body.other, 24);
+    let out;
+    switch (body.do) {
+      case "confirm": out = b.confirm(id, user, v); break;
+      case "reject":  out = b.reject(id, user, v); break;
+      case "remove":  out = b.remove(id, user, v); break;
+      case "restore": out = b.restore(id, user, v); break;
+      case "merge":   out = b.merge(id, other, user, v); break;
+      case "split":   out = b.split(id, other, user, v); break;
+      case "move":    out = b.move(id, user, v, { place: body.place, camera: clean(body.camera, 80) || undefined, bbox: body.bbox }); break;
+      case "add":     out = b.add(user, v, { section: clean(body.section, 40) || "Main", kind: body.kind, places: num(body.places, 1, 60), place: body.place ?? null, view: body.view ?? null }); break;
+      case "stage":   out = b.setStage(clean(body.camera, 80), body.where, user, v); break;
+      case "plan":    out = b.setPlan(body.plan, user, v); break;
+      case "undo":    out = b.undoLast(user); break;
+      default:        out = { error: "Don't know how to do that" };
+    }
+    if (out?.ok) await this.saveBuilding(true);
+    return out?.error ? { ...out, error: out.error } : { ...out, ...(await this.theBuilding()).overview() };
+  }
+
+  async theBuilding() {
+    if (!this.building) this.building = new Building(await this.get("building", {}));
+    return this.building;
+  }
+
+  /** Written after a change, and never more often than is useful. */
+  async saveBuilding(force = false) {
+    if (!this.building) return;
+    const now = Date.now();
+    if (!force && now - this.buildingSavedAt < 10_000) return;
+    this.buildingSavedAt = now;
+    await this.ctx.storage.put("building", this.building.save());
+  }
+
+  /**
+   * A camera's own seat list, turned into master seats.
+   *
+   * Each camera seat becomes, or finds, one master seat. Nothing is merged
+   * here: at this point there is no evidence that two cameras are looking at
+   * the same chair, and guessing is exactly how two neighbouring chairs become
+   * one. Duplicates are settled later, by who sits in them.
+   */
+  async seatsIntoBuilding(camera_id, seats, now) {
+    const b = await this.theBuilding();
+    const before = b.version;
+    for (const s of seats) {
+      if (!s.seat_id || !Array.isArray(s.bbox)) continue;
+      b.sawSeat(camera_id, s.seat_id, s.bbox, now, { section: s.section || "Main" });
+    }
+    if (b.version !== before) await this.saveBuilding();
   }
 
   /** An offline camera on another computer with the same (specific) name — the camera was moved. */
@@ -2062,6 +2151,17 @@ export class VenueHub extends DurableObject {
       auto = { id: Math.max(0, ...list.map((l) => l.id)) + 1, camera_id, name: "Found by Kyro", source: "auto",
         is_active: !list.some((l) => l.is_active), created_at: new Date().toISOString(), seat_count: 0, version: 0 };
       list.push(auto);
+    }
+    // Into the building first: one master seat per physical chair, and the row
+    // and number come from there — where the stage is was answered by an
+    // administrator, not assumed to be the top of the picture.
+    await this.seatsIntoBuilding(camera_id, seats, Date.now());
+    const b = await this.theBuilding();
+    const master = new Map(b.seatsFor(camera_id).map((m) => [m.bbox.join(","), m]));
+    for (const s of seats) {
+      const m = master.get((s.bbox ?? []).join(","));
+      if (!m) continue;
+      s.row = m.row; s.number = m.number; s.section = m.section;
     }
     auto.seats = seats; auto.seat_count = seats.length; auto.version = (auto.version ?? 0) + 1;
     auto.stage = body.stage === "bottom" ? "bottom" : "top";
