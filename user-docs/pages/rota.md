@@ -1,10 +1,24 @@
 # Rota
 
-The Rota tells Kyro who is scheduled to be at the front, and when: the choir, worship team, pastor or welcome team. Kyro then knows that someone walking to the front at that time isn't responding to an altar call.
+The Rota tells Kyro **what is on and when**.
+
+## What Kyro does with it
+
+- **It knows when a service is on.** While something on the rota is running, Kyro starts recording the session as soon as a camera sees anybody, instead of waiting for five people to stay for two minutes. It has been told, so it doesn't have to guess.
+- **It names the session after the rota entry.** [Sessions](/pages/sessions) and [Analytics](/pages/analytics) then say *Morning service* rather than *Sunday morning service · 15 Nov*.
+- **It knows when it's over.** The session finishes shortly after the rota says it ends — with room for an overrun — rather than recording all afternoon because a few people stayed behind to stack chairs. An empty hall still ends it sooner, as it always did.
+- **It shows what's on.** The rota appears next to the live figures on [AI Count](/pages/ai-count), with what Kyro is recording it as, so you can see the two agreeing.
+- **It holds seats.** Give an entry rows or seats and those seats show purple (*held*) on the [Seat Map](/pages/seat-map) instead of reading as spare capacity.
+
+::: info What it doesn't do
+Kyro doesn't track who is rostered on, and can't tell a scheduled worship team from anyone else at the front. **Kyro counts people; it doesn't know who anybody is.** The page used to claim otherwise.
+:::
 
 <Shot name="rota" alt="Service Rota page with today's rota, upload rota photo, and the Review and confirm form for a manual entry" />
 
-In Live mode the rota is saved on the Kyro website, so everyone sees the same rota and the camera computers **hold those seats** while the people are at the front: their seats show purple (*held*) on the [Seat Map](/pages/seat-map) instead of becoming free. Choosing a room as the seating area holds that room's seats (or just the rows or seats you list).
+In Live mode the rota is saved on the Kyro website, so everyone sees the same rota and every camera computer uses it. Choosing a room as the seating area holds that room's seats (or just the rows or seats you list).
+
+**You don't need a camera to put the times in.** Rows and reserved seats come from your camera rooms, so those stay empty until you add a camera — but the times work straight away, and the times are the part that names and records your sessions.
 
 ## Add the rota from a photo
 
@@ -33,5 +47,11 @@ Tap **+ Add entry manually**, fill in the fields, use **+ Add another entry** fo
 Saved entries appear under **Today's rota**. Entries happening now show a purple **● Live now** badge, and finished ones say **ended**. Tap the **bin** to remove an entry. It's removed straight away.
 
 ::: warning Answer every seating question
-You can't save until every *"Which seating area…"* question is answered or marked **No fixed seat**. Without it, Kyro can't tell the choir walking to the front from an altar-call response.
+You can't save until every *"Which seating area…"* question is answered or marked **No fixed seat** — otherwise Kyro doesn't know which seats to hold. An entry with **No fixed seat** still does everything else: it names and times the session.
 :::
+
+## If saving doesn't seem to do anything
+
+- **Every entry needs a name.** An entry with a blank name is refused, and Kyro now says so rather than saving nothing quietly.
+- **Every entry needs a start and an end, and the end must come after the start.** Kyro leaves out any entry whose times it can't read, and tells you how many were left out.
+- **Check it arrived.** A saved entry appears under **Today's rota** straight away. While it's on, open [AI Count](/pages/ai-count) and look for **On the rota** beside the figures — that's Kyro saying it knows.

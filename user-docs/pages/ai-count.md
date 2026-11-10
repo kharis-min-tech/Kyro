@@ -1,8 +1,15 @@
 # AI Count
 
-AI Count is the main dashboard. It shows how many people are in the building, how that changed through the day, when people arrived and left, and the health of the system.
+AI Count is the main dashboard. It shows how many people are in the building, how that changed through the day, when people arrived and left, what's on, and the health of the system.
 
 <Shot name="ai-count" alt="AI Count page: total people in building, chart of the day, arrival and exit times, Live Overview, AI Alerts and System Status" />
+
+
+## On the rota
+
+While something on your [Rota](/pages/rota) is running, an **On the rota** panel appears beside the figures: what's on, its times, and **what Kyro is recording it as**. If it says nothing is being recorded yet, no camera has seen anybody — check a camera is counting.
+
+It also shows what's on **next**, within the next twelve hours. If you haven't put a rota in, the panel isn't there at all.
 
 ## The headline number
 

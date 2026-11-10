@@ -386,6 +386,10 @@ export default function RotaPage() {
   const [cameraId, setCameraId]     = useState<string | null>(null);
   const [edge, setEdge]             = useState(false);
   useEffect(() => { setEdge(isEdgeLive()); }, []);
+  // Rows and seats come from camera rooms, so without one an entry can hold
+  // times but not seats. That is a reason to say so, not a reason to refuse
+  // the whole page — the times are the part that matters most, and on the
+  // live site the rota belongs to Kyro rather than to any camera.
   const noEdgeRooms = edge && !camsLoading && cameras.filter((c) => c.location !== "queue").length === 0;
   const activeCamId = cameraId ?? cameras[0]?.camera_id ?? null;
 
@@ -436,11 +440,14 @@ export default function RotaPage() {
     }
   }, []);
 
-  // Load active entries + known seating areas on mount and when camera changes
+  // Load active entries + known seating areas on mount and when camera changes.
+  // On the live site the rota is Kyro's, not a camera's, so it loads with or
+  // without one — otherwise a church with no camera yet sees an empty rota
+  // page that is, in fact, full.
   useEffect(() => {
-    if (!activeCamId) return;
-    loadActive(activeCamId);
-  }, [activeCamId, loadActive]);
+    if (!activeCamId && !edge) return;
+    loadActive(activeCamId ?? "");
+  }, [activeCamId, edge, loadActive]);
   useEffect(() => {
     if (!activeCamId) return;
     loadSectionsFor(activeCamId, cameras).then(setSections);
@@ -498,14 +505,31 @@ export default function RotaPage() {
     .filter((i) => i >= 0);
 
   async function confirm() {
-    if (!parsed || !activeCamId) return;
+    if (!parsed) return;
     if (pendingIdx.length > 0) return;
+    // Saving used to stop here, silently, when there was no camera. Pressing
+    // Save and having nothing happen at all — no entry, no error, nothing —
+    // is the worst thing a button can do, and it is a large part of "i tried
+    // to put a rota in ... but it wasnt working". On the live site the rota
+    // is kept by Kyro itself and does not need a camera at all; only the old
+    // per-camera server needs one, so only that path checks.
     if (isEdgeLive()) {
       setSaving(true); setSaveErr(null);
       try {
-        await edgeFetch("/api/live/rota", { method: "POST", body: JSON.stringify({ entries: parsed.filter((e) => e.label.trim()) }) });
+        const keep = parsed.filter((e) => e.label.trim());
+        if (!keep.length) throw new Error("Give each entry a name — \u201cMorning service\u201d, \u201cChoir practice\u201d — before saving.");
+        const res = await edgeFetch<{ added?: unknown[] }>("/api/live/rota",
+          { method: "POST", body: JSON.stringify({ entries: keep }) });
+        // Kyro drops anything whose times it can't read, quietly, and the
+        // page used to report that as a clean save.
+        const added = Array.isArray(res?.added) ? res.added.length : 0;
+        if (added < keep.length) {
+          throw new Error(added === 0
+            ? "Kyro couldn't read those times. Check each entry has a start and an end, and that the end is after the start."
+            : `Only ${added} of ${keep.length} were saved — check the times on the others: each needs a start, and an end that comes after it.`);
+        }
         setSaved(true); setParsed(null);
-        await loadActive(activeCamId);
+        await loadActive(activeCamId ?? "");
       } catch (e: any) { setSaveErr(e.message); }
       finally { setSaving(false); }
       return;
@@ -529,6 +553,10 @@ export default function RotaPage() {
       setActive(all);
       setSaved(true);
       setParsed(null);
+      return;
+    }
+    if (!activeCamId) {
+      setSaveErr("Kyro has no camera to attach this to yet. Add a camera on the Cameras page, then save the rota again.");
       return;
     }
     setSaving(true); setSaveErr(null);
@@ -564,8 +592,8 @@ export default function RotaPage() {
             Service Rota
           </h1>
           <p className="text-sm text-gray-400 mt-1">
-            Upload a photo of your printed rota so Kyro knows who is scheduled on stage and when —
-            it won't confuse scheduled appearances with altar call responses.
+            Tell Kyro what is on and when. Type it in, or photograph your printed rota — Kyro reads
+            the photo on this device, so nothing is uploaded to read it.
           </p>
         </div>
 
@@ -586,40 +614,64 @@ export default function RotaPage() {
         <div className="rounded-xl px-4 py-3 flex items-start gap-3"
           style={{ background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)" }}>
           <AlertCircle size={15} className="text-indigo-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-gray-300 leading-relaxed">
-            Kyro uses this rota to tell the difference between someone going to the altar to
-            give their life to Christ, and someone who was already scheduled to be at the front
-            (choir, worship team, pastor, welcome team). The photo is read entirely on your
-            device — free, no API key, nothing uploaded to parse it. If Kyro can't tell where a
-            group sits, it'll ask you below instead of guessing.
-          </p>
+          {/* What this page actually does, which is not what it used to claim.
+              It promised the times would be acted on straight away, and that
+              it told altar-call answers from scheduled appearances. The times were
+              used for nothing at all, and nothing on any screen ever mentioned
+              the rota again. Promising what a page does not do is worse than
+              doing nothing: it sends somebody away believing a thing is set
+              up. This is the list of what happens, and nothing else. */}
+          <div className="text-xs text-gray-300 leading-relaxed">
+            <p className="font-semibold mb-1 text-white">What Kyro does with this</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li><strong>It knows when a service is on.</strong> While something on the rota is running,
+                Kyro starts recording the session as soon as a camera sees anybody, instead of waiting
+                for a crowd to prove it — and the session is <strong>named after the rota entry</strong>,
+                so Sessions and Analytics say what it was rather than &ldquo;Sunday morning service&rdquo;.</li>
+              <li><strong>It knows when it is over.</strong> The session finishes shortly after the rota
+                says it ends, rather than running on all afternoon because a few people stayed behind.</li>
+              <li><strong>It shows what is on.</strong> The rota appears beside the live figures on the
+                Attendance page, so you can see Kyro and the rota agreeing.</li>
+              <li><strong>It holds seats.</strong> If you give an entry rows or seats, those seats are
+                shown as held on the Seat Map rather than empty, so a reserved choir block doesn&apos;t
+                read as spare capacity.</li>
+            </ul>
+            <p className="mt-1.5 text-gray-500">
+              It does <em>not</em> track who is rostered on, or tell a scheduled worship team from
+              anybody else at the front. Kyro counts people; it does not know who anybody is.
+            </p>
+          </div>
         </div>
 
         {noEdgeRooms && (
-          <div className="rounded-xl px-4 py-8 text-center" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Users2 size={22} className="mx-auto mb-3 text-indigo-400" />
-            <p className="text-sm font-semibold text-white">No camera rooms yet</p>
-            <p className="text-xs text-gray-500 mt-1.5 max-w-sm mx-auto">
-              Your rota sections come from your camera rooms. Add a camera on the Cameras page
-              (or start Camera Mode) and give it a room name — it will appear here.
-            </p>
+          <div className="rounded-xl px-4 py-4 flex items-start gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+            <Users2 size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-white">No camera rooms yet — times still work</p>
+              <p className="text-xs text-gray-500 mt-1">
+                You can put the times in now and Kyro will name and record the sessions from them.
+                Rows and reserved seats come from your camera rooms, so those stay empty until you
+                add a camera on the Cameras page and give it a room name.
+              </p>
+            </div>
           </div>
         )}
 
         {/* Active rota */}
-        {!noEdgeRooms && <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
+        {<div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
           <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
             <p className="text-sm font-semibold text-white">Today's rota</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              These entries are live in Kyro — entries shown in purple are active right now
+              These entries are live in Kyro — entries shown in purple are on right now, and the
+              session being recorded is named after them
             </p>
           </div>
           <div className="px-4 py-4">
             {loadingActive ? (
               <p className="text-sm text-gray-600 text-center py-4">Loading…</p>
-            ) : activeCamId ? (
+            ) : activeCamId || edge ? (
               <ActiveRota
-                cameraId={activeCamId}
+                cameraId={activeCamId ?? ""}
                 entries={active}
                 onDeleted={(id) => setActive((prev) => prev.filter((e) => e.entry_id !== id))}
               />
@@ -634,12 +686,15 @@ export default function RotaPage() {
           <div className="rounded-xl px-4 py-3 flex items-center gap-2"
             style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.3)" }}>
             <Check size={14} className="text-emerald-400" />
-            <p className="text-sm text-emerald-300">Rota saved — Kyro will use these times immediately.</p>
+            <p className="text-sm text-emerald-300">
+              Rota saved. Kyro will record the session under that name while it is on, and you&apos;ll
+              see it beside the live figures on the Attendance page.
+            </p>
           </div>
         )}
 
         {/* Upload panel */}
-        {activeCamId && !parsed && (
+        {(activeCamId || edge) && !parsed && (
           <div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
             <div className="px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
               <p className="text-sm font-semibold text-white flex items-center gap-2">

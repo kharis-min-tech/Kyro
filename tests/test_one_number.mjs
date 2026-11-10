@@ -59,9 +59,14 @@ const hereNow = (seen, door, room = 0, everSeen = 0) =>
 //    missed departure and a service would run until midnight.
 {
   // Whether a service is running goes by what the cameras can see…
+  // The thresholds themselves now come from the rota when there is one —
+  // being told what is on beats inferring it from a crowd — but the FIGURE
+  // they are measured against is unchanged, and so is the rule when the rota
+  // is silent. See tests/test_rota_is_connected.mjs.
   ok("starting and ending a service goes by what can be seen",
      /const seen = v\.seen_now \?\? v\.total_current;/.test(src)
-     && /if \(seen >= SERVICE_START_PEOPLE\)/.test(src)
+     && /const enough = onRota \? 1 : SERVICE_START_PEOPLE;/.test(src)
+     && /if \(seen >= enough\)/.test(src)
      && /if \(seen >= SERVICE_END_PEOPLE\)/.test(src));
   // …but how busy it got is the figure every page shows, or "Here now 81"
   // sits next to "Busiest 19", which cannot be true of anything.

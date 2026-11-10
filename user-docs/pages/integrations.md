@@ -2,6 +2,24 @@
 
 Integrations sends Kyro's end-of-service attendance total to another system: your denomination's reporting portal, a Google Sheet through Zapier, or anything else that accepts a **webhook**.
 
+::: info This page is empty until you give it somewhere to send to
+Kyro doesn't send anywhere by itself. It posts your totals to an address that **another service** gives you, and you paste that address in here. Until you do, the page sits there with nothing to do — which is what it should do, and used to look like a fault.
+
+**Nothing is lost while it's empty.** All your figures are in [Analytics](/pages/analytics) either way. This only sends a copy somewhere else.
+
+The top of the page now says which of three states you're in: **Not set up yet**, **Set up, but the last send failed**, or **Set up and ready** — with where the totals go and when.
+:::
+
+## Where the address comes from
+
+| You want | What to do |
+| --- | --- |
+| **A Google Sheet** | Make a free [Zapier](https://zapier.com) account → new Zap → trigger **Webhooks by Zapier → Catch Hook**. Zapier shows an address starting `https://hooks.zapier.com/…` — paste that in below. Then add **Google Sheets → Create Spreadsheet Row** as the action. [Make.com](https://make.com) works the same way and is also free to start. |
+| **Slack or Teams** | In the app's own settings, add an **Incoming Webhook** to the channel you want. It gives you the address. |
+| **Your denomination's portal** | Ask whoever runs it for a webhook or API address to post attendance to. |
+| **Just to see it work** | Open [webhook.site](https://webhook.site), copy the address it shows you, paste it in, and tap **Send a test**. You'll watch it arrive. Nothing to sign up for. |
+
+
 <Shot name="integrations" alt="Integrations page with the plain-English explanation, the webhook URL, shared secret, the automatic sending schedule (Sundays at 12:30), and the Save settings, Send a test and Send today’s total now buttons" />
 
 ## What happens when you send

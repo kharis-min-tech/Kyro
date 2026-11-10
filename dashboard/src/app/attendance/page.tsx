@@ -16,6 +16,7 @@ import { InlineCalendar } from "@/components/ui/DatePicker";
 import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { DoorLog, IdentityHealth } from "@/components/ui/DoorLog";
 import { SystemHealth } from "@/components/ui/SystemHealth";
+import { WhatsOn } from "@/components/ui/WhatsOn";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
 import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint, type PeopleMovement } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
@@ -1556,6 +1557,13 @@ export default function AttendancePage() {
                 timestamps={chartTimestamps}
               />
             </div>
+
+            {/* What the church's own rota says is on, beside the figures it
+                belongs to. The rota used to be a page you typed into and
+                never heard from again. */}
+            {hydrated && edge && !userChoseDemo() && isToday && (
+              <WhatsOn plan={venueTotal?.whats_on ?? null} recording={venueTotal?.service_now?.name ?? null} />
+            )}
 
             {/* When people arrive / leave — operator/admin only, like the metric selector */}
             {hydrated && (role === "admin" || role === "operator" || inDemoMode()) && (

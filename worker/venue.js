@@ -42,6 +42,23 @@ const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
 const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
 const SERVICE_END_PEOPLE = 3;     // fewer than this …
 const SERVICE_END_MS = 15 * 60_000;    // … for this long = the service has ended
+/**
+ * How long after a rota entry finishes Kyro stops recording the service.
+ *
+ * Services overrun. A rota that says 10:00–11:30 is a plan, not a stopwatch,
+ * and ending the recording on the dot would cut off the half of a morning
+ * that people actually spend standing about talking. Long enough to cover an
+ * overrun, short enough that an empty hall isn't still "in a service" an hour
+ * later — and the room emptying still ends it sooner, as it always did.
+ */
+const ROTA_OVERRUN_MS = 20 * 60_000;
+/**
+ * How far ahead "what's on next" looks.
+ *
+ * Far enough to be useful on a Sunday morning, not so far that a page says
+ * "next: Carol service" in the middle of November.
+ */
+const ROTA_AHEAD_MS = 12 * 3600_000;
 const PEAK_HOLD_MS = 10_000;      // a service's "busiest" number must hold this long
 /** "Sunday morning service", from the church's local time. */
 function serviceName(ms) {
@@ -1772,6 +1789,7 @@ export class VenueHub extends DurableObject {
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);
+    const plan = await this.whatsOn();
     const faceOn = (await this.privacy()).face_matching && !!serviceNow;
     const runningIds = new Set(running.map((z) => z.camera_id));
     // How many of the cameras' sightings right now are the same person seen
@@ -1902,6 +1920,20 @@ export class VenueHub extends DurableObject {
        * arrivals and eight departures. These are people.
        */
       movement: this.registerMovement(serviceNow?.id ?? null),
+      /**
+       * What the church's own rota says is happening, now and next.
+       *
+       * Published with the figures rather than fetched separately, because
+       * the question "is Kyro aware of my rota?" is answered by the figures
+       * and the rota agreeing on one screen — not by a second page that has
+       * to be opened to find out. See whatsOn().
+       */
+      whats_on: plan,
+      /** The service being recorded right now, so a page can show the rota
+       *  and the recording side by side and the two can be seen to agree. */
+      service_now: serviceNow
+        ? { id: serviceNow.id, name: serviceNow.name, started_at: serviceNow.started_at, from_rota: !!serviceNow.from_rota }
+        : null,
       /** Each camera's own tally, kept for comparison. Never added together. */
       people_seen_by_camera: sum("people"),
       people_seen_at_door: sumDoors("people"),
@@ -2603,6 +2635,50 @@ export class VenueHub extends DurableObject {
     return json({ added });
   }
 
+  /**
+   * What the rota says is on, right now and next.
+   *
+   * ── Why this exists ──────────────────────────────────────────────────────
+   *
+   * The Rota page said, in so many words, "Kyro will use these times
+   * immediately". It did not. A rota entry reached the camera computers and
+   * held a few seats; nothing anywhere used its TIMES, and nothing on any
+   * screen ever mentioned it again. Reported as: "i tried to put a rota in
+   * for the kyro system to know the times etc whats going on but it wasnt
+   * working nor was the system aware of it and was working together".
+   *
+   * This is the one place that answers "what is on", and the service timer,
+   * the live figures and every page read it.
+   *
+   * Overlapping entries are normal — the choir at 09:45 and the service at
+   * 10:00 are both on at 10:15. What is ON is all of them; what the service
+   * is CALLED is the one that started first, because that is when the morning
+   * began; and it runs until the last of them has finished.
+   */
+  async whatsOn(now = Date.now()) {
+    let rota;
+    try {
+      rota = await this.get("rota", []);
+    } catch {
+      return { on: [], now: null, until: null, next: null };
+    }
+    const timed = (Array.isArray(rota) ? rota : [])
+      .map((e) => ({ ...e, from: Date.parse(e.start_time), to: Date.parse(e.end_time) }))
+      .filter((e) => Number.isFinite(e.from) && Number.isFinite(e.to) && e.to > e.from)
+      .sort((a, b) => a.from - b.from);
+    const on = timed.filter((e) => e.from <= now && now < e.to);
+    const next = timed.find((e) => e.from > now && e.from - now <= ROTA_AHEAD_MS) ?? null;
+    const brief = (e) => e && { entry_id: e.entry_id, label: e.label, start_time: e.start_time, end_time: e.end_time };
+    return {
+      on: on.map(brief),
+      /** What to call what is happening: the first thing that started. */
+      now: brief(on[0] ?? null),
+      /** When the last of them finishes. */
+      until: on.length ? Math.max(...on.map((e) => e.to)) : null,
+      next: brief(next),
+    };
+  }
+
   async removeRota(id) {
     const rota = await this.get("rota", []);
     await this.ctx.storage.put("rota", rota.filter((e) => e.entry_id !== id));
@@ -2649,12 +2725,38 @@ export class VenueHub extends DurableObject {
     const st = await this.get("service_state", { busy_since: null, quiet_since: null });
     let live = await this.get("service_live", null);
     let dirty = false;
+    /**
+     * What the church said would be happening now. See whatsOn().
+     *
+     * With a rota, Kyro is not guessing. Five people for two minutes is how
+     * you work out that a service has started when nobody has told you; when
+     * somebody HAS told you, waiting for a crowd to prove it is just being
+     * slow — the first person through the door at the time the rota says is
+     * the service beginning, and it is called what the rota calls it.
+     */
+    const plan = await this.whatsOn(now);
+    const onRota = !!plan.now;
     if (!live) {
-      if (seen >= SERVICE_START_PEOPLE) {
+      // On the rota: one person is enough, straight away. Off it: the old
+      // rule, which has to be sure before it commits to anything.
+      const enough = onRota ? 1 : SERVICE_START_PEOPLE;
+      const forLong = onRota ? 0 : SERVICE_START_MS;
+      if (seen >= enough) {
         if (!st.busy_since) { st.busy_since = now; dirty = true; }
-        if (now - st.busy_since >= SERVICE_START_MS) {
-          live = { id: `svc-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`, name: serviceName(st.busy_since),
-            started_at: new Date(st.busy_since).toISOString(), peak: 0, peak_at: null, rooms: {} };
+        if (now - st.busy_since >= forLong) {
+          // Started when the rota said, not when somebody finally walked in
+          // front of a camera — otherwise a service that begins at ten is
+          // recorded as beginning at ten past, and every arrival before that
+          // falls outside its own service.
+          const began = onRota
+            ? Math.min(st.busy_since, Math.max(Date.parse(plan.now.start_time), now - 3600_000))
+            : st.busy_since;
+          live = { id: `svc-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`,
+            name: onRota ? plan.now.label : serviceName(began),
+            started_at: new Date(began).toISOString(), peak: 0, peak_at: null, rooms: {},
+            // Which rota entry this is, so the service timer can end it when
+            // the rota says it is over and pages can say what is on.
+            ...(onRota ? { rota_entry: plan.now.entry_id, from_rota: true } : {}) };
           this.recentTotals = [];
           st.busy_since = null; st.quiet_since = null;
           await this.ctx.storage.put("service_live", live);
@@ -2679,6 +2781,20 @@ export class VenueHub extends DurableObject {
       if (st.quiet_since && now - st.quiet_since >= SERVICE_END_MS) {
         await this.finishService(live, st.quiet_since);
         st.quiet_since = null; dirty = true;
+      } else if (live.from_rota && !onRota) {
+        // The rota says it is over. Services overrun, so Kyro waits a while
+        // from the moment the last entry finished — but it does not go on
+        // recording "Sunday morning service" into the afternoon because three
+        // people stayed behind to stack chairs. See ROTA_OVERRUN_MS.
+        const over = await this.get("rota_over_since", null);
+        if (!over) await this.ctx.storage.put("rota_over_since", now);
+        else if (now - over >= ROTA_OVERRUN_MS) {
+          await this.finishService(live, now);
+          st.quiet_since = null; dirty = true;
+        }
+      } else if (live.from_rota) {
+        // Back on the rota — the next entry has begun, or the clock moved.
+        await this.ctx.storage.delete("rota_over_since");
       }
     }
     if (dirty) await this.ctx.storage.put("service_state", st);
@@ -2743,6 +2859,7 @@ export class VenueHub extends DurableObject {
     this.wipeFaces();
     this.register?.startService(null);
     await this.ctx.storage.delete("register");
+    await this.ctx.storage.delete("rota_over_since");
   }
 
   /**

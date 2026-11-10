@@ -145,6 +145,34 @@ export interface VenueTotal {
   /** The door's whole-day running totals, which in_building is made of. */
   came_in_all?: number | null;
   went_out_all?: number | null;
+  /**
+   * What the church's own rota says is happening, now and next.
+   *
+   * Sent with the figures on purpose: "is Kyro aware of my rota?" is answered
+   * by seeing the rota and the count agree on one screen, not by opening a
+   * second page to check. See whatsOn() in worker/venue.js.
+   */
+  whats_on?: WhatsOn | null;
+  /** The service being recorded right now, if one is. */
+  service_now?: { id: string; name: string; started_at: string; from_rota: boolean } | null;
+}
+
+export interface RotaWhen {
+  entry_id: string;
+  label: string;
+  start_time: string;
+  end_time: string;
+}
+
+export interface WhatsOn {
+  /** Everything the rota says is on at this moment. */
+  on: RotaWhen[];
+  /** What to call it: whichever of them started first. */
+  now: RotaWhen | null;
+  /** When the last of them finishes (epoch ms). */
+  until: number | null;
+  /** The next thing on the rota, within the next twelve hours. */
+  next: RotaWhen | null;
 }
 
 export interface CameraStatus {
