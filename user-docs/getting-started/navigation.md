@@ -30,7 +30,15 @@ On a phone the sidebar is tucked away. Tap the **menu button** (<Icon name="menu
 
 ## Light and dark
 
-Tap **Light mode** or **Dark mode** at the bottom of the sidebar to switch. Kyro remembers your choice on that device. On your first visit it follows your phone or computer's own setting. The sign-in screen has the same switch as a round button in the top right.
+At the bottom of the sidebar, choose **Light**, **Dark** or **Auto**. The sign-in screen has the same three in the top right, so you can set it before you sign in.
+
+**Auto follows your device** — and that's what makes it switch in the evening. A Mac or phone set to change itself switches at **sunset**: about ten past four in November, about twenty past nine in June. Kyro follows it the moment it changes, so a page you left open since the morning goes dark on its own without being reloaded.
+
+Kyro remembers **the choice, not the result** — so Auto stays Auto. It survives reloading, signing out and signing back in, on that device.
+
+::: tip Auto not changing?
+Then your device isn't set to change either. On a Mac: **System Settings → Appearance → Auto**. On iPhone or Android: **Display → Automatic**. Kyro can only follow what the device tells it.
+:::
 
 ::: tip
 Every screenshot in this guide follows your theme. Switch this guide to dark mode (top right) to see the dark versions.

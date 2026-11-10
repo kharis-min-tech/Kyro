@@ -12,26 +12,20 @@ import { DEMO_MODE } from "@/lib/demo";
 import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
-  Moon, Sun, Menu, X, Hash, Webhook,
+  Menu, X, Hash, Webhook,
   CircleHelp,
 } from "lucide-react";
 import { helpUrlFor } from "@/lib/help";
-import { useTheme } from "@/lib/theme";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
 
 function ThemeToggleRow() {
-  const { theme, toggle } = useTheme();
-  const isDark = theme === "dark";
-  const Icon   = isDark ? Sun : Moon;
-  const label  = isDark ? "Light mode" : "Dark mode";
+  // Light · Dark · Auto, one tap each, rather than a button whose label is
+  // the thing it is about to become. Auto follows the device — see
+  // components/ui/ThemeToggle.tsx.
   return (
-    <button onClick={toggle} aria-label={label}
-      className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left"
-      style={{ color: "#6b7280" }}
-      onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
-      onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
-      <Icon size={16} strokeWidth={1.75} />
-      {label}
-    </button>
+    <div className="px-3 py-2">
+      <ThemeToggle className="w-full justify-between" />
+    </div>
   );
 }
 

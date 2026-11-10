@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
 import { setLiveMode, setDemoMode, DEMO_REVIEWS } from "@/lib/demo";
-import { Zap, Server, ChevronRight, ArrowLeft, Sun, Moon, Eye, EyeOff, CircleHelp } from "lucide-react";
+import { Zap, Server, ChevronRight, ArrowLeft, Sun, Monitor, Moon, Eye, EyeOff, CircleHelp } from "lucide-react";
 import { HELP_URL } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
 import { edgeLogin } from "@/lib/edgeAuth";
@@ -98,9 +98,9 @@ const ROLE_COLOURS: Record<string, { bg: string; text: string }> = {
 // isn't shown yet, so without this users can't change theme until they
 // sign in — which doesn't help the first-impression experience.
 function PreLoginThemeToggle() {
-  const { theme, toggle } = useTheme();
-  const isDark = theme === "dark";
-  const Icon   = isDark ? Sun : Moon;
+  // Light · Dark · Auto, the same three as inside, so the choice somebody
+  // makes on the sign-in page is the one they are still on afterwards.
+  const { mode, setMode, deviceTheme } = useTheme();
   const pill = {
     background: "var(--bg-card)",
     border: "1px solid var(--border-subtle)",
@@ -121,15 +121,21 @@ function PreLoginThemeToggle() {
         style={pill}>
         <CircleHelp size={16} /> Help
       </a>
-      <button
-        onClick={toggle}
-        aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        className="w-10 h-10 rounded-full flex items-center justify-center transition-colors"
-        style={pill}
-      >
-        <Icon size={16} />
-      </button>
+      <div className="h-10 rounded-full flex items-center gap-0.5 px-1" style={pill} role="group" aria-label="Appearance">
+        {([["light", Sun], ["dark", Moon], ["auto", Monitor]] as const).map(([m, Icon]) => (
+          <button key={m} type="button" onClick={() => setMode(m)} aria-pressed={mode === m}
+            aria-label={m === "auto" ? "Auto" : m === "dark" ? "Dark" : "Light"}
+            title={m === "auto"
+              ? `Auto — follows this device, which is ${deviceTheme === "dark" ? "dark" : "light"} right now`
+              : m === "dark" ? "Dark" : "Light"}
+            className="w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+            style={mode === m
+              ? { background: "var(--bg-hover)", color: "var(--text-primary)" }
+              : { background: "transparent", color: "var(--text-muted)" }}>
+            <Icon size={15} />
+          </button>
+        ))}
+      </div>
     </div>
     </>
   );
