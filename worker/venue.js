@@ -63,6 +63,26 @@ const DOOR_LOG_KEEP = 200;
 /** How often the register of people is written down, so a restart keeps it. */
 const REGISTER_SAVE_MS = 30_000;
 /**
+ * How long somebody has to be out of sight before Kyro says they have left.
+ *
+ * Not a guess at a doorway: this is the register's own last sighting of a
+ * person. Shorter than this and a camera losing somebody behind a pillar for
+ * a minute becomes a departure, which is the whole fault being fixed here.
+ */
+const LEFT_AFTER_MS = 5 * 60_000;
+/**
+ * How long the record of when each person was first and last seen is kept.
+ *
+ * It is two timestamps and a number per person — no face code, no appearance
+ * reading, nothing that describes anybody — and it is what every attendance
+ * figure older than today is built from, so a year of Sundays stays
+ * answerable.
+ */
+const PEOPLE_KEPT_MS = 400 * 86400_000;
+/** How long the arrivals-and-departures figures are held before being worked
+ *  out again. Shorter than how often they can change (REGISTER_SAVE_MS). */
+const MOVEMENT_FRESH_MS = 15_000;
+/**
  * Face codes are deleted this long after they were written, whatever else
  * happens.
  *
@@ -301,6 +321,13 @@ export class VenueHub extends DurableObject {
      */
     this.register = null;
     this.registerSavedAt = 0;
+    /** The last time the people table was brought up to date, and for which
+     *  service — so a save only rewrites the rows that have changed. */
+    this.peopleSavedAt = 0;
+    this.peopleSavedFor = null;
+    /** Arrivals and departures worked out from those rows, held between
+     *  saves. Every open page asks for this every few seconds. */
+    this.movementCache = null;
     /**
      * The building: one master seat per physical chair, whatever number of
      * cameras can see it. See worker/building.js. Loaded on first use and
@@ -350,10 +377,40 @@ export class VenueHub extends DurableObject {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS faces (service TEXT NOT NULL, person INTEGER NOT NULL, code TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (service, person))",
       );
+      /*
+       * When each DIFFERENT person was first and last seen.
+       *
+       * This is the only honest source of "how many arrived" there is without
+       * a camera on a doorway. A camera on a ROOM reports "entries", which
+       * counts every person it becomes sure of — and over an afternoon it
+       * becomes sure of the same congregation again and again. One person
+       * sitting at a desk produced ELEVEN arrivals and eight departures, and
+       * every page in Kyro repeated it: attendance 11, busiest day 11,
+       * average attendance 11, "2 people left" at 4:15.
+       *
+       * The register (worker/identity.js) already knows those were one
+       * person. It was only ever held in memory for the length of a service,
+       * so nothing afterwards could ask it. One row per person per service
+       * fixes that: attendance is how many rows, arrivals are their first
+       * sightings, departures their last.
+       *
+       * No face code, no appearance reading, no name — two timestamps and a
+       * number that means nothing outside its own service.
+       *
+       * Its own exec call. See the note above on the faces table for what
+       * happens when that is forgotten.
+       */
+      ctx.storage.sql.exec(
+        "CREATE TABLE IF NOT EXISTS people (service TEXT NOT NULL, person INTEGER NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (service, person))",
+      );
+      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS people_first ON people (first_at)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
       // Deleting a day marks its rows instead of removing them, so it can be
       // undone. They are only really gone after DELETED_KEPT_DAYS.
       try { ctx.storage.sql.exec("ALTER TABLE history ADD COLUMN deleted_at INTEGER"); } catch { /* already there */ }
+      // Deleting a day has to take the people seen that day with it, or the
+      // day comes straight back in Analytics with its attendance intact.
+      try { ctx.storage.sql.exec("ALTER TABLE people ADD COLUMN deleted_at INTEGER"); } catch { /* already there */ }
     });
   }
 
@@ -950,6 +1007,10 @@ export class VenueHub extends DurableObject {
       // their own the moment the service ends.
       // Asked again here rather than trusted from earlier in the request:
       // writing face codes down is the thing the switch governs.
+      // When each different person was first and last seen. Not biometric and
+      // not optional: this is where attendance and arrivals come from once a
+      // service is over. See the people table.
+      this.savePeople(service);
       if (await this.facesAllowed()) this.saveFaces(service, now);
       else this.wipeFaces();
       // And whatever else happens — a service that never ended, a timer that
@@ -1125,6 +1186,125 @@ export class VenueHub extends DurableObject {
    * it belongs to: a limit that holds even when a service never ended
    * properly, which is exactly the case this has to survive.
    */
+  /**
+   * Write down when each different person was first and last seen.
+   *
+   * The register itself lives in memory and dies with the service. These two
+   * timestamps per person are what every figure afterwards is built from, so
+   * they are kept: how many people were there (how many rows), when they
+   * arrived (first_at) and when they left (last_at).
+   *
+   * Nothing here describes anybody. The person number means nothing outside
+   * its own service and nothing is kept that could match a person in one
+   * service to a person in another.
+   */
+  savePeople(service) {
+    if (!service || !this.register) return;
+    try {
+      // Only the people something has happened to since the last save. A full
+      // congregation is nine hundred rows and this runs every half minute;
+      // rewriting a row to the value it already holds is work for nothing.
+      const since = this.peopleSavedFor === service ? this.peopleSavedAt : 0;
+      for (const [id, p] of this.register.people) {
+        if ((p.lastAt || 0) < since) continue;
+        this.ctx.storage.sql.exec(
+          "INSERT INTO people (service, person, first_at, last_at) VALUES (?, ?, ?, ?)"
+          + " ON CONFLICT (service, person) DO UPDATE SET last_at = excluded.last_at",
+          service, id, p.firstAt || 0, p.lastAt || 0,
+        );
+      }
+      this.peopleSavedFor = service;
+      this.peopleSavedAt = Date.now();
+      this.movementCache = null;      // the figures below are built from these rows
+      // A year is plenty, and keeps the table from growing without end.
+      this.ctx.storage.sql.exec("DELETE FROM people WHERE first_at < ?", Date.now() - PEOPLE_KEPT_MS);
+    } catch (e) {
+      // Attendance quietly reverting to counting flicker is exactly the
+      // failure this is here to end, so it is never swallowed.
+      this.wrong("Register of people", "Couldn't write down who was seen — attendance will fall back to the cameras' own tallies", e && e.message).catch(() => {});
+    }
+  }
+
+  /**
+   * Arrivals and departures for the service running now, in quarter-hour
+   * slots, counting each person ONCE.
+   *
+   * Every slot size the card offers (15, 30, 60, 120, 180, 240 minutes) is a
+   * whole number of quarter hours, so the page can add these up into whatever
+   * it is showing without ever going back to the cameras' own tallies.
+   *
+   * Read from the people table rather than the register in memory, so it
+   * survives a restart mid-service — and because that is the same table every
+   * figure after today is built from, which is how the live page and
+   * Analytics stop disagreeing.
+   */
+  registerMovement(service, now = Date.now()) {
+    if (!service) return null;
+    // Every open page polls the live total every few seconds, and this reads a
+    // row per person. Worked out once and held until the next save, which is
+    // the only thing that can change the answer. See MOVEMENT_FRESH_MS.
+    const cached = this.movementCache;
+    if (cached && cached.service === service && now - cached.at < MOVEMENT_FRESH_MS) return cached.value;
+    let rows;
+    try {
+      rows = this.ctx.storage.sql.exec(
+        "SELECT first_at, last_at FROM people WHERE deleted_at IS NULL AND service = ? ORDER BY first_at", service).toArray();
+    } catch { return null; }
+    if (!rows.length) { this.movementCache = { service, at: now, value: null }; return null; }
+    const SLOT = 15 * 60_000;
+    const from = Math.floor(rows[0].first_at / SLOT) * SLOT;
+    const slots = Math.max(1, Math.ceil((now - from) / SLOT));
+    const arrived = new Array(slots).fill(0), left = new Array(slots).fill(0);
+    let gone = 0;
+    for (const r of rows) {
+      const a = Math.min(slots - 1, Math.max(0, Math.floor((r.first_at - from) / SLOT)));
+      arrived[a]++;
+      // Still being seen is not having left. See LEFT_AFTER_MS.
+      if (r.last_at && now - r.last_at > LEFT_AFTER_MS) {
+        left[Math.min(slots - 1, Math.max(0, Math.floor((r.last_at - from) / SLOT)))]++;
+        gone++;
+      }
+    }
+    const value = { minutes: 15, from, arrived, left, total_arrived: rows.length, total_left: gone };
+    this.movementCache = { service, at: now, value };
+    return value;
+  }
+
+  /**
+   * Different people, by the day they were seen, with when they arrived and
+   * when they left — the register's answer rather than the cameras' tallies.
+   *
+   * @returns Map of date (in `tz`) → { people, arrived[24], left[24] }
+   */
+  peopleByDay(since, tz, now = Date.now()) {
+    const out = new Map();
+    let rows;
+    try {
+      rows = this.ctx.storage.sql.exec(
+        "SELECT service, first_at, last_at FROM people WHERE deleted_at IS NULL AND first_at >= ? ORDER BY first_at", since).toArray();
+    } catch { return out; }
+    if (!rows.length) return out;
+    const fmt = this.dateFmt(tz);
+    let hourFmt;
+    try { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }); }
+    catch { hourFmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", hour: "numeric", hourCycle: "h23" }); }
+    const live = this.register?.service ?? null;
+    for (const r of rows) {
+      const d = fmt.format(new Date(r.first_at));
+      let v = out.get(d);
+      if (!v) { v = { people: 0, arrived: new Array(24).fill(0), left: new Array(24).fill(0) }; out.set(d, v); }
+      v.people++;
+      v.arrived[Number(hourFmt.format(new Date(r.first_at))) % 24]++;
+      // Somebody still being seen has not left. For a service that finished,
+      // everyone's last sighting is long past and everyone left — which is
+      // what happens at the end of a service. For the one running now, only
+      // the people nobody has seen for a while.
+      const gone = r.service !== live || now - r.last_at > LEFT_AFTER_MS;
+      if (gone && r.last_at) v.left[Number(hourFmt.format(new Date(r.last_at))) % 24]++;
+    }
+    return out;
+  }
+
   wipeFaces(keepService = null, now = Date.now()) {
     try {
       if (keepService) {
@@ -1443,7 +1623,8 @@ export class VenueHub extends DurableObject {
     const cap = sum("capacity");
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
-    const faceOn = (await this.privacy()).face_matching && !!(await this.get("service_live", null));
+    const serviceNow = await this.get("service_live", null);
+    const faceOn = (await this.privacy()).face_matching && !!serviceNow;
     let twice = faceOn ? this.sameFaces(new Set(running.map((z) => z.camera_id))) : 0;
     // Overlap inside one room is already gone; only people seen in two
     // different rooms at once are left to take out, and never more than the
@@ -1548,6 +1729,15 @@ export class VenueHub extends DurableObject {
       people_seen: this.register?.size ?? sum("people"),
       /** Whether that came from the register or from the cameras' own tallies. */
       people_from_register: !!this.register?.size,
+      /**
+       * Arrivals and departures that count each person ONCE, in quarter-hour
+       * slots — the register's answer, not the cameras' tallies.
+       *
+       * The tallies count crossings: a room camera's "entries" is every
+       * person it becomes sure of, so one person at a desk produced eleven
+       * arrivals and eight departures. These are people.
+       */
+      movement: this.registerMovement(serviceNow?.id ?? null),
       /** Each camera's own tally, kept for comparison. Never added together. */
       people_seen_by_camera: sum("people"),
       people_seen_at_door: sumDoors("people"),
@@ -1743,6 +1933,7 @@ export class VenueHub extends DurableObject {
     if (keep.length !== log.length) {
       // Past bringing back: now the rows really go.
       this.ctx.storage.sql.exec("DELETE FROM history WHERE deleted_at IS NOT NULL AND deleted_at < ?", cutoff);
+      this.ctx.storage.sql.exec("DELETE FROM people WHERE deleted_at IS NOT NULL AND deleted_at < ?", cutoff);
       await this.ctx.storage.put("deleted_days", keep.map(({ recoverable, ...d }) => d));
     }
     return keep;
@@ -1764,6 +1955,7 @@ export class VenueHub extends DurableObject {
       return json({ error: "Those counts can't be brought back — they were deleted before Kyro could undo it, and were removed outright at the time." }, 410);
     }
     this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?", from, to);
+    this.ctx.storage.sql.exec("UPDATE people SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND first_at >= ? AND first_at <= ?", from, to);
     await this.ctx.storage.put("deleted_days", log.filter((d) => d !== entry));
     const back = await this.get("restored_days", []);
     back.unshift({ date, restored_by: clean(user, 60) || "an administrator", restored_at: new Date().toISOString() });
@@ -1783,6 +1975,10 @@ export class VenueHub extends DurableObject {
     const from = Math.min(...mine.map((r) => r.ts)), to = Math.max(...mine.map((r) => r.ts));
     const peak = Math.max(...mine.map((r) => r.current || 0));
     this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), from, to);
+    // And the people seen that day. Attendance now comes from the register
+    // (see the people table), so a day deleted without this would reappear in
+    // Analytics with its attendance untouched.
+    this.ctx.storage.sql.exec("UPDATE people SET deleted_at = ? WHERE deleted_at IS NULL AND first_at >= ? AND first_at <= ?", Date.now(), from, to);
     // The cameras' running totals for that day go too, or Analytics shows the day
     // again straight away from the live figures. Counting carries on; if a camera
     // is still running, the day simply starts recording afresh from now.
@@ -1959,14 +2155,40 @@ export class VenueHub extends DurableObject {
         if (cameIn > (cur.came_in || 0)) cur.came_in = cameIn;
       }
     }
+    // ── The register of people ────────────────────────────────────────────
+    //
+    // How many DIFFERENT people were seen each day, and when each of them
+    // arrived and left. This is the one source here that counts a person
+    // once. Everything above counts crossings: a room camera's "entries" is
+    // every person it becomes sure of, and over an afternoon it becomes sure
+    // of the same congregation again and again.
+    //
+    // One person sitting at a desk made eleven of them, and this page showed
+    // attendance 11, busiest day 11, average attendance 11 — with "1 seen at
+    // once" printed underneath, which was Kyro telling the truth and being
+    // ignored by its own arithmetic.
+    const byRegister = this.peopleByDay(since, tz);
     // A day where the cameras never saw anyone (e.g. a quick test) isn't a service.
-    const history = [...byDay.entries()].filter(([, v]) => v.peak > 0 || v.came_in > 0).sort().map(([d, v]) => {
-      // A day's attendance is how many people came in. Falling back to the
-      // most seen at once only when nothing counted anyone in or out — which
-      // is a floor, never the answer, because no camera sees a whole hall.
-      const attendance = v.came_in > 0 ? v.came_in : v.peak;
+    const everyDate = new Set([...byDay.keys(), ...byRegister.keys()]);
+    const history = [...everyDate].filter((d) => {
+      const v = byDay.get(d);
+      return (byRegister.get(d)?.people ?? 0) > 0 || (v && (v.peak > 0 || v.came_in > 0));
+    }).sort().map((d) => {
+      const v = byDay.get(d) ?? { peak: 0, capacity: 0, at: 0, door: 0, came_in: 0 };
+      const reg = byRegister.get(d) ?? null;
+      // A day's attendance is how many different people were there.
+      //
+      // The register first, because it is the only one of these that counts a
+      // person once. Then how many the cameras counted walking in, and only
+      // then the most seen at once — a floor, never the answer, because no
+      // camera sees a whole hall.
+      const attendance = reg ? reg.people : v.came_in > 0 ? v.came_in : v.peak;
       return {
-        timestamp: new Date(v.at).toISOString(), date: d, attendance,
+        timestamp: new Date(v.at || (reg ? Date.now() : 0)).toISOString(), date: d, attendance,
+        /** Where that figure came from, so a page never has to guess. */
+        attendance_from: reg ? "register" : v.came_in > 0 ? "entries" : "seen_at_once",
+        /** Different people, counted once each. null before Kyro kept this. */
+        people: reg ? reg.people : null,
         /** The most the cameras saw at one moment. A different question. */
         seen_at_once: v.peak,
         /** How many walked in that day, as the cameras counted them. */
@@ -1977,6 +2199,17 @@ export class VenueHub extends DurableObject {
       };
     });
     const n = history.length;
+    // Arrivals and departures by hour, from the register wherever it has
+    // anything to say. A person arrives once, when they were first seen, and
+    // leaves once, when they were last seen — however many times a camera
+    // lost them and found them again in between.
+    const regDays = [...byRegister.values()];
+    const useRegister = regDays.length > 0;
+    if (useRegister) {
+      arrivals.fill(0); departures.fill(0);
+      for (const v of regDays) for (let h = 0; h < 24; h++) { arrivals[h] += v.arrived[h]; departures[h] += v.left[h]; }
+      movementDays = regDays.length;
+    }
     const m = movementDays || 1;
     const arrival = arrivals.map((count, hour) => ({
       hour, count, avg_count: Math.round((count / m) * 10) / 10,
@@ -1986,6 +2219,15 @@ export class VenueHub extends DurableObject {
       // Whether these attendance figures are counts of people arriving, or a
       // fallback to the most seen at once because nothing counted arrivals.
       attendance_is_arrivals: n > 0 && history.some((h) => h.came_in > 0),
+      /**
+       * Attendance is different people, counted once each, from the register
+       * — not crossings. The page says which, because the two can be very far
+       * apart and the church has to know which it is reading.
+       */
+      attendance_from_register: history.some((h) => h.attendance_from === "register"),
+      /** Arrivals and departures below are each person once, not every time a
+       *  camera became sure of them again. */
+      movement_from_register: useRegister,
       from_door: hasDoors,
       // How many of these days have movement Kyro can stand behind.
       movement_days: movementDays, movement_known_from: new Date(IN_OUT_TRUSTED_FROM).toISOString(),
@@ -2442,7 +2684,11 @@ export class VenueHub extends DurableObject {
     const list = await this.get("services", []);
     const s = list.find((x) => x.id === id);
     if (!s) return json({ error: "No such service" }, 404);
-    if (alsoCounts) this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), Date.parse(s.started_at), Date.parse(s.ended_at));
+    if (alsoCounts) {
+      this.ctx.storage.sql.exec("UPDATE history SET deleted_at = ? WHERE deleted_at IS NULL AND ts >= ? AND ts <= ?", Date.now(), Date.parse(s.started_at), Date.parse(s.ended_at));
+      // Its register of people too — that is where attendance comes from.
+      this.ctx.storage.sql.exec("UPDATE people SET deleted_at = ? WHERE deleted_at IS NULL AND service = ?", Date.now(), s.id);
+    }
     await this.ctx.storage.put("services", list.filter((x) => x.id !== id));
     const log = await this.get("deleted_services", []);
     log.unshift({ ...s, counts_deleted: !!alsoCounts, deleted_by: clean(user, 60), deleted_at: new Date().toISOString() });
@@ -2470,6 +2716,7 @@ export class VenueHub extends DurableObject {
     }
     // The counts it took with it come back too, if they were deleted with it.
     if (counts_deleted && svc.started_at && svc.ended_at) {
+      this.ctx.storage.sql.exec("UPDATE people SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND service = ?", id);
       this.ctx.storage.sql.exec("UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?",
         Date.parse(svc.started_at), Date.parse(svc.ended_at));
     }

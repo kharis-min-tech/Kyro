@@ -86,7 +86,10 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 {
   ok("what the cameras saw at once is still kept, under its own name",
      /seen_at_once: v\.peak,/.test(worker));
-  ok("and a day's attendance is how many came in", /const attendance = v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker));
+  // Attendance is different people first — the register counts each person
+  // once — and the cameras' own tally only for days recorded before it.
+  ok("and a day's attendance is different people, then how many came in",
+     /const attendance = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker));
   ok("the door's own figure is carried alongside", /door_attendance: v\.door \|\| 0,/.test(worker));
   ok("and the hour-by-hour arrivals use every camera again",
      !/const movementCam = /.test(worker));
@@ -126,7 +129,7 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
   ok("deleting a day is one of them, and says so",
      /async deleteDay\(date, tz, user\)/.test(worker));
   ok("deleting a service only takes counts when explicitly asked",
-     /if \(alsoCounts\) this\.ctx\.storage\.sql\.exec\("UPDATE history SET deleted_at/.test(worker));
+     /if \(alsoCounts\) \{\n\s*this\.ctx\.storage\.sql\.exec\("UPDATE history SET deleted_at/.test(worker));
   ok("and what was deleted can be brought back",
      /UPDATE history SET deleted_at = NULL WHERE deleted_at IS NOT NULL/.test(worker));
   // Nothing in the counting, reporting or charting paths touches it.

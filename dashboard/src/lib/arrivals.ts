@@ -77,6 +77,12 @@ export function bucketArrivals(series: CounterPoint[][], minutes: number): Arriv
     });
   }
 
+  return summarise(byStart, minutes);
+}
+
+/** Fill the gaps, total it up, find the busiest slots. Shared by both ways of
+ *  getting here, so a figure never depends on which one was used. */
+function summarise(byStart: Map<number, Slot>, minutes: number): ArrivalSummary {
   const active = [...byStart.values()].sort((a, b) => a.start - b.start);
   // Fill gaps between the first and last active slot so the time axis is
   // continuous (an empty 10:30 slot is information too).
@@ -113,6 +119,45 @@ export function bucketArrivals(series: CounterPoint[][], minutes: number): Arriv
     firstArrival: slots.find((s) => s.arrived > 0)?.start ?? null,
     halfArrivedBy,
   };
+}
+
+/**
+ * Arrivals and departures as the REGISTER OF PEOPLE counts them: once each.
+ *
+ * Everything above this line works on the cameras' running totals, which
+ * count crossings rather than people. A camera watching a room has no doorway
+ * to look at, so it counts every person it becomes sure of — and over an
+ * afternoon it becomes sure of the same congregation again and again. One
+ * person sitting at a desk produced eleven arrivals and eight departures.
+ *
+ * The website sends quarter-hour slots because every size this card offers
+ * (15, 30, 60, 120, 180, 240 minutes) is a whole number of them, so they can
+ * be added up into whatever is being shown without going back to the tallies.
+ */
+export interface PeopleMovement {
+  minutes: number;      // the size of the slots sent (15)
+  from: number;         // epoch ms of the first slot
+  arrived: number[];
+  left: number[];
+}
+
+export function bucketPeople(m: PeopleMovement, minutes: number, since?: number | null): ArrivalSummary {
+  const byStart = new Map<number, Slot>();
+  const step = (m.minutes || 15) * 60_000;
+  for (let i = 0; i < m.arrived.length; i++) {
+    const at = m.from + i * step;
+    // A fresh start narrows the card to this session. It deletes nothing —
+    // the whole service is one button away, exactly as with the tallies.
+    if (since && at + step <= since) continue;
+    const arrived = m.arrived[i] || 0, left = m.left[i] || 0;
+    if (arrived <= 0 && left <= 0) continue;
+    const s = slotStart(at, minutes);
+    const slot = byStart.get(s) ?? { start: s, arrived: 0, left: 0 };
+    slot.arrived += arrived;
+    slot.left += left;
+    byStart.set(s, slot);
+  }
+  return summarise(byStart, minutes);
 }
 
 /**

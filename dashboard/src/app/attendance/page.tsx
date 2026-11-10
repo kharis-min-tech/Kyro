@@ -17,7 +17,7 @@ import { ArrivalTimes } from "@/components/ui/ArrivalTimes";
 import { DoorLog, IdentityHealth } from "@/components/ui/DoorLog";
 import { SystemHealth } from "@/components/ui/SystemHealth";
 import { syncTodayCounts } from "@/lib/manualCountsShared";
-import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint } from "@/lib/arrivals";
+import { bucketArrivals, demoCounterSeries, parseBackendTime, type CounterPoint, type PeopleMovement } from "@/lib/arrivals";
 import { isEdgeLive } from "@/lib/edgeAuth";
 import { aggregateEdgeHistory, edgeCounterSeries, edgeCounterSeriesByCamera, edgeVenueApi, useEdgeSnapshot, type EdgeHistoryPoint } from "@/lib/edgeVenue";
 import type { ZoneLive } from "@/types";
@@ -1566,6 +1566,10 @@ export default function AttendancePage() {
                 byCamera={arrivalByCamera}
                 onDownload={edge && !userChoseDemo() ? downloadArrivals : undefined}
                 peopleSeen={edge && isToday ? (venueTotal as { people_seen?: number } | null)?.people_seen ?? null : null}
+                /* Arrivals and departures that count each person once. When
+                   this is here the card uses it instead of the cameras' own
+                   tallies — see the note in lib/arrivals.ts. */
+                movement={edge && isToday ? (venueTotal as { movement?: PeopleMovement | null } | null)?.movement ?? null : null}
                 doorMode={doorMode} doorModeBy={doorModeBy}
                 onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}

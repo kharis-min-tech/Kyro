@@ -75,7 +75,7 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
 //    this loosens what face data is for or how long it lives.
 {
   ok("faces are read only during a service",
-     /const faceOn = \(await this\.privacy\(\)\)\.face_matching && !!\(await this\.get\("service_live", null\)\)/.test(worker));
+     /const serviceNow = await this\.get\("service_live", null\);\n\s*const faceOn = \(await this\.privacy\(\)\)\.face_matching && !!serviceNow;/.test(worker));
   // Wiped when it ends — BOTH the live copies and the ones written down. Face
   // codes are now kept for the length of a service rather than only in
   // memory, because holding them in memory alone meant a restart lost them

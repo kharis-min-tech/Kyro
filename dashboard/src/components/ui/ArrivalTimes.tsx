@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Clock, Table2, BarChart3, AlertTriangle, RotateCcw, Download } from "lucide-react";
-import { bucketArrivals, sinceFreshStart, type CounterPoint, type Slot } from "@/lib/arrivals";
+import { bucketArrivals, bucketPeople, sinceFreshStart, type CounterPoint, type PeopleMovement, type Slot } from "@/lib/arrivals";
 
 const CARD   = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, peopleSeen }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, peopleSeen, movement }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -109,6 +109,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   doorModeBy?: string;
   /** Different people seen this service, counted once each. */
   peopleSeen?: number | null;
+  /**
+   * Arrivals and departures as the register of people counts them — once each
+   * — in quarter-hour slots. When this is here it is what the card shows,
+   * because everything else on it counts crossings: a camera on a room has no
+   * doorway to watch, so one person who steps out and comes back is another
+   * arrival, every time.
+   */
+  movement?: PeopleMovement | null;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -141,7 +149,16 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
     () => (showingSession ? sinceFreshStart(picked ?? [], sessionFrom!) : picked),
     [picked, showingSession, sessionFrom],
   );
-  const summary = useMemo(() => bucketArrivals(shown ?? [], minutes), [shown, minutes]);
+  // The register's figures when there are any, and the cameras' tallies only
+  // when there are not. Switching to the unverified readings is a deliberate
+  // request to see the tallies, so it wins.
+  const usingRegister = !!movement && movement.arrived.length > 0 && !unverified;
+  const summary = useMemo(
+    () => (usingRegister
+      ? bucketPeople(movement!, minutes, showingSession ? sessionFrom : null)
+      : bucketArrivals(shown ?? [], minutes)),
+    [usingRegister, movement, shown, minutes, showingSession, sessionFrom],
+  );
   // Each camera's figures, worked out exactly as the totals above are: same
   // stretch of the day, same choice about unverified readings. They were
   // computed separately before, over the whole day and including readings the
@@ -190,6 +207,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
           </p>
           <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>
             How many people came in and went out in each {minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`}
+          </p>
+          {/* Which of the two things on this card is being shown. They can be
+              very far apart — one person at a desk counted as eleven — and
+              the church has to know which it is reading. */}
+          <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3, lineHeight: 1.4 }}>
+            {usingRegister
+              ? <>Each person counted <strong style={{ color: "var(--text-secondary)" }}>once</strong>, from the register of people — not every time a camera became sure of them again.</>
+              : <>From the cameras&apos; own tallies, which count crossings rather than people: somebody who steps out and comes back counts again. The register takes over once a service is running.</>}
           </p>
           {/* Which stretch of the day these figures cover. Said out loud, so a
               session's figures are never mistaken for the day's. */}
@@ -382,16 +407,20 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
             )}
             <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={summary.totalArrived.toLocaleString()}
-              sub={`${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
+              sub={usingRegister
+                ? "Different people, counted once each"
+                : `${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
             <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={summary.totalLeft.toLocaleString()}
-              sub={summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
+              sub={usingRegister
+                ? "People nobody has seen for five minutes"
+                : summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             <StatTile label="Busiest arrival time" swatch={ARRIVE}
               value={peakArrival ? fmtRange(peakArrival, minutes) : "—"}
-              sub={peakArrival ? `${peakArrival.arrived.toLocaleString()} people arrived` : undefined} />
+              sub={peakArrival ? `${peakArrival.arrived.toLocaleString()} ${peakArrival.arrived === 1 ? "person" : "people"} arrived` : undefined} />
             <StatTile label="Busiest exit time" swatch={LEAVE}
               value={peakDeparture ? fmtRange(peakDeparture, minutes) : "—"}
-              sub={peakDeparture ? `${peakDeparture.left.toLocaleString()} people left` : undefined} />
+              sub={peakDeparture ? `${peakDeparture.left.toLocaleString()} ${peakDeparture.left === 1 ? "person" : "people"} left` : undefined} />
             <StatTile label="Half had arrived by"
               value={summary.halfArrivedBy ? fmtTime(summary.halfArrivedBy) : "—"}
               sub={summary.firstArrival ? `first at ${fmtTime(summary.firstArrival)}` : undefined} />

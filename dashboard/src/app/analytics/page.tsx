@@ -163,7 +163,7 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
 }
 
 // ─── Arrival chart ────────────────────────────────────────────────────────────
-function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]; movementDays?: number; byDayDates?: string[] }) {
+function ArrivalChart({ data, movementDays, byDayDates, fromRegister }: { data: HourlyBucket[]; movementDays?: number; byDayDates?: string[]; fromRegister?: boolean }) {
   if (!data.length) return null;
   const anyMovement = data.some((d) => d.count > 0 || (d.exits ?? 0) > 0);
   const max  = Math.max(...data.map((d) => Math.max(d.count, d.exits ?? 0)), 1);
@@ -236,6 +236,9 @@ function ArrivalChart({ data, movementDays, byDayDates }: { data: HourlyBucket[]
               On an average day: {totalIn.toLocaleString()} arrived, {totalOut.toLocaleString()} left
               {movementDays > 1 && <> — about {(totalIn * movementDays).toLocaleString()} and {(totalOut * movementDays).toLocaleString()} across all {movementDays} days</>}.
               {" "}From {movementDays} {movementDays === 1 ? "day" : "days"} Kyro could follow people. Earlier days are left out.
+              {fromRegister
+                ? " Each person is counted once, however often they moved or stepped out."
+                : " These come from the cameras' own tallies, which count crossings rather than people."}
             </p>
           )}
         </>
@@ -619,7 +622,9 @@ export default function AnalyticsPage() {
                 <Stat label="Total services" value={summary.total_sessions} sub={edge ? `Last ${EDGE_DAYS} days` : "Last 6 months"} icon={Calendar} accent="#6366f1"/>
                 <Stat label={edge ? "Busiest day" : "All-time peak"}
                   value={((summary as { busiest_day?: number }).busiest_day ?? summary.all_time_peak).toLocaleString()}
-                  sub={edge ? `Most who came in on one day · ${summary.all_time_peak.toLocaleString()} seen at once` : "Single service record"}
+                  sub={edge
+                    ? `${(summary as { attendance_from_register?: boolean }).attendance_from_register ? "Most different people on one day" : "Most who came in on one day"} · ${summary.all_time_peak.toLocaleString()} seen at once`
+                    : "Single service record"}
                   icon={TrendingUp} accent="#f59e0b"/>
                 <Stat label="Average attendance" value={Math.round(summary.avg_attendance).toLocaleString()}
                   sub={trend!==0?`${trend>0?"↑":"↓"} ${Math.abs(trend)}% vs prior period`:"Stable"} icon={Users} accent="#4ade80"/>
@@ -633,10 +638,15 @@ export default function AnalyticsPage() {
                 used the door's, so the two disagreed. */}
             {summary && (
               <p style={{ fontSize: 12, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-                {(summary as { attendance_is_arrivals?: boolean }).attendance_is_arrivals
-                  ? <><strong style={{ color: "var(--text-secondary)" }}>Attendance is how many people came in</strong>, as the cameras counted
-                      them walking in — not how many were in shot at one moment. No camera sees a whole hall, so
+                {(summary as { attendance_from_register?: boolean }).attendance_from_register
+                  ? <><strong style={{ color: "var(--text-secondary)" }}>Attendance is how many different people were there</strong>, counted once
+                      each, however often they stood up, moved seats or stepped out. No camera sees a whole hall, so
                       &quot;seen at once&quot; is always the smaller number and is never the attendance.</>
+                  : (summary as { attendance_is_arrivals?: boolean }).attendance_is_arrivals
+                  ? <><strong style={{ color: "var(--text-secondary)" }}>These days are from before Kyro kept a register of people</strong>, so attendance
+                      here is the cameras&apos; own tally of people walking in. A camera watching a room counts every person it
+                      becomes sure of, so on a long afternoon it counts the same congregation more than once. Days from now on
+                      count each person once.</>
                   : <>No camera counted anyone in or out on these days, so attendance falls back to the most the cameras saw at
                       once. That is a floor, not an answer — a camera sees its own corner of a room.</>}
                 {summary.avg_occupancy_pct === 0 && " Occupancy stays at 0% until the rooms have their number of seats set, on the Cameras page."}
@@ -648,6 +658,7 @@ export default function AnalyticsPage() {
             <TrendChart data={filtered}/>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <ArrivalChart data={arrival} movementDays={(summary as { movement_days?: number } | null)?.movement_days}
+                fromRegister={(summary as { movement_from_register?: boolean } | null)?.movement_from_register}
                 byDayDates={[...history].reverse().map((h) => h.timestamp.slice(0, 10))}/>
               <WeeklyBreakdown data={filtered}/>
             </div>

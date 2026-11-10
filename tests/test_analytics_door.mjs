@@ -32,13 +32,17 @@ const body = src.slice(from, to + 4);
 ok("the daily builder was found", from > 0 && body.includes("doorRun"));
 
 // Stand-ins for the bits of the Durable Object it touches.
-function run({ rows, cams }) {
+function run({ rows, cams, people }) {
   const fakeSql = { exec: () => ({ toArray: () => rows }) };
   const self = {
     ctx: { storage: { sql: fakeSql } },
     get: async (k, d) => (k === "live" ? {} : k === "cameras" ? cams : d),
     isOnline: () => false,
     dateFmt: () => new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }),
+    // The register of people: how many DIFFERENT people were there each day,
+    // and when each of them arrived and left. Empty unless a case supplies it,
+    // which is also the truth for every day recorded before it existed.
+    peopleByDay: () => people ?? new Map(),
   };
   const fn = new Function("IN_OUT_TRUSTED_FROM", "countedMovement", `return (async function () {
     ${body.replace("async daily(url) {", "const daily = async function (url) {").replace(/\n  }$/, "\n  };")}
@@ -118,6 +122,51 @@ const min = 60_000;
   const out = await run({ rows, cams });
   ok("a day that only saw people leave is not a negative attendance",
      (out.history[0]?.door_attendance ?? 0) === 0, `got ${out.history[0]?.door_attendance}`);
+}
+
+// N. The register, once there is one: attendance is different people, counted
+//    once each, and it beats both the cameras' tallies and "most at once".
+//
+//    This is the fault she reported: one person at a desk, a room camera that
+//    became sure of her eleven times, and every page in Kyro repeating 11.
+{
+  const rows = [];
+  for (let i = 0; i <= 20; i++) {
+    // The room camera's tally climbs all afternoon. It is one person.
+    rows.push({ camera_id: "room", ts: t0 + i * min, current: 1, capacity: 0, entries: i, exits: (i * 0.8) | 0 });
+  }
+  const cams = { room: { camera_id: "room", location: "indoor", zone_capacity: 0 } };
+  const people = new Map([["2026-11-08", {
+    people: 1,
+    arrived: Object.assign(new Array(24).fill(0), { 9: 1 }),
+    left: new Array(24).fill(0),
+  }]]);
+  const out = await run({ rows, cams, people });
+  ok("one person at a desk is attendance 1, not 20",
+     out.history[0].attendance === 1, `got ${out.history[0].attendance}`);
+  ok("and the page is told the figure is different people",
+     out.history[0].attendance_from === "register" && out.summary.attendance_from_register === true);
+  ok("the camera's own tally is kept beside it, not thrown away",
+     out.history[0].came_in === 20, `got ${out.history[0].came_in}`);
+  ok("the busiest day is one person", out.summary.busiest_day === 1);
+  ok("so is the average", out.summary.avg_attendance === 1);
+  ok("one arrival, in the hour she sat down",
+     out.arrival[9].count === 1 && out.arrival.reduce((a, b) => a + b.count, 0) === 1);
+  ok("and no departures at all — she never went out",
+     out.arrival.reduce((a, b) => a + b.exits, 0) === 0);
+  ok("the hourly chart says it is counting people, not crossings",
+     out.summary.movement_from_register === true);
+}
+
+// N+1. Days from before the register still work, and say what they are.
+{
+  const rows = [];
+  for (let i = 0; i <= 20; i++) rows.push({ camera_id: "door", ts: t0 + i * min, current: 3, capacity: 0, entries: i * 10, exits: 0 });
+  const cams = { door: { camera_id: "door", location: "entrance", zone_capacity: 0 } };
+  const out = await run({ rows, cams });
+  ok("an older day still has its figure", out.history[0].attendance === 200);
+  ok("and is labelled as the cameras' tally, not the register",
+     out.history[0].attendance_from === "entries" && out.summary.attendance_from_register === false);
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. Analytics and the live page answer the same question.");
