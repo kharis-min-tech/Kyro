@@ -198,13 +198,14 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
      /if \(!t\.countedIn && !t\.countedOut && !t\.uniqued\) return;/.test(src));
   ok("a fresh start counts everybody again at the door",
      /this\.known = \[\];\s*\n(?:.*\n)*?\s*for \(const t of this\.tracks\) \{ t\.countedIn = false; t\.countedOut = false; t\.arrived = false; \}/.test(src));
-  // And in a room, somebody already in shot when the tallies start again is
-  // in NEITHER figure. They kept the flag that lets a departure be counted,
-  // so after a reset they could only subtract: a tile read 4 out against 2
-  // in, more people leaving than had ever arrived.
-  ok("but in a room they are in neither figure, not just one",
-     /if \(t\.arrived\) this\.exits\+\+;/.test(src)
-     && /\{ this\.entries\+\+; t\.arrived = true; \}/.test(src));
+  // And a room camera is in neither figure at all now. It has no line for
+  // anybody to cross, and the thing it used to call an arrival — "I have
+  // become sure there is a person here" — it says again every time it loses
+  // somebody and finds them. That is what produced "1 person on the camera
+  // and 6 came in". See tests/test_no_false_entries.mjs.
+  ok("and a room camera produces neither figure",
+     /private cameInRoom\(_t: Track\): void \{\s*\n\s*\/\/ Deliberately nothing\./.test(src)
+     && /if \(t\.arrived\) this\.exits\+\+;/.test(src));
   ok("and the live count never blinks to nothing to achieve it",
      /counted: boolean;\s+\/\/ confirmed to be a person/.test(src)
      && !/for \(const t of this\.tracks\) t\.counted = false;/.test(src));

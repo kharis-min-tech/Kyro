@@ -71,8 +71,15 @@ const see = (tr, boxes, at) => tr.update(boxes.map((b) => ({ box: b, score: 0.8 
   let t = 0;
   // Two people walk in and settle down.
   for (let i = 0; i < 8; i++) see(tr, [box(200, 200, 60, 160), box(400, 200, 60, 160)], (t += 500));
-  ok("two people in a room are two arrivals", tr.entries === 2, `in ${tr.entries}`);
-  ok("and nobody has left", tr.exits === 0, `out ${tr.exits}`);
+  // This used to read "two people in a room are two arrivals". It was the
+  // single thing that produced "1 person on the camera and 6 came in": the
+  // same sentence said again every time the camera lost somebody and found
+  // them. A room camera has no line for anybody to cross, so it no longer
+  // answers the question at all — see tests/test_no_false_entries.mjs.
+  ok("a room camera counts nobody in", tr.entries === 0, `in ${tr.entries}`);
+  ok("and nobody out", tr.exits === 0, `out ${tr.exits}`);
+  ok("but it does say how many are in the room",
+     tr.update([{ box: box(200, 200, 60, 160), score: 0.8 }, { box: box(400, 200, 60, 160), score: 0.8 }], (t += 500), 1280, 720) === 2);
 
   // A new session starts while they are both still sitting there.
   tr.resetCounts();
@@ -83,23 +90,29 @@ const see = (tr, boxes, at) => tr.update(boxes.map((b) => ({ box: b, score: 0.8 
   // Now they both leave. GRACE_MS is 45 s — somebody behind a pillar for half
   // a minute has not left — so wait past it.
   for (let i = 0; i < 60; i++) see(tr, [], (t += 1000));
-  ok("people who were already here when it reset are in NEITHER figure",
-     tr.exits === 0, `out ${tr.exits} — they never arrived during this session`);
+  ok("and nobody is counted as leaving either", tr.exits === 0, `out ${tr.exits}`);
   ok("so departures can never run ahead of arrivals", tr.exits <= tr.entries,
      `${tr.entries} in, ${tr.exits} out`);
 }
 
 {
-  // Somebody who genuinely arrives after the reset still counts, both ways —
-  // being careful must not turn into counting nobody.
+  // Arrivals come from a DOORWAY, which has a line and knows which way
+  // somebody walked. Being careful about rooms must not turn into counting
+  // nobody anywhere.
   const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
   let t = 0;
-  for (let i = 0; i < 8; i++) see(tr, [box(200, 200, 60, 160)], (t += 500));
-  tr.resetCounts();
-  for (let i = 0; i < 8; i++) see(tr, [box(200, 200, 60, 160), box(600, 200, 60, 160)], (t += 500));
-  ok("somebody arriving after the reset is an arrival", tr.entries === 1, `in ${tr.entries}`);
-  for (let i = 0; i < 60; i++) see(tr, [], (t += 1000));
-  ok("and leaving again is a departure", tr.exits === 1, `out ${tr.exits}`);
+  const walk = (from, to, steps = 6) => {
+    for (let i = 0; i <= steps; i++) {
+      const h = from + (to - from) * (i / steps);
+      tr.update([{ box: [600 - h / 2, 400 - h, 600 + h / 2, 400], score: 0.85 }], (t += 400), 1280, 720);
+    }
+    for (let i = 0; i < 50; i++) tr.update([], (t += 1000), 1280, 720);
+  };
+  walk(60, 200);
+  ok("somebody walking in at a doorway IS an arrival", tr.entries === 1, `in ${tr.entries}`);
+  walk(200, 60);
+  ok("and walking back out is a departure", tr.exits === 1, `out ${tr.exits}`);
   ok("still in step", tr.exits <= tr.entries);
 }
 

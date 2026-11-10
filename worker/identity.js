@@ -780,12 +780,73 @@ export class IdentityRegistry {
       w = { first: now, last: now, seen: 1, faces: o.face ? 1 : 0, looks: [], faceCodes: [], seat: o.seat ?? null };
       if (o.look) keep(w.looks, o.look);
       if (o.face) keep(w.faceCodes, o.face);
+      /**
+       * Evidence carries across a track dying.
+       *
+       * A sighting has to go on not matching anybody for several separate
+       * looks before it is called somebody new — which is right, and which
+       * quietly meant that anybody only ever visible in short bursts was
+       * never counted at all. Lost behind a pillar every half minute, or
+       * standing where the detector keeps dropping them, and each return is
+       * a new track with a new waiting entry that starts from nothing. The
+       * evidence was being thrown away and gathered again, for ever.
+       *
+       * Measured: somebody visible for twenty seconds in every ninety was
+       * counted ZERO times over ten minutes. That is the opposite failure
+       * from the one being fixed here — undercounting rather than over — and
+       * it is just as wrong.
+       *
+       * So a new waiting entry looks for one already waiting that plainly
+       * looks the same, and takes over its evidence. It is the same thing,
+       * seen again; the camera simply gave it a new number.
+       */
+      if (o.look) {
+        /**
+         * Only from a sighting that has STOPPED, and only when it is the
+         * single obvious candidate.
+         *
+         * Both conditions are load-bearing, and the first version had
+         * neither. A waiting entry that was updated a moment ago belongs to
+         * somebody standing there right now — it cannot also be this. And at
+         * the start of a service a dozen strangers are all waiting at once,
+         * none of them yet in the register: with no margin test, each new
+         * arrival took over whichever of them it happened to resemble.
+         * Measured, without these two lines: 43 of 120 people at a service
+         * lost into one another.
+         */
+        let best = null, bestScore = 0, second = 0;
+        for (const [k, v] of this.waiting) {
+          if (k === wkey || !v.looks.length) continue;
+          // A longer reach than WAITING_STALE_MS, which is about tidying the
+          // list rather than about who somebody is: a person who keeps
+          // vanishing for a minute at a time is exactly the case this
+          // exists for, so the window has to outlast their disappearances.
+          if (now - v.last > TRACK_LINK_MS) continue;
+          if (now - v.last < CO_SEEN_MS) continue;          // still being seen: somebody else
+          const score = alikeLook(v.looks[v.looks.length - 1], o.look);
+          if (score > bestScore) { second = bestScore; bestScore = score; best = k; }
+          else if (score > second) second = score;
+        }
+        if (best && bestScore >= this.lookSame && bestScore - second >= LOOK_MARGIN) {
+          const v = this.waiting.get(best);
+          w.first = Math.min(w.first, v.first);
+          w.seen += v.seen;
+          w.faces += v.faces;
+          for (const l of v.looks) keep(w.looks, l);
+          for (const f of v.faceCodes) keep(w.faceCodes, f);
+          w.seat = w.seat ?? v.seat;
+          this.waiting.delete(best);
+          this.stats.waitingCarried = (this.stats.waitingCarried || 0) + 1;
+        }
+      }
       this.waiting.set(wkey, w);
       this.stats.waiting++;
       // Sightings that stopped coming before they earned a place. Tidied
       // here rather than on a timer: this is the only thing that adds to it.
+      // Tidied by the same reach the carry-over above uses, so a sighting
+      // is never thrown away while it is still evidence about somebody.
       if (this.waiting.size > 500) {
-        for (const [k, v] of this.waiting) if (now - v.last > WAITING_STALE_MS) this.waiting.delete(k);
+        for (const [k, v] of this.waiting) if (now - v.last > TRACK_LINK_MS) this.waiting.delete(k);
       }
     }
     if (w.seen < (w.faces ? NEW_PERSON_WITH_FACE : NEW_PERSON_NO_FACE)) return null;

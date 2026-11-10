@@ -464,6 +464,34 @@ export class PersonTracker {
    */
   private assume: "in" | "out" | null = null;
 
+  /**
+   * Somebody this camera has just become sure of.
+   *
+   * ── Why this is now almost nothing ─────────────────────────────────────
+   *
+   * This used to count an arrival, for a camera watching a ROOM. It is the
+   * single thing that produced "1 person on the camera and 6 came in".
+   *
+   * A room camera has no line for anybody to cross. What it can honestly
+   * say is "I have become sure there is a person here" — and it says that
+   * again every time it loses somebody and finds them again: a detector that
+   * drops out for a minute, somebody hidden behind the person in front,
+   * anybody who turns their back, a browser reloaded. Each one looked
+   * exactly like somebody walking in.
+   *
+   * Every figure that used to be built from it now comes from the register
+   * of people instead, which counts PEOPLE rather than moments of certainty
+   * — so there is nothing left for this to feed, and a number nobody shows
+   * is still a number somebody will eventually read. It is not produced.
+   *
+   * A camera on a doorway is a different thing entirely and is untouched:
+   * it counts people crossing, by the direction they walked, through
+   * wentIn() below.
+   */
+  private cameInRoom(_t: Track): void {
+    // Deliberately nothing. See the note above.
+  }
+
   /** null for a camera watching a room; a direction for one watching a door. */
   watchesDoorway(inward: Inward | null, assume: "in" | "out" | null = null): void {
     if (this.inward !== inward) { this.inward = inward; this.entries = 0; this.exits = 0; this.people = 0; this.known = []; }
@@ -507,7 +535,7 @@ export class PersonTracker {
       if (faces?.[b]) tr.face = faces[b];
       if (looks?.[b]) tr.look = looks[b];
       tr.score = Math.min(confirmAt + 2, tr.score + 1);
-      if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; if (!this.inward) { this.entries++; tr.arrived = true; } }
+      if (!tr.counted && tr.score >= confirmAt) { tr.counted = true; this.cameInRoom(tr); }
       this.countPerson(tr);
     }
 
@@ -591,7 +619,7 @@ export class PersonTracker {
         if (t.tallied) { t.tallied = false; t.firstBox = b; }
         t.returning = true;   // recognised, so never a new person
         t.score = Math.min(confirmAt + 2, t.score + 1);
-        if (!t.counted && t.score >= confirmAt) { t.counted = true; if (!this.inward) { this.entries++; t.arrived = true; } }
+        if (!t.counted && t.score >= confirmAt) { t.counted = true; this.cameInRoom(t); }
         this.countPerson(t);
         return;
       }
@@ -631,7 +659,7 @@ export class PersonTracker {
       }
 
       if (gone < GRACE_MS) return true;
-      if (t.arrived) this.exits++;   // a room: only people this session watched arrive can leave
+      if (t.arrived) this.exits++;   // only people this camera watched arrive can leave
       this.remember(t);
       return false;
     });

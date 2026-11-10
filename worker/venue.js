@@ -504,7 +504,7 @@ export class VenueHub extends DurableObject {
       if (!role) return json({ error: "Please sign in again" }, 401);
       if (p === "/api/live/cameras" && request.method === "GET") return json(await this.cameraList(url.searchParams.get("all") === "1"));
       if (p === "/api/live/venue" && request.method === "GET") return json(await this.venueTotal());
-      if (p === "/api/live/history" && request.method === "GET") return json(this.history(url));
+      if (p === "/api/live/history" && request.method === "GET") return json(await this.history(url));
       if (p === "/api/live/daily" && request.method === "GET") return json(await this.daily(url));
       if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
       if (p.startsWith("/api/live/watch/")) {
@@ -624,6 +624,12 @@ export class VenueHub extends DurableObject {
           ? await this.putAsideAll(user)
           : await this.putAside(clean(b.where, 60), b.what ? clean(b.what, 200) : null, user);
         return json({ put_aside: n });
+      }
+      // The audit trail: every time Kyro declined to carry a counter
+      // forward, and exactly what it did not count.
+      if (p === "/api/live/count-audit" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json(await this.get("count_audit", []));
       }
       // What the "is this the same person?" answers add up to.
       if (p === "/api/live/learning" && request.method === "GET") {
@@ -789,6 +795,9 @@ export class VenueHub extends DurableObject {
     let changed = false, countersChanged = false;
     /** Cameras that said goodbye in this report. See the end of this method. */
     const stopped = [];
+    /** Counters that started again, and what was deliberately not counted
+     *  because of it. Written to the audit trail below. */
+    const countReset = [];
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
@@ -848,12 +857,52 @@ export class VenueHub extends DurableObject {
       const seen = counters[camera_id] ?? { in: 0, out: 0, lastIn: null, lastOut: null, people: 0, lastPeople: null };
       const rIn = num(c.entries, 0, 10000000), rOut = num(c.exits, 0, 10000000);
       const rPeople = num(c.people_seen, 0, 10000000);
-      seen.in += seen.lastIn === null || rIn < seen.lastIn ? rIn : rIn - seen.lastIn;
-      seen.out += seen.lastOut === null || rOut < seen.lastOut ? rOut : rOut - seen.lastOut;
-      // Different people, added up the same way, so a reloaded browser's
-      // register starting again doesn't throw away the ones already counted.
-      seen.people = (seen.people || 0) +
-        (seen.lastPeople === null || rPeople < seen.lastPeople ? rPeople : rPeople - seen.lastPeople);
+      /**
+       * Only ever the step FORWARD, and nothing at all when a counter starts
+       * again.
+       *
+       * ── The bug this was ───────────────────────────────────────────────
+       *
+       * "how is there 1 person on the camera and 6 came in ... now theres 8
+       * that came in meanwhile i didnt even move".
+       *
+       * A browser reports its own running total since IT started. When that
+       * total comes back LOWER than last time, the browser restarted — a
+       * reload, a camera reconnect, a tab reopened. This then added the
+       * WHOLE of the new total as arrivals, on the reasoning that it was all
+       * new since the restart.
+       *
+       * It is not. A fresh tracker confirms everybody already standing in
+       * front of the camera within a second or two, and those people did not
+       * arrive — they were already there. So every reload counted the room
+       * again. Reload twice with one person in shot and "came in" goes up by
+       * two, with nobody moving at all. Over an evening of testing that is
+       * exactly how 0 became 6 became 8.
+       *
+       * The same applies to the very first report Kyro ever sees from a
+       * camera: whatever it has counted up to that moment happened before
+       * anybody was watching, and is not arrivals since now.
+       *
+       * The cost is any genuine arrival in the second or two between a
+       * restart and its first report. That is a handful of people a year.
+       * The alternative is the room counted again every time a tab is
+       * reloaded, which is not a cost, it is a wrong answer.
+       */
+      const restarted = seen.lastIn !== null && (rIn < seen.lastIn || rOut < seen.lastOut);
+      const first = seen.lastIn === null;
+      const step = (now, last) => (first || restarted || now < last ? 0 : now - last);
+      seen.in += step(rIn, seen.lastIn);
+      seen.out += step(rOut, seen.lastOut);
+      seen.people = (seen.people || 0) + step(rPeople, seen.lastPeople ?? 0);
+      // Why a figure was or wasn't accepted, kept where it can be read. A
+      // counter that starts again is the commonest reason a number does not
+      // move, and it used to be the commonest reason one moved wrongly.
+      if (restarted || first) {
+        countReset.push({
+          camera_id, at: now, reason: first ? "first report from this camera" : "its counter started again",
+          not_counted: { in: rIn, out: rOut, people: rPeople },
+        });
+      }
       seen.lastIn = rIn; seen.lastOut = rOut; seen.lastPeople = rPeople;
       counters[camera_id] = seen;
       countersChanged = true;
@@ -944,6 +993,16 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.delete("face_error");
     }
     if (countersChanged) await this.ctx.storage.put("counters", counters);
+    // The audit trail: every time Kyro declined to carry a counter forward,
+    // with the camera, the moment and exactly what was not counted. Asked
+    // for in so many words — "preserve an audit trail showing exactly why
+    // every entry was accepted or rejected" — and it is the one thing that
+    // makes a figure checkable after the fact rather than merely plausible.
+    if (countReset.length) {
+      const trail = await this.get("count_audit", []);
+      for (const r of countReset) trail.unshift({ ...r, at: new Date(r.at).toISOString() });
+      await this.ctx.storage.put("count_audit", trail.slice(0, 200));
+    }
     // The register of people. Every camera's observations meet here, which is
     // the only place they can be compared with each other.
     try {
@@ -2118,12 +2177,14 @@ export class VenueHub extends DurableObject {
     };
   }
 
-  history(url) {
+  async history(url) {
     // ?date=YYYY-MM-DD&tz=Europe/London[&camera=id] → per-minute points
     const date = url.searchParams.get("date") || "";
     const tz = url.searchParams.get("tz") || "UTC";
     const camera = url.searchParams.get("camera");
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "date must be YYYY-MM-DD" };
+    // Which cameras are on a doorway. Only they can answer "in" and "out".
+    const cams = await this.get("cameras", {});
     // Window: the calendar day in the church's timezone (±14h covers any offset).
     const start = Date.parse(`${date}T00:00:00Z`) - 14 * 3600_000;
     const end = Date.parse(`${date}T00:00:00Z`) + 38 * 3600_000;
@@ -2134,7 +2195,23 @@ export class VenueHub extends DurableObject {
     return rows
       .filter((r) => fmt.format(new Date(r.ts)) === date)
       .map((r) => {
-        const trusted = r.ts >= IN_OUT_TRUSTED_FROM;
+        /**
+         * In and out are believed from a doorway, and from nowhere else.
+         *
+         * This was the other half of "1 person on the camera and 6 came in".
+         * venueTotal had already been taught that a room camera's "entries"
+         * is not arrivals — it is every person it became sure of, so every
+         * track that dies and restarts adds one — but THIS endpoint had not,
+         * and this endpoint is what the arrivals chart and the "came in,
+         * this session" tile are built from whenever the register's own
+         * figures aren't available. So the number Kyro refused to show in
+         * one place it showed in another, from the same readings.
+         *
+         * The date cutoff stays as well: before it, even doorway figures
+         * were counting flicker (see IN_OUT_TRUSTED_FROM).
+         */
+        const atDoor = cams[r.camera_id]?.location === "entrance";
+        const trusted = atDoor && r.ts >= IN_OUT_TRUSTED_FROM;
         return {
           camera_id: r.camera_id, timestamp: new Date(r.ts).toISOString(), attendance: r.current,
           // Kept in the database, withheld here: before the fix these were
@@ -2228,7 +2305,11 @@ export class VenueHub extends DurableObject {
       const hour = Number(hourFmt.format(new Date(r.ts))) % 24;
       if (total > busiest[hour]) busiest[hour] = total;
       if (total > peak) { peak = total; peakHour = hour; }
-      if (r.ts >= IN_OUT_TRUSTED_FROM && countedMovement(counters, r, arrivals, departures, hour)) known = true;
+      // …and only a door camera's rows are put through it. doorIds was
+      // worked out above and then not used, so a room camera's "entries"
+      // reached this chart after all — the same leak as in history().
+      if (doorIds.has(r.camera_id) && r.ts >= IN_OUT_TRUSTED_FROM
+          && countedMovement(counters, r, arrivals, departures, hour)) known = true;
     }
     return {
       date, in_out_known: known, peak, peak_hour: peakHour,

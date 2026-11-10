@@ -50,7 +50,11 @@ const settle = (tr, boxes, t, faces, times = 4) => {
   for (let count = 0; count < 120; count++) { see(tr, boxes, (t += 400), faces); }
   ok("twelve people seen for a quarter of an hour are twelve people",
      tr.people === 12, `got ${tr.people}`);
-  ok("while 'entries' counts sightings and is not attendance", tr.entries === 12, `entries ${tr.entries}`);
+  // "entries" used to count sightings here — every person this camera became
+  // sure of — and was shown on the page as arrivals. It is the thing that
+  // made "1 person on the camera and 6 came in". A room camera has no line
+  // for anybody to cross, so it no longer answers that question at all.
+  ok("while a room camera answers nothing about arrivals", tr.entries === 0, `entries ${tr.entries}`);
 }
 
 // 2. Someone hidden behind a pillar for two minutes and seen again is still
@@ -65,7 +69,10 @@ const settle = (tr, boxes, t, faces, times = 4) => {
   see(tr, [], (t += 120_000));                       // gone two minutes
   for (let i = 0; i < 5; i++) see(tr, me, (t += 400), myFace);
   ok("and still one when they come back", tr.people === 1, `got ${tr.people}`);
-  ok("even though the old count called that a second arrival", tr.entries === 2, `entries ${tr.entries}`);
+  // The old count called that a second arrival — two "entries" for one
+  // person who never went anywhere. That is the fault, named, and the room
+  // camera no longer produces the figure that carried it.
+  ok("and the old second arrival is not produced at all", tr.entries === 0, `entries ${tr.entries}`);
 }
 
 // 3. Somebody genuinely new is new.
@@ -106,9 +113,16 @@ const settle = (tr, boxes, t, faces, times = 4) => {
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   ok("the camera reports it", /people_seen: c\.tracker\.people,/.test(ctx));
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
-  ok("a reloaded browser's register isn't lost",
-     /seen\.people = \(seen\.people \|\| 0\) \+/.test(worker)
-     && /seen\.lastPeople === null \|\| rPeople < seen\.lastPeople \? rPeople : rPeople - seen\.lastPeople/.test(worker));
+  // This used to carry the WHOLE of a restarted browser's tally across, on
+  // the reasoning that it was all new since the restart. It is not: a fresh
+  // tracker confirms everybody already standing there within a second, and
+  // those people did not arrive. Reload twice with one person in shot and
+  // "came in" went up by two with nobody moving. Only forward steps now, and
+  // nothing at all across a restart. See tests/test_no_false_entries.mjs.
+  ok("a reloaded browser never has its tally counted again",
+     /const restarted = seen\.lastIn !== null && \(rIn < seen\.lastIn \|\| rOut < seen\.lastOut\);/.test(worker)
+     && /const step = \(now, last\) => \(first \|\| restarted \|\| now < last \? 0 : now - last\);/.test(worker));
+  ok("and what was not counted is written down", /trail\.unshift\(\{ \.\.\.r, at: new Date\(r\.at\)\.toISOString\(\) \}\);/.test(worker));
   ok("two cameras on one room take the fullest view", /r\.people = take\(r\.people, z\.people\);/.test(worker));
   // The attendance figure is the SIZE OF THE REGISTER — not a counter kept
   // beside it, which is how two numbers for one thing start disagreeing. Each

@@ -123,7 +123,11 @@ const day = [[...morning, ...afternoon]];
   let now = 1_000_000;
   const three = [person(100), person(200), person(300)];
   for (let i = 0; i < 4; i++) { tr.update(three, now); now += 400; }
-  ok("three people are counted in", tr.entries === 3, `got ${tr.entries}`);
+  // A room camera no longer answers "how many arrived" — it has no line for
+  // anybody to cross, and saying it did is what produced "1 person on the
+  // camera and 6 came in". What it answers is how many are in the room, and
+  // that is what a fresh start must not blank.
+  ok("a room camera counts nobody in", tr.entries === 0, `got ${tr.entries}`);
   const here = tr.update(three, now);
   ok("and three are here", here === 3, `got ${here}`);
 
@@ -135,10 +139,14 @@ const day = [[...morning, ...afternoon]];
   ok("the three people in the room are still there", stillHere === 3, `got ${stillHere}`);
   ok("and are not counted as arriving again", tr.entries === 0, `got ${tr.entries}`);
 
-  // One more person walks in afterwards: that one does count.
+  // One more person walks in afterwards. In a room that is one more person
+  // in the room — not one arrival, because a room camera cannot tell an
+  // arrival from somebody who was always there and has only just been seen.
   const four = [...three, person(400)];
-  for (let i = 0; i < 4; i++) { now += 400; tr.update(four, now); }
-  ok("someone arriving after the fresh start is counted", tr.entries === 1, `got ${tr.entries}`);
+  let now4 = 0;
+  for (let i = 0; i < 4; i++) { now += 400; now4 = tr.update(four, now); }
+  ok("someone arriving after the fresh start is in the room", now4 === 4, `got ${now4}`);
+  ok("and is still not an arrival, because a room cannot tell", tr.entries === 0, `got ${tr.entries}`);
 }
 
 // 9. reset() is still the "new day" tool and still clears everything, so the

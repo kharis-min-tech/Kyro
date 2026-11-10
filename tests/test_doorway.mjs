@@ -93,12 +93,33 @@ const box = (left, top, w, h) => [left, top, left + w, top + h];
 
 const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b })), t);
 
-// 5. A room camera is unchanged: appearing is arriving.
+// 5. A room camera counts NOBODY in or out.
+//
+//    This used to read "appearing is arriving", and it was the single thing
+//    that produced "1 person on the camera and 6 came in". A room camera has
+//    no line for anybody to cross: what it can honestly say is "I have become
+//    sure there is a person here", and it says that again every time it loses
+//    somebody and finds them — a detector dropping out, somebody hidden
+//    behind the person in front, a browser reloaded. Every one of those
+//    looked exactly like somebody walking in.
+//
+//    Arrivals now come from a doorway camera, or from the register of
+//    people, which counts PEOPLE rather than moments of certainty.
 {
   const tr = new PersonTracker();
   let t = 0;
   for (let i = 0; i < 4; i++) see(tr, [box(100, 100, 60, 150)], (t += 300));
-  ok("a room camera still counts an arrival when someone appears", tr.entries === 1 && tr.exits === 0);
+  ok("a room camera counts nobody in", tr.entries === 0, `${tr.entries}`);
+  ok("and nobody out", tr.exits === 0, `${tr.exits}`);
+  // It still knows how many are there, which is the job it can actually do.
+  ok("but it still says how many are in the room", see(tr, [box(100, 100, 60, 150)], (t += 300)) === 1);
+  // And losing them and finding them again adds nothing, however often.
+  for (let r = 0; r < 5; r++) {
+    for (let i = 0; i < 60; i++) see(tr, [], (t += 1000));
+    for (let i = 0; i < 6; i++) see(tr, [box(100, 100, 60, 150)], (t += 300));
+  }
+  ok("and five disappearances add nothing at all", tr.entries === 0 && tr.exits === 0,
+     `${tr.entries} in, ${tr.exits} out`);
 }
 
 // 6. The same walk past a door camera: nothing is counted until they have gone
@@ -308,14 +329,19 @@ fs.rmSync(tmp, { recursive: true, force: true });
 
 // 17. Two sightings is not enough on a ROOM camera, where someone is in view
 //     for minutes and a box seen twice is far more likely to be a flicker.
+//
+//     Measured on what the room camera DOES answer, now that it answers
+//     nothing about arrivals: how many people are in the room. The threshold
+//     is the same one; it simply decides whether somebody is counted as being
+//     there rather than as having walked in.
 {
   const tr = new PersonTracker();                     // no watchesDoorway → a room
   let t = 0;
-  see(tr, [box(100, 100, 50, 150)], (t += 400));
-  see(tr, [box(101, 101, 50, 150)], (t += 400));
-  ok("a room still wants three sightings", tr.entries === 0, `entries ${tr.entries}`);
-  see(tr, [box(102, 102, 50, 150)], (t += 400));
-  ok("and counts them on the third", tr.entries === 1, `entries ${tr.entries}`);
+  ok("a room still wants three sightings",
+     see(tr, [box(100, 100, 50, 150)], (t += 400)) === 0
+     && see(tr, [box(101, 101, 50, 150)], (t += 400)) === 0);
+  ok("and counts them on the third", see(tr, [box(102, 102, 50, 150)], (t += 400)) === 1);
+  ok("and still never as an arrival", tr.entries === 0, `entries ${tr.entries}`);
 }
 
 // 18. A box that flickers in the doorway and goes nowhere still counts for
