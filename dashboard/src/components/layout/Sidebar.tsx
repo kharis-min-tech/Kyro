@@ -307,7 +307,7 @@ export function Sidebar() {
           title="Opens the guide for this page"
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left"
           style={{ color: "#6b7280" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--gold-text)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
           <CircleHelp size={16} strokeWidth={1.75} />
           Help guide
@@ -316,7 +316,7 @@ export function Sidebar() {
         <button onClick={logout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors w-full text-left"
           style={{ color: "#6b7280" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--gold-text)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
           <LogOut size={16} strokeWidth={1.75} />
           Sign out

@@ -393,7 +393,7 @@ function ZoneTableRow({ camera, idx, role }: { camera: Camera; idx: number; role
   return (
     <tr style={{ borderBottom: `1px solid ${BORDER}`, cursor: "pointer" }}
       onClick={() => router.push("/seating")}
-      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-elevated)")}
+      onMouseEnter={(e) => (e.currentTarget.style.background = "var(--gold-soft)")}
       onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
       <td style={{ padding: "14px 16px" }}>
         <div className="flex items-center gap-3">
@@ -1401,7 +1401,7 @@ export default function AttendancePage() {
                         className="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors"
                         style={{ background: isSelected ? "rgba(99,102,241,0.15)" : "transparent",
                                  color: isSelected ? "#a5b4fc" : "#9ca3af" }}
-                        onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)"; }}
+                        onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "var(--gold-soft)"; }}
                         onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
                         <span className="font-medium">{opt.label}</span>
                         <span className="ml-2" style={{ color: "var(--text-faint)" }}>
@@ -1580,7 +1580,7 @@ export default function AttendancePage() {
                             color: metric === key ? "var(--accent-indigo, #6366f1)" : "var(--text-muted)",
                             borderBottom: `1px solid ${BORDER}`,
                           }}
-                          onMouseEnter={(e) => { if (metric !== key) (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)"; }}
+                          onMouseEnter={(e) => { if (metric !== key) (e.currentTarget as HTMLButtonElement).style.background = "var(--gold-soft)"; }}
                           onMouseLeave={(e) => { if (metric !== key) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
                           {label}
                         </button>

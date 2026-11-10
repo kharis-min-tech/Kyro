@@ -368,7 +368,7 @@ export default function LoginPage() {
           <button onClick={() => setScreen("landing")}
             className="flex items-center gap-1.5 text-sm mb-6 transition-colors"
             style={{ color: "var(--text-muted)" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--gold-text)")}
             onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
             <ArrowLeft size={15} /> Back
           </button>
@@ -439,7 +439,7 @@ export default function LoginPage() {
         <button onClick={() => setScreen("landing")}
           className="flex items-center gap-1.5 text-sm mb-6 transition-colors"
           style={{ color: "var(--text-muted)" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#fff")}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "var(--gold-text)")}
           onMouseLeave={(e) => (e.currentTarget.style.color = "#6b7280")}>
           <ArrowLeft size={15} /> Back
         </button>

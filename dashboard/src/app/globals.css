@@ -47,6 +47,21 @@
   /* Chart series — arrivals / exits (validated colour-blind-safe pair) */
   --series-arrive:     #3987e5;
   --series-leave:      #d95926;
+
+  /* ── Gold, for hover ──────────────────────────────────────────────────
+     One warm hue, used wherever something can be pointed at. Soft enough
+     to read as a hint rather than a selection, and it fades in — see the
+     transition rules below.
+
+     Only NEUTRAL hovers become gold. A button that is already indigo
+     because it is the main action, or red because it deletes something,
+     keeps its colour: those are meaning, not decoration, and painting
+     them gold would make "Yes, delete it for good" look like a link. */
+  --gold:              #f8b537;
+  --gold-text:         #f8b537;
+  --gold-soft:         rgba(248, 181, 55, 0.12);
+  --gold-softer:       rgba(248, 181, 55, 0.07);
+  --gold-border:       rgba(248, 181, 55, 0.35);
 }
 
 :root[data-theme="light"] {
@@ -85,6 +100,14 @@
   --accent-indigo:     #4338ca;
   --accent-green:      #047857;
   --accent-red:        #b91c1c;
+
+  /* Gold on white needs to be darker to stay readable; the tint can be a
+     little stronger, since a pale wash on white all but disappears. */
+  --gold:              #b7791f;
+  --gold-text:         #8a5a12;
+  --gold-soft:         rgba(183, 121, 31, 0.14);
+  --gold-softer:       rgba(183, 121, 31, 0.08);
+  --gold-border:       rgba(183, 121, 31, 0.38);
 }
 
 /* Body sits on the base background so bare pages still theme correctly. */
@@ -503,3 +526,50 @@ img, video, canvas, svg, iframe {
 :root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"], [style*="rgb(15, 18, 34)"], [style*="#0f1222"]):not(.fixed) :is(.text-gray-200, .text-gray-300, .text-gray-400) { color: #d1d5db !important; }
 :root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"], [style*="rgb(15, 18, 34)"], [style*="#0f1222"]):not(.fixed) :is(.text-gray-500, .text-gray-600) { color: #9ca3af !important; }
 :root[data-theme="light"] :is([style*="rgba(0, 0, 0"], [style*="rgba(0,0,0"]):not(.fixed) .text-indigo-300 { color: #a5b4fc !important; }
+
+/* ─── Gold on hover ────────────────────────────────────────────────────────
+
+   Everything you can point at warms to gold — the same gold as the K in the
+   wordmark, so there is one gold in the product rather than two.
+
+   Only NEUTRAL hovers are changed. A button that is already indigo because
+   it is the main action, or red because it deletes something, keeps its
+   colour: those carry meaning, and painting "Yes, delete it for good" gold
+   would turn a warning into a link.
+
+   It fades rather than snaps — "like a light fade gold". 200ms is the point
+   where a change reads as deliberate without feeling slow.
+   ─────────────────────────────────────────────────────────────────────── */
+
+a, button, summary, [role="button"], [role="tab"], [role="menuitem"],
+tr, li, label[for], select, .kyro-hover {
+  transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+}
+
+/* The neutral Tailwind hovers used across Kyro, retargeted. Each of these
+   was a grey or a white — a hover that said "this moves" and nothing more. */
+.hover\:text-white:hover,
+.hover\:text-gray-300:hover,
+.hover\:text-gray-400:hover,
+.hover\:text-gray-200:hover          { color: var(--gold-text) !important; }
+
+.hover\:bg-white\/5:hover,
+.hover\:bg-gray-600:hover,
+.hover\:bg-gray-700:hover,
+.hover\:bg-gray-800:hover            { background-color: var(--gold-soft) !important; }
+
+/* A row or a card that lifts when you point at it. Opt-in by class, so a
+   table of figures nobody can click doesn't glow for no reason. */
+.kyro-hover:hover                     { background-color: var(--gold-softer); }
+
+/* Links in ordinary prose: the colour warms, the background does not — a
+   gold block behind a word in a sentence is a highlighter, not a hover. */
+a:not([class*="bg-"]):not([style*="background"]):hover { color: var(--gold-text); }
+
+/* Anything focused by keyboard gets the same gold, so somebody tabbing
+   through sees exactly what somebody with a mouse sees. */
+a:focus-visible, button:focus-visible, summary:focus-visible,
+[role="button"]:focus-visible, select:focus-visible {
+  outline: 2px solid var(--gold-border);
+  outline-offset: 2px;
+}

@@ -320,7 +320,7 @@ function RecentSessions({ data, onSelect, selectedTs, canDelete, onDeleted }: {
               <tr key={i} onClick={() => onSelect(d)}
                 style={{ borderBottom: i<recent.length-1?`1px solid ${BORDER}`:"none",
                          background: sel?"rgba(99,102,241,0.1)":"transparent", cursor:"pointer" }}
-                onMouseEnter={(e)=>{ if(!sel)(e.currentTarget as HTMLElement).style.background="var(--border-subtle)"; }}
+                onMouseEnter={(e)=>{ if(!sel)(e.currentTarget as HTMLElement).style.background="var(--gold-soft)"; }}
                 onMouseLeave={(e)=>{ (e.currentTarget as HTMLElement).style.background=sel?"rgba(99,102,241,0.1)":"transparent"; }}>
                 <td className="px-5 py-3 font-medium" style={{ color:sel?"#818cf8": "var(--text-primary)" }}>{day}/{mon}/{yr}</td>
                 <td className="px-5 py-3" style={{ color:"#6b7280" }}>{DAYS_LONG[dow]}</td>

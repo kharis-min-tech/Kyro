@@ -6,7 +6,7 @@ import { ChevronLeft, ChevronRight, Calendar } from "lucide-react";
 
 const BG     = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
-const HOVER  = "var(--border-subtle)";
+const HOVER  = "var(--gold-soft)";   // pointing at a date warms it — see globals.css
 
 const MONTHS = ["January","February","March","April","May","June",
                 "July","August","September","October","November","December"];
