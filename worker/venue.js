@@ -101,7 +101,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-663390cd5e4f";
+const VENUE_CODE = "venue-88d968ae8b12";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -314,24 +314,31 @@ export class VenueHub extends DurableObject {
     ctx.blockConcurrencyWhile(async () => {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
-        /*
-         * Face codes, for the length of ONE service.
-         *
-         * They were held in memory only, which sounded like the careful
-         * choice and was not: when the live-cameras server restarts mid
-         * service — which it does, on every deploy — every face is lost, and
-         * the congregation has to be recognised by their coats alone. Twenty
-         * five people became twenty nine. Four of them were counted twice
-         * because of a privacy measure that protected nobody: the data was
-         * being processed either way, just badly.
-         *
-         * So they are written down, and they belong to the service. The row
-         * carries which service it is for, so ending that service deletes
-         * them, and so does a hard age limit that does not care whether a
-         * service ever ended properly — see FACE_MAX_AGE_MS. A face code is
-         * 128 numbers describing a face. It is not a photograph, it is not a
-         * name, and it cannot be turned back into either.
-         */
+      );
+      /*
+       * Face codes, for the length of ONE service.
+       *
+       * They were held in memory only, which sounded like the careful choice
+       * and was not: the live-cameras server restarts on every deploy, each
+       * restart lost every face, and the congregation had to be recognised by
+       * their coats alone. Twenty five people became twenty nine — four
+       * counted twice by a privacy measure that protected nobody, because the
+       * data was being processed either way, just badly.
+       *
+       * They belong to the service. The row carries which service it is for,
+       * so ending that service deletes them, and so does a hard age limit
+       * that does not care whether a service ever ended properly — see
+       * FACE_MAX_AGE_MS. A face code is 128 numbers describing a face: not a
+       * photograph, not a name, and it cannot be turned back into either.
+       *
+       * Its own exec call. Writing it as a second argument to the one above
+       * made it a BIND PARAMETER rather than a statement, which creates no
+       * table and throws — inside blockConcurrencyWhile, so the whole
+       * live-cameras server failed to start. The deploy said "uploaded", the
+       * pages were fine, and every camera request died. That is what the
+       * version check in the deploy script is for.
+       */
+      ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS faces (service TEXT NOT NULL, person INTEGER NOT NULL, code TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (service, person))",
       );
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
