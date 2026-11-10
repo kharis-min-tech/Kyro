@@ -203,5 +203,24 @@ const root = path.resolve(import.meta.dirname, "..");
      /total_entries: trustInOut \? entries : null, total_exits: trustInOut \? exits : null,/.test(worker));
 }
 
+// ── The timer that ends a service ──────────────────────────────────────────
+//
+// It threw nowhere. An alarm that throws is retried by Cloudflare over and
+// over, which does three things at once: the service never ends, the failure
+// is invisible, and the live-cameras server never falls idle — so it never
+// picks up new code either, and a deploy appears to do nothing. That last one
+// is how this was found: a deploy that uploaded successfully and did not go
+// live.
+{
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  const alarm = worker.slice(worker.indexOf("  async alarm()"), worker.indexOf("async finishService"));
+  ok("the service timer cannot throw into the retry loop", /catch \(e\) \{/.test(alarm));
+  ok("and says what it means when it fails",
+     /may keep recording after everyone has gone/.test(alarm));
+  ok("it always leaves a next check set", /setAlarm\(now \+ 5 \* 60_000\)/.test(alarm));
+  ok("but only while there is a service to watch", /if \(stillLive && !\(await this\.ctx\.storage\.getAlarm\(\)\)\)/.test(alarm));
+  ok("and it clears itself when it works", /await this\.working\("Service timer"\)/.test(alarm));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Nothing is hidden to look healthy.");
 process.exit(fails ? 1 : 0);

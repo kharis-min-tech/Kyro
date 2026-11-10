@@ -90,7 +90,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-6b6f29d637cf";
+const VENUE_CODE = "venue-83b8e997e9c8";
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -2059,8 +2059,41 @@ export class VenueHub extends DurableObject {
     if (dirty) await this.ctx.storage.put("service_state", st);
   }
 
+  /**
+   * The timer that ends a service when every camera computer has gone off.
+   *
+   * This threw nowhere. An alarm that throws is RETRIED by Cloudflare, over
+   * and over, which does three things at once: the service never ends, the
+   * failure is invisible, and the live-cameras server never falls idle — so it
+   * never picks up new code either, and a deploy appears to do nothing.
+   *
+   * So: it catches, it says what went wrong where it can be read, and it
+   * always leaves a next alarm set, because the one job it has is to end a
+   * service when nobody is left to tell it to.
+   */
   async alarm() {
-    if (await this.get("service_live", null)) await this.trackService(Date.now());
+    const now = Date.now();
+    let live = null;
+    try {
+      live = await this.get("service_live", null);
+      if (live) await this.trackService(now);
+      await this.working("Service timer");
+    } catch (e) {
+      await this.wrong("Service timer",
+        "Couldn't check whether the service should end, so it may keep recording after everyone has gone",
+        e && e.message);
+    }
+    try {
+      // Reschedule only while there is something to watch. A service that has
+      // ended needs no timer, and a timer with nothing to do is what keeps
+      // this object awake for ever.
+      const stillLive = await this.get("service_live", null);
+      if (stillLive && !(await this.ctx.storage.getAlarm())) {
+        await this.ctx.storage.setAlarm(now + 5 * 60_000);
+      }
+    } catch (e) {
+      await this.wrong("Service timer", "Couldn't set the next check", e && e.message);
+    }
   }
 
   async finishService(live, endedMs) {
