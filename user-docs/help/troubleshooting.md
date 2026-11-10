@@ -43,6 +43,23 @@ The computer counting with that camera has stopped or lost its internet connecti
 - **Installed version:** check the camera computer is on and online. It shows **Online** on [Cameras](/pages/cameras) when it's working.
 - Check the camera's cable (USB cameras) or power and network (Wi-Fi cameras).
 
+**I stopped counting, but the old picture is still on the screen.**
+It shouldn't be, and it isn't any more. Stopping counting now tells Kyro straight away, and Kyro throws the camera's last picture away the moment it hears — a tile for a camera that is off shows grey and a line of text, never a photograph. If you still see one, reload the page; a tab that has been left behind another window for a long time can be showing a page several minutes old.
+
+**"Is Kyro working?" shows red problems I can't get rid of.**
+Open **Attendance** and find the **Is Kyro working?** panel. Each problem now has a **Put aside** button (administrators only), and **Put all N aside** clears a whole list in one go.
+
+Putting a problem aside is not deleting it. It moves down into **Fixed, but worth knowing about**, with its times and the number of times it happened, and it comes straight back to the top if it happens once more — so nothing that is still going wrong can be hidden.
+
+Use it for a camera you have unplugged or switched off. A problem normally clears itself when the thing that failed starts working again, and a camera in a drawer can never do that.
+
+::: tip The red ✗ is not a button
+The red ✗ beside a problem is there to mark it as a problem. The button is on the right-hand side of the same row and says **Put aside**.
+:::
+
+**I deleted a camera and its problems are still listed.**
+Deleting a camera removes its problems outright — they go with it. If you only **switched it off**, its problems are closed instead but stay in the record below, because the camera still exists and could be switched back on.
+
 ## Camera Mode
 
 **The browser says it wasn't allowed to use the camera.**

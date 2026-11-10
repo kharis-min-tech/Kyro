@@ -19,8 +19,14 @@
  * ── The rules it keeps ─────────────────────────────────────────────────────
  *
  * A problem stays until the thing that failed reports that it is working
- * again. It cannot be cleared by time passing, by a page being reloaded, or by
- * anybody deciding it looks untidy: only by the operation succeeding.
+ * again. It cannot be cleared by time passing, or by a page being reloaded.
+ *
+ * An administrator can put one aside — but putting aside only marks it fixed:
+ * the entry, its count and its times stay in the record, and the next time it
+ * happens it goes straight back to live. So nothing that is still happening
+ * can be hidden, while a camera that was unplugged after a bad few minutes
+ * stops shouting about it for ever. That case has no other way out: the thing
+ * that failed is in a drawer and will never report anything again.
  *
  * A problem that happens over and over is one entry with a count and a first
  * and last time, not ten thousand entries. The count is part of the evidence —
@@ -70,9 +76,48 @@ export class Trouble {
    */
   ok(where) {
     const now = Date.now();
+    let changed = false;
     for (const [, v] of this.items) {
-      if (v.where === where && !v.fixed) { v.fixed = true; v.fixedAt = now; }
+      if (v.where === where && !v.fixed) { v.fixed = true; v.fixedAt = now; changed = true; }
     }
+    return changed;
+  }
+
+  /**
+   * Put a problem aside, because somebody has looked at it.
+   *
+   * The rule above — only the thing working again clears a problem — was
+   * written for a problem about a part of Kyro that is still running. It is
+   * wrong for the commonest case there is: a camera that was unplugged, or
+   * switched off, after a bad few minutes. It cannot report that it is working
+   * again, because it is not there. So four red lines about a camera that is
+   * sitting in a drawer stayed on the page for ever, with nothing on the page
+   * that could remove them, and the person reading it started clicking the red
+   * icons hoping one of them was a button.
+   *
+   * Putting one aside is safe, which is what makes it allowable: it is marked
+   * fixed, not deleted — the time it happened, the count and the detail all
+   * stay under "Fixed, but worth knowing about" — and if it happens once more
+   * note() marks it live again. Nothing can be hidden that is still going on.
+   */
+  aside(where, what = null, who = "") {
+    const now = Date.now();
+    let put = 0;
+    for (const [, v] of this.items) {
+      if (v.fixed) continue;
+      if (v.where !== where) continue;
+      if (what && v.what !== what) continue;
+      v.fixed = true; v.fixedAt = now; v.asideBy = String(who || "").slice(0, 60) || "an administrator";
+      put++;
+    }
+    return put;
+  }
+
+  /** Everything about a part of Kyro that no longer exists. */
+  forget(where) {
+    let gone = 0;
+    for (const [k, v] of [...this.items]) if (v.where === where) { this.items.delete(k); gone++; }
+    return gone;
   }
 
   /** Is anything actually broken right now? */
@@ -102,6 +147,8 @@ export class Trouble {
         ago_s: Math.round((now - v.last) / 1000),
         fixed: !!v.fixed,
         fixed_at: v.fixedAt ? new Date(v.fixedAt).toISOString() : null,
+        /** Set when somebody put it aside rather than it fixing itself. */
+        aside_by: v.asideBy || null,
       }));
   }
 

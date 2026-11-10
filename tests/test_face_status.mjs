@@ -40,7 +40,7 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
 {
   ok("the counting browser remembers why faces failed", /faceErr\.current = `The face AI wouldn't load/.test(ctx));
   ok("and sends it with the counts, alongside everything else that went wrong",
-     /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}, problems\.current\)/.test(ctx));
+     /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}, problems\.current, well\)/.test(ctx));
   ok("the report has somewhere to put it", /faces_error: faces\.error \?\? null/.test(cam));
   ok("the website keeps it", /await this\.ctx\.storage\.put\("face_error"/.test(worker));
   ok("and forgets it once faces work again",

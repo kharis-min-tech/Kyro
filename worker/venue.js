@@ -560,6 +560,18 @@ export class VenueHub extends DurableObject {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
         return json(await this.healthReport());
       }
+      // A problem about a camera that has been unplugged can never report
+      // itself working again, so an administrator can put it aside. It is
+      // marked fixed, not deleted, and comes straight back if it happens once
+      // more — see Trouble.aside in worker/health.js.
+      if (p === "/api/live/health/aside" && request.method === "POST") {
+        if (role !== "admin") return json({ error: "Only administrators can put a problem aside" }, 403);
+        const b = await request.json().catch(() => ({}));
+        const n = b.all === true
+          ? await this.putAsideAll(user)
+          : await this.putAside(clean(b.where, 60), b.what ? clean(b.what, 200) : null, user);
+        return json({ put_aside: n });
+      }
       if (p === "/api/live/identity" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
         return json(this.register ? this.register.diagnostics() : { unique_people: 0, service: null });
@@ -745,6 +757,25 @@ export class VenueHub extends DurableObject {
       }
       this.seenAt.set(camera_id, now);
       if (cams[camera_id].hidden || cams[camera_id].pending || c.status === "standby") continue;
+      // Counting was switched off on that computer, and it said so on its way
+      // out instead of simply going quiet.
+      //
+      // Going quiet took forty-five seconds to notice, and for those
+      // forty-five seconds the Live Cameras page showed the last picture that
+      // camera sent, in colour, under a pulsing green "Live". The picture is
+      // the most convincing thing on the screen. So: offline at once, and the
+      // picture is thrown away — a camera that is off has no picture of now,
+      // and keeping yesterday's is how a page lies to somebody.
+      if (c.status === "offline") {
+        live[camera_id] = { ...(live[camera_id] ?? {}), current: 0, status: "offline", updated_at: now };
+        await this.ctx.storage.delete(`snap:${camera_id}`);
+        // It is not failing: it is off. Nothing is left to report that it is
+        // working again, so its problems are closed here instead.
+        await this.working(cams[camera_id].name);
+        if (cams[camera_id].label) await this.working(cams[camera_id].label);
+        changed = true;
+        continue;
+      }
       // Running totals that survive the counting browser being reloaded.
       //
       // A browser reports its own tally since IT started, so a reload put the
@@ -823,6 +854,20 @@ export class VenueHub extends DurableObject {
       for (const pr of body.problems.slice(0, 10)) {
         if (!pr || typeof pr.what !== "string") continue;
         await this.wrong(clean(pr.where, 60) || "Counting computer", clean(pr.what, 200), clean(pr.detail, 200));
+      }
+    }
+    // And — the half that was missing — which of its cameras are fine NOW.
+    //
+    // Without this, one black frame at any point in a camera's life left a red
+    // line on the page that nothing could ever clear: the browser said when a
+    // camera went wrong and never said when it came right, and the rule here
+    // is that only the thing working again clears a problem. A camera that is
+    // open, showing a changing, non-black picture and counting is that thing
+    // working again, so it says so every half minute.
+    if (Array.isArray(body.well)) {
+      for (const w of body.well.slice(0, 32)) {
+        const where = clean(w, 60);
+        if (where) await this.working(where);
       }
     }
     // The counting browser couldn't load the face AI. Kept so the Face
@@ -1140,9 +1185,39 @@ export class VenueHub extends DurableObject {
   async working(where) {
     const t = await this.troubles();
     if (!t.items.size) return;
-    const was = t.broken;
-    t.ok(where);
-    if (was !== t.broken) await this.ctx.storage.put("trouble", t.save());
+    // Saved whenever something actually changed. It used to save only when the
+    // LAST live problem cleared, so with four problems showing, three of them
+    // fixing themselves was never written down — and came back on the next
+    // reload, which is exactly how a page of red that nobody can shift comes
+    // about.
+    if (t.ok(where)) await this.ctx.storage.put("trouble", t.save());
+  }
+
+  /** Somebody has looked at this problem. See Trouble.aside in health.js. */
+  async putAside(where, what, who) {
+    const t = await this.troubles();
+    const n = t.aside(where, what, who);
+    if (n) await this.ctx.storage.put("trouble", t.save());
+    return n;
+  }
+
+  /** Every problem showing now, put aside in one go. Anything still going
+   *  wrong is back within seconds, because the next failure marks it live. */
+  async putAsideAll(who) {
+    const t = await this.troubles();
+    let n = 0;
+    for (const v of t.items.values()) if (!v.fixed) n += t.aside(v.where, v.what, who);
+    if (n) await this.ctx.storage.put("trouble", t.save());
+    return n;
+  }
+
+  /** That part of Kyro is gone, so its record goes with it. */
+  async forgetTrouble(...wheres) {
+    const t = await this.troubles();
+    let gone = 0;
+    for (const w of wheres) if (w) gone += t.forget(w);
+    if (gone) await this.ctx.storage.put("trouble", t.save());
+    return gone;
   }
 
   /**
@@ -3132,8 +3207,15 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.delete(`layouts:${camera_id}`);
       await this.ctx.storage.delete(`seat_live:${camera_id}`);
       await this.ctx.storage.delete(`snap:${camera_id}`);
+      // And its complaints. The camera is gone; a page of red about a camera
+      // that no longer exists is noise nobody can act on, and there is now
+      // nothing left that could ever report it working again.
+      await this.forgetTrouble(c.name, c.label);
     } else {
       c.hidden = true;
+      await this.ctx.storage.delete(`snap:${camera_id}`);
+      await this.working(c.name);
+      if (c.label) await this.working(c.label);
     }
     const live = await this.get("live", {});
     delete live[camera_id];

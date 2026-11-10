@@ -161,7 +161,7 @@ const root = path.resolve(import.meta.dirname, "..");
 
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   ok("the counting browser's failures are sent to the website",
-     /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}, problems\.current\)/.test(ctx));
+     /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}, problems\.current, well\)/.test(ctx));
   ok("including a camera it cannot count on", /say\(c\.label, "Counting failed on this camera"/.test(ctx));
   ok("and a seat list it could not send", /couldn't send them to Kyro/.test(ctx));
   ok("a black picture is acted on, not just reported", /if \(c\.watch\.black && c\.tries < 3\)/.test(ctx));
@@ -178,11 +178,23 @@ const root = path.resolve(import.meta.dirname, "..");
   ok("green only when every check passed", /h\.ok \? GOOD/.test(view) && /every check passed/.test(view));
   ok("live problems are shown without having to open anything",
      /Live problems are shown whether or not the panel is open/.test(view));
-  // Checked on what the page can DO, not on the words in it — my first
-  // version of this matched the comment explaining that problems cannot be
-  // dismissed, and passed for the wrong reason.
-  ok("the page can only read, so a problem cannot be dismissed from it",
-     !/method: "POST"|method: "DELETE"|method: "PUT"/.test(view));
+  // The page used to be read-only, so that nothing could be dismissed. That
+  // rule had no answer for a camera that misbehaved and was then unplugged:
+  // it can never report itself working again, so its red lines stayed for
+  // ever with nothing on the page able to shift them — and the person reading
+  // them clicked the red ✗ icons, which were decoration.
+  //
+  // So there is now one write, and it is checked here on what it can DO: it
+  // marks a problem fixed, it never deletes, and anything still going wrong
+  // comes straight back. See Trouble.aside in worker/health.js.
+  ok("there is exactly one thing the page can change — putting a problem aside",
+     (view.match(/method: "(POST|PUT|DELETE)"/g) ?? []).length === 1
+     && /"\/api\/live\/health\/aside", \{ method: "POST"/.test(view));
+  ok("the red ✗ is marked as decoration, not a button", /<XCircle size=\{13\} aria-hidden/.test(view));
+  ok("and the thing that IS a button says what it does", /Put aside<\/button>|\{asiding === `\$\{p\.where\}-\$\{i\}` \? "Putting aside…" : "Put aside"\}/.test(view));
+  ok("the page says putting aside is not deleting",
+     /doesn&apos;t delete it/.test(view) && /comes straight back up here if it happens again/.test(view));
+  ok("only an administrator is offered it", /\{admin && \(\s*\n?\s*<button onClick=\{\(\) => putAside/.test(view));
   ok("each camera's checks are listed one by one", /c\.checks\.map/.test(view));
   ok("and the attendance figure says which kind it is",
      /No register yet, so attendance is each camera's own count/.test(view));

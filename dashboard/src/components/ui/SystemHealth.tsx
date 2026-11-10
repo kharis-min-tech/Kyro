@@ -8,10 +8,19 @@
  * Kyro knows how to ask about that component was asked and answered.
  *
  * And the opposite rule: a problem stays on this page until the thing that
- * failed works again. It cannot be dismissed, cleared or tidied away. If it
- * was failing for twenty minutes this morning it says so afterwards, because
- * a problem that quietly disappears is how nobody finds out why the figures
- * looked odd.
+ * failed works again. If it was failing for twenty minutes this morning it
+ * says so afterwards, because a problem that quietly disappears is how nobody
+ * finds out why the figures looked odd.
+ *
+ * With one way out, added because the rule had no answer for the commonest
+ * case there is. A camera that misbehaved and was then unplugged can never
+ * report itself working again — so four red lines about a camera in a drawer
+ * stayed here for ever, and the person reading them started clicking the red
+ * ✗ icons hoping one of them was a button. They were decoration. Now an
+ * administrator can **put a problem aside**, which marks it fixed rather than
+ * deleting it: it keeps its times and its count down in "Fixed, but worth
+ * knowing about", and the next time it happens it comes straight back to the
+ * top. Nothing that is still going on can be hidden.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -32,6 +41,7 @@ interface CamHealth {
 interface Problem {
   where: string; what: string; detail: string; happened: number;
   since: string; last: string; ago_s: number; fixed: boolean; fixed_at: string | null;
+  aside_by?: string | null;
 }
 interface Health {
   ok: boolean; checked_at: string; code: string;
@@ -73,11 +83,24 @@ export function SystemHealth() {
   /** Asked before clearing out every camera that has stopped reporting. */
   const [tidying, setTidying] = useState(false);
   const [busy, setBusy] = useState(false);
+  /** A problem being put aside, so its own button can say so. */
+  const [asiding, setAsiding] = useState<string | null>(null);
 
   const load = useCallback(() => edgeFetch<Health>("/api/live/health")
     .then((r) => { setH(r); setErr(null); })
     .catch((e) => setErr(e instanceof Error ? e.message : "Couldn't reach Kyro to ask")), []);
   useEffect(() => { load(); const t = setInterval(() => { if (!document.hidden) load(); }, 15_000); return () => clearInterval(t); }, [load]);
+
+  const putAside = useCallback(async (body: { where?: string; what?: string; all?: boolean }, tag: string) => {
+    setAsiding(tag); setErr(null);
+    try {
+      await edgeFetch("/api/live/health/aside", { method: "POST", body: JSON.stringify(body) });
+      await load();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't put that aside");
+    }
+    setAsiding(null);
+  }, [load]);
 
   // Kyro not answering at all is itself a failure, and says so rather than
   // showing nothing.
@@ -123,17 +146,50 @@ export function SystemHealth() {
         <ul style={{ borderTop: `1px solid ${BORDER}` }}>
           {live.map((p, i) => (
             <li key={`${p.where}-${i}`} className="px-5 py-3" style={{ borderTop: i ? `1px solid ${BORDER}` : undefined, background: "rgba(239,68,68,0.06)" }}>
-              <p className="flex items-start gap-2" style={{ fontSize: 13, color: "var(--text-primary)" }}>
-                <XCircle size={13} style={{ color: BAD, flexShrink: 0, marginTop: 2 }} />
-                <span><strong>{p.where}</strong> — {p.what}</span>
-              </p>
-              <p style={{ fontSize: 11, color: "var(--text-tertiary)", marginLeft: 21 }}>
-                {p.happened > 1 ? `${p.happened.toLocaleString()} times since ${when(p.since)}` : `since ${when(p.since)}`}
-                {" · last "}{ago(p.ago_s)}
-                {p.detail && ` · ${p.detail}`}
-              </p>
+              <div className="flex items-start gap-2">
+                {/* Not a button, and no longer sitting where a button goes.
+                    This icon was clicked over and over by somebody trying to
+                    get rid of the line it sits next to. The button is on the
+                    right, and says what it does. */}
+                <XCircle size={13} aria-hidden style={{ color: BAD, flexShrink: 0, marginTop: 3 }} />
+                <div className="flex-1 min-w-0">
+                  <p style={{ fontSize: 13, color: "var(--text-primary)" }}>
+                    <strong>{p.where}</strong> — {p.what}
+                  </p>
+                  <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
+                    {p.happened > 1 ? `${p.happened.toLocaleString()} times since ${when(p.since)}` : `since ${when(p.since)}`}
+                    {" · last "}{ago(p.ago_s)}
+                    {p.detail && ` · ${p.detail}`}
+                  </p>
+                </div>
+                {admin && (
+                  <button onClick={() => putAside({ where: p.where, what: p.what }, `${p.where}-${i}`)}
+                    disabled={!!asiding}
+                    title="Mark this as dealt with. It stays in the record below, and comes back if it happens again."
+                    className="shrink-0 px-2 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+                    style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}>
+                    {asiding === `${p.where}-${i}` ? "Putting aside…" : "Put aside"}
+                  </button>
+                )}
+              </div>
             </li>
           ))}
+          {admin && (
+            <li className="px-5 py-2.5 flex flex-wrap items-center gap-2" style={{ borderTop: `1px solid ${BORDER}`, background: "rgba(239,68,68,0.06)" }}>
+              {live.length > 1 && (
+                <button onClick={() => putAside({ all: true }, "all")} disabled={!!asiding}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+                  style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, color: "var(--text-secondary)" }}>
+                  {asiding === "all" ? "Putting aside…" : `Put all ${live.length} aside`}
+                </button>
+              )}
+              <span style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+                Putting one aside doesn&apos;t delete it — it moves down to <strong>Fixed, but worth knowing
+                about</strong>, and comes straight back up here if it happens again. Use it for a camera you&apos;ve
+                unplugged or switched off: it can&apos;t tell Kyro it&apos;s working again, because it isn&apos;t there.
+              </span>
+            </li>
+          )}
         </ul>
       )}
 
@@ -308,6 +364,7 @@ export function SystemHealth() {
                 {fixed.map((p, i) => (
                   <li key={`${p.where}-f-${i}`} style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
                     <strong>{p.where}</strong> — {p.what} · {p.happened.toLocaleString()}×, {when(p.since)} to {when(p.last)}
+                    {p.aside_by && ` · put aside by ${p.aside_by}`}
                   </li>
                 ))}
               </ul>
@@ -315,7 +372,8 @@ export function SystemHealth() {
           )}
 
           <p className="px-5 py-2.5" style={{ fontSize: 11, color: "var(--text-faint)", borderTop: `1px solid ${BORDER}` }}>
-            Checked {when(h.checked_at)} · live-cameras code {h.code} · a problem here stays until the thing that failed works again
+            Checked {when(h.checked_at)} · live-cameras code {h.code} · a problem here stays until the thing that failed
+            works again, or an administrator puts it aside
           </p>
         </div>
       )}

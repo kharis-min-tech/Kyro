@@ -31,6 +31,10 @@ Below the overview, each camera has a tile showing the live picture, **Live** or
 - **See one room bigger:** tap the expand icon at the bottom right of its tile. Close it with **<Icon name="close" label="close" />** or the Esc key.
 - **Picture stopped?** If a tile says **Stream lost — tap to retry**, tap it.
 
+::: tip A camera that is off shows no picture at all
+When you stop counting, or unplug a camera, its tile goes grey straight away and says so. It never keeps showing the last picture it sent: a photograph of a full hall is far more convincing than the word "Offline" beside it, so Kyro would rather show you nothing than show you a moment that has passed.
+:::
+
 An **outdoor queue** camera shows a big number of **people outside**. It has no seats. Its count feeds the **OUTSIDE QUEUE** box above.
 
 ::: info In Demo mode

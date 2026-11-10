@@ -204,15 +204,22 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   const countedElsewhere = !!(cameraId && zonesHere?.[cameraId]?.is_running);
   const mine = tileCount(counting?.phase ?? null, counting?.views ?? [], zoneName, cameraId, countedElsewhere);
   const liveHere = mine.key ? counting?.streamFor(mine.key) ?? null : null;
+  // Is this camera actually reporting? Asked here, and not only of the picture
+  // endpoint, because the two answers arrive at different speeds: the venue
+  // poll knows within seconds, the picture is only re-asked for every twenty.
+  // A camera that was switched off showed its last picture, in colour, with a
+  // green "Live" over it until the next fetch caught up. One source of truth:
+  // not running, no picture.
+  const running = !cameraId || !!zonesHere?.[cameraId]?.is_running;
   // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
-  const snap = useEdgeSnapshot(cameraId, edge && !liveHere, 20_000);
+  const snap = useEdgeSnapshot(cameraId, edge && !liveHere && running, 20_000);
 
   if (liveHere) {
     return <BrowserCameraStream streamUrl={streamUrl ?? ""} cameraId={cameraId} zoneName={zoneName} />;
   }
 
   if (edge) {
-    if (!snap.url) {
+    if (!snap.url || !running) {
       const browserCam = cameraId.startsWith("web-") || (streamUrl?.startsWith("webcam://") ?? false);
       // A camera that HAS a last picture but isn't sending one now is off, and
       // says so with when it last sent one. It used to go on showing that

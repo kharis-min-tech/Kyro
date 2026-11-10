@@ -242,7 +242,11 @@ async function registerDevice(): Promise<DeviceCred> {
 }
 
 export interface CameraReport {
-  key: string; label: string; current: number; peak: number; status: "online" | "error"; error?: string | null;
+  /** "offline" is this camera saying goodbye: counting has been switched off
+   *  here. The website marks it off at once and throws away its last picture,
+   *  rather than showing it for the forty-five seconds it takes to notice
+   *  silence. */
+  key: string; label: string; current: number; peak: number; status: "online" | "error" | "offline"; error?: string | null;
   fps: number; width: number; height: number;
   /** People who arrived and left, from following them between counts. */
   entries: number; exits: number;
@@ -277,13 +281,17 @@ export async function sendReport(
   faces: { error?: string | null; ready?: boolean } = {},
   /** Whatever has gone wrong in this browser since the last report. */
   problems: { where: string; what: string; detail?: string }[] = [],
+  /** Cameras that are fine right now, by name. The other half of `problems`:
+   *  a problem is only ever cleared by the thing that failed working again,
+   *  and nothing was saying when a camera came right. */
+  well: string[] = [],
 ): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${d.token}` },
     body: JSON.stringify({ version: CAMERA_MODE_VERSION, faces_error: faces.error ?? null, faces_ready: !!faces.ready,
-      problems: problems.slice(0, 10),
+      problems: problems.slice(0, 10), well: well.slice(0, 32),
       cameras: cameras.map((c) => ({ ...c, kind: "web" })) }),
   });
   let res = await post(dev);

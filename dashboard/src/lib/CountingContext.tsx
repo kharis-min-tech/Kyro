@@ -498,6 +498,24 @@ export function CountingProvider({ children }: { children: ReactNode }) {
 
   const stop = useCallback(() => {
     running.current = false;
+    // Say goodbye before letting go of the cameras.
+    //
+    // Stopping used to simply go quiet, and silence takes the website
+    // forty-five seconds to notice. For those forty-five seconds Live Cameras
+    // showed this camera's last picture, in colour, under a pulsing green
+    // "Live" — a photograph of a moment that had passed, which is the most
+    // convincing thing that can be on a screen. Now each camera reports that
+    // it is off, and the website drops its picture there and then.
+    const open = [...cams.current.values()].filter((c) => c.stream);
+    if (open.length) {
+      sendReport(open.map((c) => ({
+        key: c.key, label: c.label, current: 0, peak: c.peak,
+        entries: c.tracker.entries, exits: c.tracker.exits, people_seen: c.tracker.people,
+        status: "offline" as const, error: null, fps: 0,
+        width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
+        counted_at: c.countedAt,
+      }))).catch(() => { /* going off either way; silence costs 45 s, not the count */ });
+    }
     for (const c of cams.current.values()) {
       c.stream?.getTracks().forEach((t) => t.stop()); c.stream = null;
       c.video?.remove(); c.video = null;
@@ -635,9 +653,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         width: c.video?.videoWidth ?? 0, height: c.video?.videoHeight ?? 0,
       });
       });
+      // Which cameras are fine right now. A problem on the "Is Kyro working?"
+      // page is only ever cleared by the thing that failed working again, and
+      // nothing was ever saying that a camera had come right — so one black
+      // frame at any point left a red line that no amount of fixing could
+      // shift. Open, a changing non-black picture, counting: that is working.
+      const well = list
+        .filter((c) => c.stream && !c.error && !c.watch.black && !c.watch.frozen
+          && !!c.countedAt && Date.now() - c.countedAt < 60_000)
+        .map((c) => c.label);
       try {
         const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice } =
-          await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current);
+          await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);
         setSeenTwice(twice);
         problems.current = [];
         // A different service, or none: forget everybody seen in the last one.
