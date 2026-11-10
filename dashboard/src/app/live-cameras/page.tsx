@@ -71,6 +71,10 @@ function useEdgeCameraLive(camera: Camera) {
     entries: z?.entries ?? 0,
     exits:   z?.exits ?? 0,
     peak:    z?.peak ?? 0,
+    capacity: z?.capacity ?? 0,
+    /** "admin" when somebody entered the capacity, "found" when Kyro guessed
+     *  it from the picture. A guess drives nothing. */
+    capacityFrom: (z as { capacity_from?: "admin" | "found" | null } | undefined)?.capacity_from ?? null,
     /**
      * Whether this camera's in and out figures mean anything.
      *
@@ -568,6 +572,9 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
 
   const zonesWithCapacity = zones.filter((z) => z.capacity > 0);
   if (zonesWithCapacity.length === 0) return null;
+  /** Rooms whose seat count somebody actually entered. The rest are guesses
+   *  from the picture and are shown as such — see syncCapacity. */
+  const measured = zonesWithCapacity.filter((z) => z.capacity_from === "admin").length;
 
   return (
     <div className="mt-5">
@@ -597,6 +604,13 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
             <span className="w-32 text-right shrink-0">How full</span>
             <span className="w-20 text-right shrink-0">Status</span>
           </div>
+          {measured < zonesWithCapacity.length && (
+            <p className="px-4 py-2" style={{ fontSize: 11, color: "var(--text-faint)", borderBottom: `1px solid ${BORDER}`, lineHeight: 1.5 }}>
+              A capacity shown as <strong>~21?</strong> is Kyro&apos;s own guess from the picture, not a seat count anybody
+              has set — so nothing is worked out from it. Set the real number with the <strong>pencil</strong> on the
+              Cameras page and space left, how full and the filling-up alerts all start working for that room.
+            </p>
+          )}
 
           {/* Rows */}
           {zonesWithCapacity.map((zone) => {
@@ -614,8 +628,12 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
              * rather than something a camera found.
              */
             const counting = zone.is_running && (zone as { is_counting?: boolean }).is_counting !== false;
-            const left   = counting ? Math.max(0, zone.capacity - zone.current) : null;
-            const pct    = counting ? Math.round(zone.occupancy_pct) : null;
+            // A capacity Kyro guessed from the picture is not a capacity. The
+            // whole row is about space, and space measured against a guess is
+            // a guess — see syncCapacity in worker/venue.js.
+            const known = zone.capacity_from === "admin";
+            const left   = counting && known ? Math.max(0, zone.capacity - zone.current) : null;
+            const pct    = counting && known ? Math.round(zone.occupancy_pct) : null;
             const color  = counting ? occupancyColor(pct) : "var(--text-faint)";
             const status = counting ? occupancyLabel(pct) : "unknown";
 
@@ -631,9 +649,12 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                   <span className="text-sm text-white font-medium truncate">{zone.zone_name}</span>
                 </div>
 
-                {/* Capacity */}
-                <span className="w-20 text-right text-sm text-gray-400 tabular-nums shrink-0">
-                  {zone.capacity.toLocaleString()}
+                {/* Capacity — only when somebody set it. A guess is shown
+                    as a guess, in brackets, so it cannot be read as one. */}
+                <span className="w-20 text-right text-sm tabular-nums shrink-0"
+                  style={{ color: known ? "var(--text-tertiary)" : "var(--text-faint)" }}
+                  title={known ? undefined : "Kyro's guess from the picture — set the real seat count with the pencil on the Cameras page"}>
+                  {known ? zone.capacity.toLocaleString() : zone.capacity > 0 ? `~${zone.capacity.toLocaleString()}?` : "—"}
                 </span>
 
                 {/* People in */}
@@ -724,15 +745,32 @@ function CameraTile({
     : "This camera watches a room, not a doorway, so it can't count people in and out";
   const isLive   = edgeLive ? edgeLive.isLive : inDemoMode() ? true : connected && !!data;
   const edgeError = edgeLive?.error ?? null;
-  const capacity = camera.zone_capacity ?? 0;
+  /**
+   * Whether this room's capacity is a number somebody ENTERED, or one Kyro
+   * guessed from the picture.
+   *
+   * "the system should not even guess that its 21 seats or 16 seats when
+   * nothing was seen or shown ... dont assume anything."
+   *
+   * She never typed 21. The seat finder looked at the room, decided it could
+   * see 21 seat-shaped things, and that went into the room's capacity where
+   * nothing could tell it apart from a measurement. Everything built on it —
+   * "0 of 21 seats", "21 spaces left", a percentage, a phone alert at 80% —
+   * inherited the confidence without inheriting the doubt.
+   *
+   * A guessed capacity is offered, and drives nothing. See syncCapacity in
+   * worker/venue.js.
+   */
+  const capacityKnown = (edgeLive?.capacityFrom ?? (camera.zone_capacity ? "admin" : null)) === "admin";
+  const capacity = capacityKnown ? (camera.zone_capacity ?? 0) : 0;
+  const guessedSeats = !capacityKnown ? (edgeLive?.capacity ?? camera.zone_capacity ?? 0) : 0;
   const isQueue  = camera.location === "queue";
   /**
    * Nothing is counting, so there is nothing to report but the capacity.
    *
    * A switched-off camera's tile read "0 / 21" and "21 spaces left", in
    * green, beside its own message explaining that it is not plugged in. A
-   * room nothing can see has no occupancy and no space left; it has a number
-   * somebody typed in once, and no measurement at all.
+   * room nothing can see has no occupancy and no space left.
    */
   const measuring = isLive;
   const pct      = (measuring && !isQueue && capacity > 0) ? Math.min(100, Math.round((current / capacity) * 100)) : null;
@@ -877,6 +915,9 @@ function CameraTile({
               {measuring ? current.toLocaleString() : "—"}
             </span>
             {capacity > 0 && <span className="text-xs text-gray-400">/ {capacity.toLocaleString()}</span>}
+            {/* A guessed seat count is NOT shown as the room's capacity. It
+                used to read "— / 21" for a room nobody had measured, which
+                is a guess wearing the clothes of a fact. */}
           </div>
           {seatsLeft !== null && (
             <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
@@ -922,6 +963,20 @@ function CameraTile({
               style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>Filling</span>
           )}
         </div>
+
+        {/* What Kyro thinks it can see, said as a thought.
+            It is not a capacity until somebody confirms it, so nothing is
+            built on it: no "spaces left", no percentage, no filling-up
+            alert. Set the seat count with the pencil on the Cameras page and
+            all of those come back. */}
+        {guessedSeats > 0 && !isQueue && (
+          <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+            No seat count set for this room. Kyro thinks it can see about{" "}
+            <strong style={{ color: "var(--text-tertiary)" }}>{guessedSeats.toLocaleString()}</strong> seats, which is a
+            guess from the picture — so &ldquo;spaces left&rdquo; and the filling-up alerts stay off until somebody sets
+            the real number with the pencil on the Cameras page.
+          </p>
+        )}
 
         {/* Occupancy bar */}
         {pct !== null && (

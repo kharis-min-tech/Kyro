@@ -63,11 +63,15 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("a row knows whether that camera is counting",
      /const counting = zone\.is_running && \(zone as \{ is_counting\?: boolean \}\)\.is_counting !== false;/.test(page));
   ok("people in is a dash when it isn't", /\{counting \? zone\.current\.toLocaleString\(\) : "—"\}/.test(page));
+  // Both conditions now: something has to be counting, AND the capacity has
+  // to be one somebody set rather than one Kyro guessed from the picture.
+  // See tests/test_a_guess_is_not_a_capacity.mjs.
   ok("space left is nothing at all, not the whole capacity",
-     /const left   = counting \? Math\.max\(0, zone\.capacity - zone\.current\) : null;/.test(page)
+     /const left   = counting && known \? Math\.max\(0, zone\.capacity - zone\.current\) : null;/.test(page)
      && /\{left === null \? "—"/.test(page));
   ok("how full is a dash too", /\{pct === null \? "—" : `\$\{pct\}%`\}/.test(page));
-  ok("but the capacity stays", /\{zone\.capacity\.toLocaleString\(\)\}/.test(page));
+  ok("but a capacity somebody SET stays",
+     /\{known \? zone\.capacity\.toLocaleString\(\) : zone\.capacity > 0 \? `~\$\{zone\.capacity\.toLocaleString\(\)\}\?` : "—"\}/.test(page));
 
   // The overlap: two badges in one 5rem box.
   ok("the status column draws exactly ONE badge",

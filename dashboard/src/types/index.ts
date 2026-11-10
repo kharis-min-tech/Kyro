@@ -110,6 +110,13 @@ export interface ZoneLive {
   /** false for a camera counting in a browser: it counts each picture rather
    *  than following people, so it has no in/out. */
   in_out?: boolean;
+  /**
+   * Where the capacity came from: "admin" when somebody entered it, "found"
+   * when the seat finder guessed it from the picture, null when there isn't
+   * one. A guess is shown as a guess and drives nothing — see syncCapacity in
+   * worker/venue.js.
+   */
+  capacity_from?: "admin" | "found" | null;
   /** Where the camera is pointed: a room, a queue, or the entrance. */
   location?: string;
   /** Counts a second this camera is managing, and how many it needs for in/out. */

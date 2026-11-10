@@ -249,6 +249,7 @@ function roomTotals(zones) {
         zone_name: z.zone_name, cameras: 1,
         current: z.current || 0, peak: z.peak || 0,
         entries: z.entries || 0, exits: z.exits || 0, capacity: z.capacity || 0,
+        capacity_from: z.capacity_from ?? null,
         people: z.people || 0,
         // The same two figures before a fresh start was taken off them. How
         // many people are in the building is everyone who has come in today
@@ -271,6 +272,10 @@ function roomTotals(zones) {
       r.people = take(r.people, z.people);
       // One room's seats are its seats, however many cameras watch them.
       r.capacity = take(r.capacity, z.capacity);
+      // One camera in a room with a capacity somebody entered makes the room
+      // measured; otherwise the room is as much of a guess as its cameras.
+      if (z.capacity_from === "admin") r.capacity_from = "admin";
+      else r.capacity_from ??= z.capacity_from ?? null;
     }
   }
   return [...rooms.values()];
@@ -1703,7 +1708,7 @@ export class VenueHub extends DurableObject {
   /** Moves a camera's settings and history onto its new record, and removes the old one. */
   async takeOver(cams, live, old, camera_id) {
     const c = cams[camera_id];
-    for (const k of ["name", "zone_name", "zone_capacity", "zone_order", "location", "hidden", "created_at"]) c[k] = old[k];
+    for (const k of ["name", "zone_name", "zone_capacity", "capacity_from", "zone_order", "location", "hidden", "created_at"]) c[k] = old[k];
     this.ctx.storage.sql.exec("UPDATE history SET camera_id = ? WHERE camera_id = ?", camera_id, old.camera_id);
     delete cams[old.camera_id];
     delete live[old.camera_id];
@@ -1918,7 +1923,14 @@ export class VenueHub extends DurableObject {
         entries_all: l.entries || 0, exits_all: l.exits || 0,
         /** Different people this camera has seen this service, counted once each. */
         people: l.people || 0,
-        capacity: c.zone_capacity || 0, occupancy_pct: c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
+        capacity: c.zone_capacity || 0,
+        /**
+         * Where that number came from: "admin" if somebody entered it,
+         * "found" if the seat finder guessed it from the picture. A guess is
+         * shown as a guess and drives nothing — see syncCapacity.
+         */
+        capacity_from: c.capacity_from === "admin" ? "admin" : c.zone_capacity ? "found" : null,
+        occupancy_pct: c.capacity_from === "admin" && c.zone_capacity ? Math.round((current / c.zone_capacity) * 1000) / 10 : 0,
         is_running: running, status: running ? l.status || "online" : "offline", error_reason: running ? l.error_reason ?? null : null,
         // Online AND actually producing a picture. is_running stays true so
         // the reason above is still shown; this is what "running" counts.
@@ -1947,7 +1959,10 @@ export class VenueHub extends DurableObject {
     const doors = roomTotals(doorZones);
     const sum = (k) => rooms.reduce((n, r) => n + (r[k] || 0), 0);
     const sumDoors = (k) => doors.reduce((n, r) => n + (r[k] || 0), 0);
-    const cap = sum("capacity");
+    // Only capacities somebody actually entered are added up. A guessed one
+    // would make "space left" and "how full" for the whole building rest on
+    // what a camera thought it could see — see syncCapacity.
+    const cap = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);
@@ -2242,7 +2257,10 @@ export class VenueHub extends DurableObject {
     let dirty = false;
     for (const [id, l] of Object.entries(live)) {
       const c = cams[id];
-      if (!c || c.hidden || !c.zone_capacity || !this.isOnline(l)) continue;
+      // A room is "filling up" against a capacity somebody MEASURED. Against
+      // one Kyro guessed from a picture, it is a phone alert built on a
+      // guess — see syncCapacity.
+      if (!c || c.hidden || !c.zone_capacity || c.capacity_from !== "admin" || !this.isOnline(l)) continue;
       const frac = (l.current || 0) / c.zone_capacity;
       const m = marks[id] || { frac: 0, at: 0 };
       if (frac < m.frac - 0.1) { marks[id] = { frac, at: m.at }; dirty = true; continue; }
@@ -3785,10 +3803,39 @@ export class VenueHub extends DurableObject {
     return json({ ok: true });
   }
 
-  /** The room's seat count follows its seat layout, so "seats left" and alerts match the seat map. */
-  async syncCapacity(camera_id, n) {
+  /**
+   * The room's seat count follows its seat layout — but a count KYRO FOUND is
+   * not the room's capacity until somebody says it is.
+   *
+   * ── What this was ──────────────────────────────────────────────────────
+   *
+   * "the system should not even guess that its 21 seats or 16 seats when
+   * nothing was seen or shown ... dont assume anything".
+   *
+   * She never typed 21, or 16. The seat finder looked at her room, decided it
+   * could see 21 seat-shaped things, and this wrote that straight into the
+   * room's capacity — where it was indistinguishable from a number an
+   * administrator had measured and entered. Everything downstream then
+   * treated it as fact: "0 of 21 seats", "21 spaces left", a percentage full,
+   * and the phone alert that fires when a room reaches 80% of it.
+   *
+   * A guess that cannot be told apart from a measurement is worse than no
+   * guess, because every figure built on it inherits the confidence without
+   * inheriting the doubt.
+   *
+   * So where the number came from is recorded with it. A found count is still
+   * kept and still offered — "Kyro thinks it can see about 21 seats, is that
+   * right?" — and it drives nothing until somebody answers.
+   */
+  async syncCapacity(camera_id, n, from = "found") {
     const cams = await this.get("cameras", {});
-    if (cams[camera_id]) { cams[camera_id].zone_capacity = n; await this.ctx.storage.put("cameras", cams); }
+    const c = cams[camera_id];
+    if (!c) return;
+    // Never quietly overwrite a number a person entered with one Kyro found.
+    if (from === "found" && c.capacity_from === "admin") return;
+    c.zone_capacity = n;
+    c.capacity_from = from;
+    await this.ctx.storage.put("cameras", cams);
   }
 
   async boxSeats(device, url) {
@@ -3965,7 +4012,11 @@ export class VenueHub extends DurableObject {
     if (!c) return json({ error: "No such camera" }, 404);
     if (body.name !== undefined) c.name = clean(body.name, 60) || c.name;
     if (body.zone_name !== undefined) c.zone_name = clean(body.zone_name, 60) || c.zone_name;
-    if (body.zone_capacity !== undefined) c.zone_capacity = num(body.zone_capacity, 0, 100000);
+    if (body.zone_capacity !== undefined) {
+      c.zone_capacity = num(body.zone_capacity, 0, 100000);
+      // Somebody typed it, so it stops being a guess — see syncCapacity.
+      c.capacity_from = "admin";
+    }
     if (body.zone_order !== undefined) c.zone_order = num(body.zone_order, 0, 1000);
     if (body.inward !== undefined) {
       c.inward = ["closer", "away", "left", "right"].includes(body.inward) ? body.inward : "closer";

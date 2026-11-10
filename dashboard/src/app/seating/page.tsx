@@ -920,12 +920,29 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   const away      = countable.filter(s => s.state === "temporarily_vacant").length;
   const reserved  = countable.filter(s => s.state === "reserved").length;
   const onStage   = countable.filter(s => s.state === "rota_hold").length;
-  const cap       = camera.zone_capacity || countable.length || 1;
-  const utilPct  = Math.round((occupied / cap) * 1000) / 10;
+  /**
+   * A seat count Kyro guessed from the picture is not a capacity.
+   *
+   * "the system should not even guess that its 21 seats or 16 seats when
+   * nothing was seen or shown ... dont assume anything."
+   *
+   * The seat finder decides how many seat-shaped things it can see and that
+   * went straight into the room's capacity, where nothing could tell it from
+   * a number somebody had counted. This card then read "0 of 21 seats" and a
+   * percentage full, both of which are arithmetic on a guess. See
+   * syncCapacity in worker/venue.js.
+   */
+  const capKnown  = (edgeZone as { capacity_from?: string } | undefined)?.capacity_from === "admin"
+    || (!edge && !!camera.zone_capacity);
+  const cap       = capKnown ? (camera.zone_capacity || countable.length || 1) : null;
+  const utilPct   = cap ? Math.round((occupied / cap) * 1000) / 10 : null;
   // Edge Live with no seat layout: show the room's people count instead of seats.
   const roomMode  = edge && rawSeats.length === 0;
   const roomPeople = edgeZone?.current ?? 0;
-  const roomSeats  = camera.zone_capacity || edgeZone?.capacity || 0;
+  // Same rule: a seat count Kyro guessed is not a capacity, so "seats left"
+  // and "% full" stay off until somebody sets the real number.
+  const roomSeats  = capKnown ? (camera.zone_capacity || edgeZone?.capacity || 0) : 0;
+  const roomSeatsGuess = capKnown ? 0 : (edgeZone?.capacity || camera.zone_capacity || 0);
 
   return (
     <div className="flex-1 flex flex-col overflow-auto" style={{ background: BG }}>
@@ -988,7 +1005,14 @@ function CameraSeatView({ camera }: { camera: Camera }) {
           {edgeRunning === false && edgeZone?.error_reason && (
             <p style={{ fontSize: 11, color: "#f59e0b" }}>{edgeZone.error_reason}</p>
           )}
-          {roomSeats === 0 && (
+          {roomSeatsGuess > 0 && (
+            <p style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.5 }}>
+              Kyro thinks it can see about <strong style={{ color: "var(--text-tertiary)" }}>{roomSeatsGuess.toLocaleString()}</strong>{" "}
+              seats here, which is a guess from the picture — not a seat count. Set the real number with the pencil on
+              the Cameras page and &ldquo;seats left&rdquo; and &ldquo;% full&rdquo; start working for this room.
+            </p>
+          )}
+          {roomSeats === 0 && roomSeatsGuess === 0 && (
             <p style={{ fontSize: 11, color: "var(--text-faint)" }}>Set this room&apos;s number of seats on the Cameras page to see seats left.</p>
           )}
           {edgeError && !edgeVenue && (
@@ -1002,8 +1026,10 @@ function CameraSeatView({ camera }: { camera: Camera }) {
         </>) : (<>
         {/* Stat cards */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <StatCard label="Capacity Utilization" value={`${utilPct}%`} sub={`${occupied} of ${cap} seats`} />
-          <StatCard label="Occupied Units" value={occupied.toString()} sub={`of ${cap}`} valueColour="#ff4d6d" />
+          <StatCard label="Capacity Utilization" value={cap ? `${utilPct}%` : "—"}
+            sub={cap ? `${occupied} of ${cap} seats` : "no seat count set for this room"} />
+          <StatCard label="Occupied Units" value={occupied.toString()}
+            sub={cap ? `of ${cap}` : "seats found, not a capacity"} valueColour="#ff4d6d" />
           <StatCard label="Reserved Seats" value={reserved.toString()} sub="Reserved" valueColour="#9b5de5" />
           <ZonesBadge zones={zones} />
           <StatCard label="AI Questions" value={waitingQuestions.toString()}

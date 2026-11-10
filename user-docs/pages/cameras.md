@@ -122,6 +122,14 @@ The rest of this page describes Demo mode, and Kyro set up with its own server.
 
 If the name sounds like it's outside (*Entrance*, *Foyer*, *Car park*, *Queue*…), Kyro asks **"Is this an outdoor or queue camera?"** Answer **Yes, it's an outdoor/queue camera** for a camera that counts people waiting, or **No, it has seats**.
 
+::: warning Kyro's seat guess is not your seat count
+When a camera is counting, Kyro's seat finder looks at the picture and works out roughly how many seat-shaped things it can see. **That is a guess, and it is shown as one** — `~21?` in the Capacity column, and *"Kyro thinks it can see about 21 seats"* on the camera tile.
+
+Until an administrator sets the real number, **nothing is worked out from it**: no *spaces left*, no *% full*, no *capacity utilisation*, and **no filling-up or overcrowding alert**. A guess that can't be told from a measurement is worse than no guess, because everything built on it inherits the confidence without the doubt — and the thing at the end of that chain is a phone alert telling a steward a room is nearly full.
+
+Set the real seat count with the **pencil** on this page and all of those start working for that room.
+:::
+
 ::: tip Seat capacity sets up the seat map
 When you give an indoor camera a seat capacity, Kyro creates a starter seat layout of that size, so the [Seat Map](/pages/seat-map) works straight away. You can draw the real layout later in the [Seat Editor](/pages/seat-editor).
 :::
