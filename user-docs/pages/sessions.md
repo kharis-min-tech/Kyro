@@ -68,4 +68,16 @@ Finished sessions are listed under **Past sessions**, with the date, how long th
 
 - **Rename:** tap **<Icon name="pencil" /> rename**, type the name, then **Save**. A quick-started session has no name until you rename it here.
 - **Download:** tap **Export CSV** to get a spreadsheet of the session's numbers.
-- **Delete:** tap **Delete** and confirm. This can't be undone.
+- **Delete:** tap **Delete** and confirm. It moves to **Recently deleted** — it isn't gone.
+
+## Recently deleted
+
+A deleted session is kept for **30 days**, so a mistake can be undone. Each row says when it was deleted, by whom, and the date it goes for good.
+
+- **Bring it back:** tap **<Icon name="undo" /> Bring it back**. If its counts were deleted with it, they come back too.
+- **Delete it now:** tap the **bin** on the row. Kyro asks first, in the page, and tells you exactly what will go. **This cannot be undone** — **Bring it back** stops working for it.
+- **Empty the bin:** with more than one in there, **Empty the bin** clears the lot after one confirmation. Useful after a day of testing.
+
+::: warning The bin is the only thing in Kyro that really destroys a record
+Everything else — deleting a day, deleting a session, starting the register again from nobody — only marks things as deleted and keeps them. This removes them. Only administrators see the bin, Kyro records who used it and when, and it only ever touches readings that were deleted **with that session**: anything still live in the same minute is left alone, however much the times overlap.
+:::

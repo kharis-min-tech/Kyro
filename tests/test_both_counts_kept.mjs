@@ -124,8 +124,22 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
 
 // 6. Nothing deletes a reading except being asked to, in so many words.
 {
-  const deletes = [...worker.matchAll(/UPDATE history SET deleted_at = \?|DELETE FROM history/g)].length;
-  ok("only a handful of places can mark a reading deleted", deletes <= 3, `found ${deletes}`);
+  // Two different things, counted separately — the difference is the whole
+  // safety argument. MARKING a reading deleted can be undone; DESTROYING one
+  // cannot, and only two places may: the 30-day prune, and an administrator
+  // saying "delete this for good" about something already in the bin.
+  const marks = [...worker.matchAll(/UPDATE history SET deleted_at = \?/g)].length;
+  ok("only a handful of places can mark a reading deleted", marks <= 2, `found ${marks}`);
+  const destroys = [...worker.matchAll(/DELETE FROM history/g)].length;
+  ok("and only two can destroy one", destroys === 2, `found ${destroys}`);
+  ok("both of them only ever touch rows already marked deleted",
+     [...worker.matchAll(/DELETE FROM history WHERE ([^"]*)"/g)]
+       .every(([, where]) => where.startsWith("deleted_at IS NOT NULL")));
+  ok("one is the 30-day prune",
+     /DELETE FROM history WHERE deleted_at IS NOT NULL AND deleted_at < \?/.test(worker));
+  ok("the other is an administrator emptying the bin on purpose",
+     /async purgeService\(id, user\) \{/.test(worker)
+     && /Only administrators can delete a service for good/.test(worker));
   ok("deleting a day is one of them, and says so",
      /async deleteDay\(date, tz, user\)/.test(worker));
   ok("deleting a service only takes counts when explicitly asked",

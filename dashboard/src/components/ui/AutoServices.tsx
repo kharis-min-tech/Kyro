@@ -31,6 +31,10 @@ export const servicesApi = {
   deleted: () => edgeFetch<DeletedService[]>("/api/live/services-deleted"),
   restore: (id: string) => edgeFetch<{ restored: boolean; name: string; counts_restored: boolean }>(
     `/api/live/services-deleted/${encodeURIComponent(id)}/restore`, { method: "POST" }),
+  /** Gone now rather than in thirty days. The one thing here that can't be undone. */
+  purge: (id: string) => edgeFetch<{ purged: boolean; name: string }>(
+    `/api/live/services-deleted/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  purgeAll: () => edgeFetch<{ purged: number }>("/api/live/services-deleted", { method: "DELETE" }),
   rename: (id: string, name: string) => edgeFetch<Service>(`/api/live/services/${encodeURIComponent(id)}/rename`, { method: "POST", body: JSON.stringify({ name }) }),
 };
 
@@ -49,6 +53,16 @@ export function AutoServices() {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  /**
+   * Which deleted service is being asked about before it goes for good.
+   *
+   * Asked here in the page rather than in one of the browser's own boxes.
+   * Those appear for reloads too, cannot say what is about to happen, and
+   * teach people to click through warnings without reading them. The same
+   * pattern as the camera removal on "Is Kyro working?".
+   */
+  const [confirmPurge, setConfirmPurge] = useState<DeletedService | null>(null);
+  const [confirmPurgeAll, setConfirmPurgeAll] = useState(false);
   const [confirmFresh, setConfirmFresh] = useState(false);
   const [binned, setBinned] = useState<DeletedService[]>([]);
   const [alsoCounts, setAlsoCounts] = useState(false);
@@ -199,13 +213,64 @@ export function AutoServices() {
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Recently deleted ({binned.length})</p>
           <p className="text-xs text-gray-500">
             Still here. Bring one back any time within 30 days of deleting it, after which it goes for good.
+            {admin && <> The <strong className="text-gray-400">bin</strong> on a row removes it now instead of waiting.</>}
           </p>
+          {/* Six rows of test runs is a month of scrolling past them. */}
+          {admin && binned.length > 1 && !confirmPurgeAll && (
+            <button onClick={() => { setConfirmPurgeAll(true); setConfirmPurge(null); setErr(null); }} disabled={busy !== null}
+              className="self-start flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-40"
+              style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)", color: "var(--text-secondary)" }}>
+              <Trash2 size={11} /> Empty the bin ({binned.length})
+            </button>
+          )}
+          {admin && confirmPurgeAll && (
+            <div className="rounded-xl p-4 flex flex-col gap-2"
+              style={{ background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.4)" }}>
+              <p className="text-sm font-semibold text-white">
+                Delete all {binned.length} for good?
+              </p>
+              <p className="text-xs leading-relaxed text-gray-400">
+                Every one of them goes now instead of waiting for its 30 days, and any counts that were deleted
+                along with them go too. <strong className="text-gray-300">This cannot be undone.</strong>
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button disabled={busy !== null}
+                  onClick={async () => {
+                    setBusy("purge-all"); setErr(null);
+                    try { await servicesApi.purgeAll(); await load(); }
+                    catch (e: any) { setErr(e?.message ?? "Couldn't delete those"); }
+                    setBusy(null); setConfirmPurgeAll(false);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b91c1c" }}>
+                  {busy === "purge-all" ? "Deleting…" : `Yes, delete all ${binned.length}`}
+                </button>
+                <button onClick={() => setConfirmPurgeAll(false)} disabled={busy !== null}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
           {binned.map((s) => {
             const gone = s.deleted_at ? new Date(Date.parse(s.deleted_at) + 30 * 86400000) : null;
             return (
               <div key={s.id} className="rounded-xl p-3 flex flex-wrap items-center gap-2"
                 style={{ background: "var(--bg-card)", border: "1px dashed var(--border-subtle)" }}>
-                <Trash2 size={13} className="shrink-0 text-gray-500" />
+                {/* The bin was a picture. It is a button now — it was the only
+                    thing on the row that looked like a way to get rid of
+                    something, which is exactly what it was tapped for. */}
+                {admin ? (
+                  <button onClick={() => { setConfirmPurge(s); setConfirmPurgeAll(false); setErr(null); }}
+                    disabled={busy !== null}
+                    title={`Delete "${s.name}" for good, now`} aria-label={`Delete ${s.name} for good`}
+                    className="shrink-0 rounded-lg p-1 text-gray-500 hover:text-red-400 disabled:opacity-40">
+                    <Trash2 size={13} />
+                  </button>
+                ) : (
+                  <Trash2 size={13} className="shrink-0 text-gray-500" aria-hidden />
+                )}
                 <div className="min-w-0">
                   <p className="text-sm text-gray-300 truncate">{s.name}</p>
                   <p className="text-xs text-gray-500">
@@ -217,10 +282,45 @@ export function AutoServices() {
                 </div>
                 <span className="flex-1" />
                 {admin && (
-                  <button onClick={() => act(s.id, () => servicesApi.restore(s.id))} disabled={busy === s.id}
+                  <button onClick={() => act(s.id, () => servicesApi.restore(s.id))} disabled={busy !== null}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
                     <RotateCcw size={12} /> Bring it back
                   </button>
+                )}
+
+                {/* Asked in the page, in terms of what is about to happen,
+                    rather than "are you sure?" in a box the browser drew. */}
+                {admin && confirmPurge?.id === s.id && (
+                  <div className="w-full rounded-lg p-3 mt-1 flex flex-col gap-2"
+                    style={{ background: "rgba(239,68,68,0.07)", border: "1px solid rgba(239,68,68,0.4)" }}>
+                    <p className="text-sm font-semibold text-white">Delete &ldquo;{s.name}&rdquo; for good?</p>
+                    <p className="text-xs leading-relaxed text-gray-400">
+                      It goes now instead of waiting until {gone ? gone.toLocaleDateString([], { day: "numeric", month: "short" }) : "its 30 days are up"}.
+                      {s.counts_deleted
+                        ? <> The counts that were deleted with it go too.</>
+                        : <> The counts it recorded are not touched — they were never deleted with it.</>}
+                      {" "}<strong className="text-gray-300">This cannot be undone</strong>, and <strong className="text-gray-300">Bring it back</strong> will
+                      no longer work for it.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button disabled={busy !== null}
+                        onClick={async () => {
+                          setBusy(s.id); setErr(null);
+                          try { await servicesApi.purge(s.id); await load(); }
+                          catch (e: any) { setErr(e?.message ?? "Couldn't delete that"); }
+                          setBusy(null); setConfirmPurge(null);
+                        }}
+                        className="px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                        style={{ background: "#b91c1c" }}>
+                        {busy === s.id ? "Deleting…" : "Yes, delete it for good"}
+                      </button>
+                      <button onClick={() => setConfirmPurge(null)} disabled={busy !== null}
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50"
+                        style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
               </div>
             );

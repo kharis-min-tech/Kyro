@@ -551,6 +551,18 @@ export class VenueHub extends DurableObject {
         if (role !== "admin") return json({ error: "Only administrators can bring a service back" }, 403);
         return this.restoreService(undel[1], user);
       }
+      // Gone now rather than in thirty days. The only thing in Kyro that
+      // really destroys a record, so: administrators only, and one service at
+      // a time unless the whole bin is asked for by name. See purgeService.
+      if (p === "/api/live/services-deleted" && request.method === "DELETE") {
+        if (role !== "admin") return json({ error: "Only administrators can delete a service for good" }, 403);
+        return this.purgeAllServices(user);
+      }
+      const purge = p.match(/^\/api\/live\/services-deleted\/([\w-]+)$/);
+      if (purge && request.method === "DELETE") {
+        if (role !== "admin") return json({ error: "Only administrators can delete a service for good" }, 403);
+        return this.purgeService(purge[1], user);
+      }
       if (p === "/api/live/deleted-days" && request.method === "GET") return json(await this.deletedDays());
       if (p === "/api/live/movement" && request.method === "GET") return json(await this.movementByDay(url));
       // "What did you actually count?" — every decision the door cameras made
@@ -3055,6 +3067,59 @@ export class VenueHub extends DurableObject {
     }
     await this.ctx.storage.put("deleted_services", log.filter((x) => x.id !== id));
     return json({ restored: true, name: svc.name, counts_restored: !!counts_deleted });
+  }
+
+  /**
+   * Gone now, rather than in thirty days.
+   *
+   * Recently deleted holds a service for thirty days so a mistake can be
+   * undone. That is the right default and it is not always what is wanted: a
+   * row that is certainly rubbish — a test, a session recorded by a camera
+   * pointed at a desk — sits in the way for a month with a Bring it back
+   * button nobody will ever press. Asked for in so many words: "mae the bin
+   * icon button active so i can permanetly delte it so its out of the way if
+   * ever i know for sure".
+   *
+   * This is the one place in Kyro that really destroys something, so it is
+   * narrow on purpose. Only rows that were already marked deleted WITH this
+   * service are removed; anything still live in the same stretch of time —
+   * another service's readings, a day that was never deleted — is not
+   * touched, however much its timestamps overlap.
+   */
+  async purgeService(id, user) {
+    const log = await this.get("deleted_services", []);
+    const was = log.find((x) => x.id === id);
+    if (!was) return json({ error: "That service isn't in Recently deleted" }, 404);
+    if (was.counts_deleted && was.started_at && was.ended_at) {
+      try {
+        // Only the rows this deletion marked. "deleted_at IS NOT NULL" is
+        // what makes that safe: a live reading in the same minute stays.
+        this.ctx.storage.sql.exec("DELETE FROM people WHERE deleted_at IS NOT NULL AND service = ?", id);
+        this.ctx.storage.sql.exec("DELETE FROM history WHERE deleted_at IS NOT NULL AND ts >= ? AND ts <= ?",
+          Date.parse(was.started_at), Date.parse(was.ended_at));
+      } catch (e) {
+        await this.wrong("Deleting a service",
+          "Removed the service but couldn't remove the counts that went with it", e && e.message);
+      }
+    }
+    await this.ctx.storage.put("deleted_services", log.filter((x) => x.id !== id));
+    // Written down, because this one cannot be undone.
+    const gone = await this.get("purged_services", []);
+    gone.unshift({ id, name: was.name, started_at: was.started_at,
+      purged_by: clean(user, 60), purged_at: new Date().toISOString(), counts_deleted: !!was.counts_deleted });
+    await this.ctx.storage.put("purged_services", gone.slice(0, 200));
+    return json({ purged: true, name: was.name });
+  }
+
+  /** The whole bin, in one go, for somebody looking at a page of test runs. */
+  async purgeAllServices(user) {
+    const log = await this.get("deleted_services", []);
+    let n = 0;
+    for (const s of [...log]) {
+      const res = await this.purgeService(s.id, user);
+      if (res.status === 200) n++;
+    }
+    return json({ purged: n });
   }
 
   /** An admin ends the service now (e.g. people are still chatting afterwards). */
