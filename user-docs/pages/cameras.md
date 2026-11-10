@@ -55,6 +55,26 @@ Still nothing? Open your computer's own camera app — **Photo Booth** on a Mac,
 
 For Wi-Fi security cameras, press **Find cameras** (under **Wi-Fi cameras**). The camera computer at church lists the cameras on its Wi-Fi; click **Add** next to one and type the camera's own username and password. See [Wi-Fi security cameras](/guides/camera-setup#with-wi-fi-security-cameras-best-for-several-cameras) for the full steps.
 
+### Do several cameras work together?
+
+**Yes — they share one register.** One entry per human being, whichever camera sees them. Somebody who walks from one camera to another keeps the same identity and is counted once, not twice.
+
+Three things join a person up across cameras, strongest first:
+
+1. **Their face**, when face matching is on and a face was readable. Strongest by far, and the only one that works across a crowded hall.
+2. **What they look like** — the colour of what they're wearing, their build and height. Weak on its own, and weakest in exactly this case: two cameras see the same person from two angles, at two distances, in two patches of light.
+3. **Who else is in the room.** If a camera that can see the same place has exactly one person in view that this camera hasn't accounted for, that's almost certainly who this is. It only applies in a quiet room — with a crowd, "the only one" stops meaning anything, so Kyro doesn't use it.
+
+::: warning Kyro has to know which cameras see the same place
+Two cameras **plugged into the same computer** are treated as one place automatically — a USB cable is two metres long.
+
+For anything else, **give them the same room name** (the pencil on this page). Cameras sharing a room name are two views of one room: Kyro takes the fullest view instead of adding them up. Cameras with *different* room names are different rooms and **their counts are added together** — right for a balcony and a main floor, wrong for two cameras pointed at the same hall.
+
+A camera that adds itself is named after itself, so it starts out as its own room. That's the first thing to set.
+:::
+
+To see whether it's working, open **AI Count** → **How the counting is doing**. It shows how many cameras are feeding the register, how many people have been recognised on more than one of them, and how each match was made.
+
 ### Face matching
 
 Face matching answers one question Kyro cannot otherwise answer: is the person who just walked in somebody already counted? Without it, an usher holding the door all morning is counted every time they step through, and a choir in matching robes cannot be told apart at all.

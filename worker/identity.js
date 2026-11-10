@@ -118,6 +118,18 @@ export const LOOK_UNCERTAIN = 0.82;
  */
 export const LOOK_ASK = 0.7;
 /**
+ * How few people there can be between two overlapping cameras before "the
+ * only one they haven't accounted for" is a statement about a person rather
+ * than arithmetic about a crowd.
+ *
+ * Measured. Letting it fire at any size cost eight people at a simulated
+ * 120-person service with face matching ON — people merged into each other,
+ * which is the worse of the two ways to be wrong. At this size it never
+ * fires there at all, and one person in front of two cameras is still one
+ * person.
+ */
+export const QUIET_ENOUGH_TO_JOIN = 4;
+/**
  * A uniform.
  *
  * The choir wear the same robes. The ushers wear the same jackets. When this
@@ -777,6 +789,99 @@ export class IdentityRegistry {
       }
     }
     if (w.seen < (w.faces ? NEW_PERSON_WITH_FACE : NEW_PERSON_NO_FACE)) return null;
+
+    /**
+     * The other camera is looking at them right now.
+     *
+     * ── Why ────────────────────────────────────────────────────────────────
+     *
+     * "is the cameras even working together or seperately, because if there
+     * working seperatly, THEY NEED TO WORK TOGETHER!! ... if for example one
+     * person goes to the other camera, they need to have the same id and not
+     * double count".
+     *
+     * They do share one register, and a face or a coat will join two
+     * sightings up. But a coat is the weakest evidence there is, and it is at
+     * its weakest in exactly this case: two cameras see the same person from
+     * two angles, at two distances, in two different patches of light, so
+     * the two readings of them are the least alike they will ever be. When
+     * the coat fails, a second entry is made — and that is one person counted
+     * twice, for ever, with nothing left to join them up.
+     *
+     * There is evidence here that has nothing to do with what anybody is
+     * wearing: WHO ELSE IS IN THE ROOM THIS SECOND. If a camera that can see
+     * the same place has exactly one person in view that this camera has not
+     * accounted for, and this sighting is not plainly somebody else, then
+     * much the likeliest reading is that it is them. Two cameras, one person
+     * between them, one entry.
+     *
+     * It only fires when the answer is unambiguous — one unaccounted person,
+     * not two — so in a hall of a hundred it never fires at all and the
+     * ordinary rules do the work. A face that says otherwise still vetoes it,
+     * and an appearance that says plainly "somebody else" still blocks it.
+     * And whenever it does fire, it asks: a wrong join is exactly the sort of
+     * thing a person settles from two pictures.
+     */
+    /**
+     * …and only when the room is quiet enough for "the only one" to mean
+     * something.
+     *
+     * With three people between two cameras, "the only person the other
+     * camera can see that this one hasn't accounted for" is a statement
+     * about one individual. With a hundred and twenty it is arithmetic
+     * about a crowd, and arithmetic about a crowd is how people get merged
+     * into each other. Measured: without this cap the rule cost eight people
+     * at a 120-person service; with it, that service is untouched — it never
+     * fires there at all — and one person in front of two cameras is still
+     * one person.
+     */
+    let hereBetweenThem = 0;
+    for (const p of this.people.values()) {
+      if (!p.seenAt) continue;
+      for (const [cam, at] of p.seenAt) {
+        if (now - at > CO_SEEN_MS) continue;
+        if (cam === cameraId || this.overlapping(cam, cameraId)) { hereBetweenThem++; break; }
+      }
+    }
+    const alsoHere = hereBetweenThem <= QUIET_ENOUGH_TO_JOIN ? [] : null;
+    for (const p of alsoHere === null ? [] : this.people.values()) {
+      if (claimed.has(p.id) || !p.seenAt) continue;
+      // This camera is already seeing them as some other track: not them.
+      if (now - (p.seenAt.get(cameraId) ?? 0) <= CO_SEEN_MS) continue;
+      let seenOnOverlapping = false;
+      for (const [cam, at] of p.seenAt) {
+        if (cam === cameraId || now - at > CO_SEEN_MS) continue;
+        if (this.overlapping(cam, cameraId)) { seenOnOverlapping = true; break; }
+      }
+      if (!seenOnOverlapping) continue;
+      // A readable face that is plainly not theirs settles it the other way.
+      if (faceReads.length && p.faces.length && faceScore(p) < FACE_DIFFERENT) continue;
+      // And an appearance that says "obviously somebody else" blocks it.
+      if (lookReads.length && p.looks.length && lookScore(p) < LOOK_ASK) continue;
+      alsoHere.push(p);
+      if (alsoHere.length > 1) break;                 // ambiguous: leave it alone
+    }
+    if (alsoHere && alsoHere.length === 1) {
+      this.waiting.delete(wkey);
+      this.stats.joinedAcrossCameras = (this.stats.joinedAcrossCameras || 0) + 1;
+      const p = this.touch(alsoHere[0].id, cameraId, o, now, w);
+      p.uncertain++;
+      const pair = `${cameraId}#${o.track}|${p.id}`;
+      if (!this.ruled.has(pair) && !this.asks.some((a) => a.pair === pair)) {
+        this.ruled.set(pair, null);
+        this.asks.push({
+          pair, at: now, guess: "same",
+          camera: cameraId, track: o.track, person: p.id,
+          other_camera: p.lastCamera ?? cameraId, other_track: p.lastTrack ?? null,
+          score: lookReads.length && p.looks.length ? Math.round(lookScore(p) * 1000) / 1000 : null,
+          had_face: faceReads.length > 0,
+          reason: "another camera is looking at the same room, and this is the only person in it they hadn't accounted for",
+        });
+        if (this.asks.length > 40) this.asks.shift();
+      }
+      return p.id;
+    }
+
     this.waiting.delete(wkey);
     const made = this.create(cameraId, o, now, w);
     // Somebody new — but somebody on file looked quite like them, or everyone
@@ -1183,6 +1288,15 @@ export class IdentityRegistry {
       changed_seats: this.stats.movedSeat,
       seated_now: [...this.seats.keys()].length,
       created: this.stats.created,
+      /** Sightings joined to somebody another camera was looking at. */
+      joined_across_cameras: this.stats.joinedAcrossCameras ?? 0,
+      /** Things an operator said were not people at all. */
+      not_people: this.stats.notPeople ?? 0,
+      /** Sightings ignored because they looked like one of those. */
+      ignored_not_people: this.stats.ignoredNotPeople ?? 0,
+      /** Which cameras have fed this register, so "are they working
+       *  together?" can be answered with the cameras' own names. */
+      cameras: [...new Set(people.flatMap((p) => [...p.cameras]))],
       service: this.service,
     };
   }

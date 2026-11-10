@@ -39,6 +39,8 @@ interface Identity {
   matched_by_face: number; matched_by_look: number; flagged_matches: number;
   rejected_as_impossible: number; ruled_out_by_face: number; created: number;
   in_a_uniform: number; helped_by_their_seat: number; changed_seats: number; seated_now: number;
+  joined_across_cameras?: number; not_people?: number; ignored_not_people?: number;
+  cameras?: string[];
 }
 
 /**
@@ -60,8 +62,30 @@ export function IdentityHealth() {
     return () => { alive = false; clearInterval(t); };
   }, []);
   if (!d || !d.unique_people) return null;
+  // "Is the cameras even working together or seperately?" — answered first,
+  // in the cameras' own terms, because it is the question that decides
+  // whether the figure above it means anything. They do share one register:
+  // one entry per human being, whichever camera sees them. What that line
+  // shows is whether the sharing is actually catching anybody.
+  const cams = d.cameras?.length ?? 0;
   const rows: [string, number, string][] = [
     ["Different people", d.unique_people, "the attendance figure — the size of the register"],
+    ...(cams > 1 ? [[
+      "Cameras feeding one register", cams,
+      `${d.seen_on_more_than_one_camera} ${d.seen_on_more_than_one_camera === 1 ? "person has" : "people have"} been recognised on more than one of them, and counted once`,
+    ] as [string, number, string]] : []),
+    ...(d.joined_across_cameras ? [[
+      "Joined up by the other camera", d.joined_across_cameras,
+      "another camera was looking at the same person, so they got the same entry rather than a new one",
+    ] as [string, number, string]] : []),
+    ...(d.not_people ? [[
+      "Ruled not a person", d.not_people,
+      "a pillow, a coat over a chair, a poster — taken off the count and off the day's figures",
+    ] as [string, number, string]] : []),
+    ...(d.ignored_not_people ? [[
+      "Not counted again since", d.ignored_not_people,
+      "sightings that looked like one of those, left out rather than asked about again",
+    ] as [string, number, string]] : []),
     ["Being followed right now", d.active_tracks, "people a camera currently has in view"],
     ["Seen by more than one camera", d.seen_on_more_than_one_camera, "counted once, not twice"],
     ["Recognised by their face", d.matched_by_face, "sightings matched to somebody already known"],
