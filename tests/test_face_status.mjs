@@ -85,8 +85,8 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
      /this\.faceCodes\.clear\(\);\s*\n\s*this\.wipeFaces\(\);/.test(worker));
   ok("switching face matching off wipes them too",
      /Switched off means switched off[\s\S]{0,200}this\.wipeFaces\(\);/.test(worker));
-  ok("and nothing is written while it is off",
-     /const facesAllowed = \(await this\.privacy\(\)\)\.face_matching;[\s\S]{0,120}else this\.wipeFaces\(\);/.test(worker));
+  ok("and nothing is written unless faces are allowed",
+     /if \(await this\.facesAllowed\(\)\) this\.saveFaces\(service, now\);\s*\n\s*else this\.wipeFaces\(\);/.test(worker));
   ok("with a limit that does not depend on anything working",
      /const FACE_MAX_AGE_MS = /.test(worker)
      && /DELETE FROM faces WHERE service != \? OR at <= \?/.test(worker));

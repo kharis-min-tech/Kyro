@@ -13,7 +13,7 @@ import {
   Radio, Armchair, ClipboardList, BarChart2,
   PencilRuler, Camera, Users, LogOut, ChevronDown, Cctv, Bell, CalendarDays,
   Moon, Sun, Menu, X, Hash, Webhook,
-  CircleHelp,
+  CircleHelp, ShieldCheck,
 } from "lucide-react";
 import { helpUrlFor } from "@/lib/help";
 import { useTheme } from "@/lib/theme";
@@ -51,6 +51,10 @@ const ALL_NAV = [
   { id: "integrations",  href: "/integrations",  label: "Integrations",  Icon: Webhook      },
   { id: "notifications", href: "/notifications", label: "Notifications", Icon: Bell         },
   { id: "users",         href: "/users",         label: "Users",         Icon: Users        },
+  // Permission to read faces: the lawful basis, the DPIA, the notices, the
+  // review date. Face matching will not run until this is approved and in
+  // date — see worker/authorisation.js.
+  { id: "data-protection", href: "/data-protection", label: "Data Protection", Icon: ShieldCheck },
 ] as const;
 
 type PageId = typeof ALL_NAV[number]["id"];

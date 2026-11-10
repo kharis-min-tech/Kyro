@@ -189,8 +189,10 @@ function registerWith(n, service) {
 
 // ── Nothing writes a face while face matching is off ───────────────────────
 {
-  ok("nothing is written while face matching is off",
-     /const facesAllowed = \(await this\.privacy\(\)\)\.face_matching;[\s\S]{0,140}else this\.wipeFaces\(\);/.test(src));
+  // Both the switch AND the authorisation — see facesAllowed, which also
+  // stops face matching the moment an approval expires or is withdrawn.
+  ok("nothing is written unless faces are allowed",
+     /if \(await this\.facesAllowed\(\)\) this\.saveFaces\(service, now\);\s*\n\s*else this\.wipeFaces\(\);/.test(src));
   ok("switching it off removes what was written",
      /Switched off means switched off[\s\S]{0,220}this\.wipeFaces\(\);/.test(src));
   ok("a finished service removes them",
