@@ -147,7 +147,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-10fa093ea618";
+export const VENUE_CODE = "venue-3cecc3f68e75";
 /**
  * How many seats the main hall has, as the church has stated.
  *
@@ -589,6 +589,43 @@ export class VenueHub extends DurableObject {
       // exactly what happened to "Start fresh": the button was new, the server
       // it called was not, and all anyone saw was "Not found".
       if (p === "/internal/version" && request.headers.get("X-Kyro-Internal") === "1") return json({ venue: VENUE_CODE });
+      /**
+       * Let go, so the new code can take over.
+       *
+       * ── Why a deploy could not reach this ───────────────────────────────
+       *
+       * This object is the live link to the cameras, and it carries on
+       * running the code it started with until it next falls IDLE. During a
+       * service it never does: a camera reports every few seconds, all
+       * morning. So a deploy reached the pages in seconds and the counting
+       * brain not at all, and the only way through was to ask somebody to
+       * stop their cameras mid-service and wait a minute.
+       *
+       * That happened twice in one evening, and in between, every answer
+       * Kyro gave was computed by code from before the fix: "still not 114",
+       * six times, while the fix sat deployed and unreachable.
+       *
+       * So it can now be told to let go. Everything that only lives in
+       * memory is written down first; the next request builds a fresh object
+       * from storage, running the new code. A service loses nothing it had
+       * saved, which is the register, the counters and the day's history.
+       *
+       * Only ever reachable from the worker in front of it (see the header),
+       * and the worker only asks when the code it is running is genuinely
+       * older than the code just deployed — never on anybody else's say-so.
+       */
+      if (p === "/internal/restart" && request.headers.get("X-Kyro-Internal") === "1") {
+        try {
+          if (this.register) await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+          const service = (await this.get("service_live", null))?.id ?? null;
+          if (service) this.savePeople(service);
+        } catch { /* going either way; a stale brain is worse than a lost second */ }
+        // After the reply has gone, not before it: abort() stops this object
+        // dead, and a caller left with a dropped connection cannot tell
+        // "restarting" from "broken".
+        setTimeout(() => { try { this.ctx.abort("a newer version of Kyro is deployed"); } catch { /* already gone */ } }, 100);
+        return json({ restarting: true, was: VENUE_CODE });
+      }
 
       // ── Camera computer (device token) ──
       if (p === "/api/devices/pair" && request.method === "POST") return this.pair(request);

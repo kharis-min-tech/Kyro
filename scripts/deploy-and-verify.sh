@@ -100,20 +100,31 @@ for attempt in 1 2 3; do
   echo "→ Verifying what the server actually serves"
   if check; then
     # The pages are right. Now the live-cameras link, which lags behind.
-    echo "→ Waiting for the live-cameras server to pick up the new code"
+    # The live-cameras object keeps the code it started with until it next
+    # falls IDLE — and during a service it never does, because a camera
+    # reports every few seconds for hours. So asking politely and waiting
+    # was asking for something that could not happen: the pages went live in
+    # seconds and the counting brain stayed on old code all morning, until
+    # somebody was told to stop their cameras mid-service.
+    #
+    # ?restart=1 tells it to let go. The worker only passes that on when the
+    # object really is behind THIS deploy, and the object writes down
+    # everything that only lives in memory before it goes.
+    echo "→ Telling the live-cameras server to pick up the new code"
     for _ in $(seq 1 30); do          # up to ~5 minutes
-      live=$(curl -s "$SITE/api/version" | sed 's/.*"venue":"\([^"]*\)".*/\1/')
+      live=$(curl -s "$SITE/api/version?restart=1" | sed 's/.*"venue":"\([^"]*\)".*/\1/')
       if [ "$live" = "$STAMP" ]; then
         echo "   live cameras: $live ✓"
         echo "✓ Live and verified"
         exit 0
       fi
-      echo "   live cameras still on: ${live:-unknown} — waiting"
-      sleep 10
+      echo "   live cameras still on: ${live:-unknown} — asked it to restart"
+      sleep 5
     done
     echo "✗ The pages are live, but the live-cameras server is STILL running older code."
     echo "  Anything new it has to answer (new buttons, new figures) will say \"Not found\"."
-    echo "  It picks the new code up when it next falls idle. Do NOT say it is fixed yet."
+    echo "  It was asked to restart and hasn't. Stop counting for a minute and start again."
+    echo "  Do NOT say it is fixed yet."
     exit 1
   fi
   echo "   not everything landed — deploying again"

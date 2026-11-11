@@ -1,5 +1,8 @@
 import { handleAccounts, currentUser } from "./accounts.js";
 export { VenueHub } from "./venue.js";
+// The code THIS deploy carries, so the worker can tell whether the
+// live-cameras object is still running an older one — see /api/version.
+import { VENUE_CODE } from "./venue.js";
 import { handleIntegrations, runIntegrationTick, isBlockedHost } from "./integrations.js";
 
 /** Bumped with each deploy worth checking, and read back through /api/version. */
@@ -105,6 +108,26 @@ export default {
             const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
             const res = await hub.fetch("https://hub/internal/version", { headers: { "X-Kyro-Internal": "1" } });
             venue = res.ok ? (await res.json()).venue : "old";   // 404 = still running older code
+            /**
+             * …and if it is running older code, tell it to let go.
+             *
+             * The live-cameras object keeps the code it started with until
+             * it next falls idle, and during a service it never does — a
+             * camera reports every few seconds for hours. A deploy reached
+             * the pages in seconds and the counting brain not at all, and
+             * the only way through was to ask somebody to stop counting
+             * mid-service.
+             *
+             * Asked for only when it is genuinely behind THIS deploy's code,
+             * so a request from anybody else is a no-op the moment it is
+             * current. The object writes down everything that only lives in
+             * memory before it goes.
+             */
+            if (url.searchParams.get("restart") === "1" && venue && venue !== VENUE_CODE) {
+              try {
+                await hub.fetch("https://hub/internal/restart", { headers: { "X-Kyro-Internal": "1" } });
+              } catch { /* it may drop the connection as it goes: that IS the restart */ }
+            }
           } catch { venue = "unreachable"; }
         }
         return json({ worker: WORKER_CODE, venue });
