@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -123,6 +123,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * thing being checked. See attendance_over_seats in worker/venue.js.
    */
   overSeats?: { seats: number; counted: number; left: number } | null;
+  /**
+   * How many seats this building has, as somebody entered it — 0 or null
+   * when nobody has. Without it the attendance figure has nothing to answer
+   * to, which is how a hall of 114 chairs came to report 208 people.
+   */
+  seats?: number | null;
+  /** Write a new seat count, from here. See the note on the field below. */
+  onSetSeats?: (n: number) => Promise<void>;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -140,6 +148,9 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   });
 
   const [unverified, setUnverified] = useState(false);
+  const [seatDraft, setSeatDraft] = useState("");
+  const [savingSeats, setSavingSeats] = useState(false);
+  const [seatErr, setSeatErr] = useState<string | null>(null);
   const extra = (unverifiedSeries?.length ?? 0) - (series?.length ?? 0);
   const canShowUnverified = !!unverifiedSeries && (extra > 0 || unverifiedSeries.some((p, i) => p.length !== (series?.[i]?.length ?? 0)));
   const picked = unverified && unverifiedSeries ? unverifiedSeries : series;
@@ -428,6 +439,56 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
             </div>
           )}
 
+          {/**
+            * Ask for the seat count HERE, beside the figure it corrects.
+            *
+            * "change to 114, switch it, its innacuratre" — for the third
+            * time, about a figure that had reached 208. The hold at the seat
+            * count was already written, already deployed and doing nothing,
+            * because it only ever fires against a seat count somebody
+            * entered and nobody had. The answer she was given was "go to
+            * Cameras, press the pencil, find Seat capacity" — three screens
+            * away from the number that is wrong, which is three chances to
+            * give up.
+            *
+            * A setting that the thing it fixes cannot ask for is a setting
+            * nobody will find. So it is asked for where the mistake is, in
+            * one field, and the sentence says what it buys.
+            */}
+          {usingRegister && onSetSeats && (!seats || seatDraft !== "") && (
+            <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                <strong>How many seats are in this room?</strong>{" "}
+                {seats
+                  ? `Kyro has ${seats.toLocaleString()}. Put the right number in and it will use that instead.`
+                  : "Kyro does not know, so this figure has nothing to answer to — it cannot tell a big congregation from a counting mistake. Tell it once, and anything above that is held and flagged instead of shown as fact."}
+              </p>
+              <div className="flex items-center gap-2 mt-2">
+                <input type="number" min={1} max={100000} inputMode="numeric" placeholder="114"
+                  value={seatDraft} onChange={(e) => { setSeatDraft(e.target.value); setSeatErr(null); }}
+                  className="rounded-lg px-2 py-1 w-24 tabular-nums"
+                  style={{ fontSize: 13, background: "var(--bg-card)", border: `1px solid ${BORDER}`, color: "var(--text-primary)" }} />
+                <button type="button" disabled={savingSeats || !(Number(seatDraft) > 0)}
+                  onClick={async () => {
+                    const n = Math.round(Number(seatDraft));
+                    if (!(n > 0)) return;
+                    setSavingSeats(true); setSeatErr(null);
+                    try { await onSetSeats(n); setSeatDraft(""); }
+                    catch (e) { setSeatErr(e instanceof Error ? e.message : "That didn't save."); }
+                    finally { setSavingSeats(false); }
+                  }}
+                  className="rounded-lg px-3 py-1 font-medium"
+                  style={{ fontSize: 13, background: Number(seatDraft) > 0 ? "#4f46e5" : "var(--bg-card)",
+                           color: Number(seatDraft) > 0 ? "#fff" : "var(--text-muted)",
+                           border: `1px solid ${BORDER}`, cursor: Number(seatDraft) > 0 ? "pointer" : "default" }}>
+                  {savingSeats ? "Saving…" : "Save"}
+                </button>
+                <span style={{ fontSize: 11, color: "var(--text-faint)" }}>seats</span>
+              </div>
+              {seatErr && <p className="mt-1.5" style={{ fontSize: 11, color: "#dc2626" }}>{seatErr}</p>}
+            </div>
+          )}
+
           {/* The room's own answer, against the count. A hall with 114 seats
               did not hold 117 different people in a morning when three of
               them have left. */}
@@ -444,6 +505,12 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 camera lost for a moment and found again as a stranger. Only the figure on this
                 screen is held: every reading behind it is kept exactly as it was recorded, and the
                 download still has all {overSeats.counted.toLocaleString()}.
+                {onSetSeats && (
+                  <> If {overSeats.seats.toLocaleString()} is not the right number of seats,{" "}
+                    <button type="button" onClick={() => { setSeatDraft(String(overSeats.seats)); }}
+                      className="underline" style={{ color: "var(--text-secondary)" }}>change it</button>.
+                  </>
+                )}
               </p>
             </div>
           )}

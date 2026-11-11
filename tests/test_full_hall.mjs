@@ -281,6 +281,31 @@ function chairsChangeHands({ freeForReports, alike }) {
   ok("the service card is held to the same figure", /people_seen_shown/.test(svc));
   const page = fs.readFileSync(new URL("../dashboard/src/app/attendance/page.tsx", import.meta.url), "utf8");
   ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
+
+  /**
+   * And the seat count can be given FROM HERE.
+   *
+   * "change to 114, switch it, its innacuratre" — the third time, about a
+   * figure that had reached 208. The hold at the seat count was written,
+   * deployed and doing nothing, because it only ever fires against a seat
+   * count somebody entered and nobody had. She had been told to go to
+   * Cameras, press the pencil and find Seat capacity: three screens from the
+   * number that is wrong, which is three chances to give up.
+   *
+   * A setting that the thing it fixes cannot ask for is a setting nobody
+   * will find.
+   */
+  ok("the card asks for the seat count where the figure is",
+     /How many seats are in this room\?/.test(card));
+  ok("only when Kyro has not been told", /\{usingRegister && onSetSeats && \(!seats \|\| seatDraft !== ""\) && \(/.test(card));
+  ok("and the figure it is held at can be corrected from there too",
+     /change it<\/button>/.test(card));
+  ok("the page works out the seats a room at a time, never adding two cameras on one room",
+     /byRoom\.set\(room, Math\.max\(byRoom\.get\(room\) \?\? 0, c\.zone_capacity \?\? 0\)\);/.test(page));
+  ok("and writes the number to every room camera", /for \(const c of rooms\) await updateCamera\(c\.camera_id, \{ zone_capacity: n \}\);/.test(page));
+  ok("never to a doorway or a queue, which have no seats",
+     /cameras\.filter\(\(c\) => c\.location !== "entrance" && c\.location !== "queue"\)/.test(page));
+  ok("and only an administrator may", /onSetSeats=\{edge && !userChoseDemo\(\) && role === "admin" \? setRoomSeats : undefined\}/.test(page));
 }
 
 // ── Two boxes, one person ───────────────────────────────────────────────────

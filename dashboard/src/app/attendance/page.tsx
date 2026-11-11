@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useStreamSrc } from "@/lib/streamToken";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -739,7 +739,31 @@ function SystemStatus({ camerasTotal, camerasRunning, feedAt, edge = false, feed
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AttendancePage() {
-  const { cameras, loading: camsLoading } = useCameras();
+  const { cameras, loading: camsLoading, updateCamera, refresh: refreshCameras } = useCameras();
+  /**
+   * The seats in this building, as somebody entered them.
+   *
+   * One room's seats are its seats however many cameras watch it, so cameras
+   * sharing a room name are counted once — the same arithmetic the website
+   * does (see roomsOf in worker/venue.js). Doorways and queues have none.
+   */
+  const roomSeats = useMemo(() => {
+    const byRoom = new Map<string, number>();
+    for (const c of cameras) {
+      if (c.location === "entrance" || c.location === "queue") continue;
+      const room = (c.zone_name || c.name || c.camera_id).trim().toLowerCase();
+      byRoom.set(room, Math.max(byRoom.get(room) ?? 0, c.zone_capacity ?? 0));
+    }
+    return [...byRoom.values()].reduce((n, v) => n + v, 0);
+  }, [cameras]);
+  /** Put that number on every room camera. Two cameras on one room take the
+   *  fullest view of its seats, never the sum, so this cannot double it. */
+  const setRoomSeats = useCallback(async (n: number) => {
+    const rooms = cameras.filter((c) => c.location !== "entrance" && c.location !== "queue");
+    if (!rooms.length) throw new Error("There are no room cameras to put a seat count on.");
+    for (const c of rooms) await updateCamera(c.camera_id, { zone_capacity: n });
+    await refreshCameras();
+  }, [cameras, updateCamera, refreshCameras]);
   const { username, role, isAuthenticated, canViewAttendance } = useAuth();
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
@@ -1648,6 +1672,12 @@ export default function AttendancePage() {
                 overSeats={edge && isToday
                   ? (venueTotal as { attendance_over_seats?: { seats: number; counted: number; left: number } | null } | null)?.attendance_over_seats ?? null
                   : null}
+                /* The seat count, and a way to set it from here. Only the
+                   rooms: a doorway and a queue have no seats. Asked for
+                   beside the figure it corrects, because the settings page
+                   it used to live on is three screens from the mistake. */
+                seats={roomSeats}
+                onSetSeats={edge && !userChoseDemo() && role === "admin" ? setRoomSeats : undefined}
                 doorMode={doorMode} doorModeBy={doorModeBy}
                 onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}
