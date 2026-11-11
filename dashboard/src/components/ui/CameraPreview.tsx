@@ -11,7 +11,7 @@ import type { Person } from "@/lib/peopleDetector";
  * the boxes show WHY (a poster on the wall, a face on a screen, the camera
  * seeing its own preview on the monitor).
  */
-export function CameraPreview({ stream, people, tracked, count }: {
+export function CameraPreview({ stream, people, tracked, count, frameW, frameH }: {
   stream: MediaStream | null;
   /** Every detection in the last frame — the fallback when nothing is followed yet. */
   people: Person[];
@@ -24,6 +24,28 @@ export function CameraPreview({ stream, people, tracked, count }: {
    */
   tracked?: { track: number; box: [number, number, number, number]; person?: number | null }[];
   count: number;
+  /**
+   * The size of the picture the boxes were measured in.
+   *
+   * ── Why this is not the camera's own size ────────────────────────────────
+   *
+   * The AI is given the picture scaled down to COUNT_WIDTH — 1280 across for
+   * a room — and every box it returns is in THAT picture's coordinates. This
+   * canvas used to be sized from the camera instead. A camera sending 1920
+   * across is counted at 1280, so each box was drawn at two thirds of its
+   * real position: five green boxes floating on the ceiling light fittings
+   * while the congregation underneath them had none, and the count beside
+   * the picture looking like nonsense. Reported as "NOT ACCURATE".
+   *
+   * Nothing was wrong with the counting. Everything was wrong with where it
+   * was drawn — which is worse, because it is the picture people check the
+   * counting against.
+   *
+   * The two pictures always have the same shape, so the overlay still lines
+   * up with the video under object-contain.
+   */
+  frameW?: number;
+  frameH?: number;
 }) {
   const video = useRef<HTMLVideoElement | null>(null);
   const canvas = useRef<HTMLCanvasElement | null>(null);
@@ -38,7 +60,9 @@ export function CameraPreview({ stream, people, tracked, count }: {
   useEffect(() => {
     const c = canvas.current, v = video.current;
     if (!c || !v) return;
-    const w = v.videoWidth, h = v.videoHeight;
+    // The picture the boxes are in, falling back to the camera's own only
+    // when nothing has been counted yet and there are no boxes to misplace.
+    const w = frameW || v.videoWidth, h = frameH || v.videoHeight;
     if (!w || !h) return;
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     const ctx = c.getContext("2d");
@@ -89,7 +113,7 @@ export function CameraPreview({ stream, people, tracked, count }: {
       ctx.fillStyle = "#06240f";
       ctx.fillText(label, x1 + pad, Math.max(th - pad, y1 - pad));
     });
-  }, [people, tracked]);
+  }, [people, tracked, frameW, frameH]);
 
   if (!stream) return null;
 

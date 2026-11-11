@@ -121,7 +121,8 @@ export function CountingCard() {
         {on && live.length > 0 && (
           <div className="flex flex-col gap-2">
             {live.map((v) => (
-              <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} tracked={v.tracked} count={v.count} />
+              <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} tracked={v.tracked}
+                count={v.count} frameW={v.frameW} frameH={v.frameH} />
             ))}
             <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
               A green box is someone being counted, and the number on it is the number Kyro counts them as — theirs

@@ -178,6 +178,18 @@ export interface CamView {
    * what the figure beside it is made of.
    */
   tracked: { track: number; box: [number, number, number, number]; person: number | null }[];
+  /**
+   * The size of the picture those boxes were measured in — NOT the camera's
+   * own size.
+   *
+   * The AI is given a picture scaled down to COUNT_WIDTH, and every box it
+   * returns is in that picture's coordinates. A camera sending 1920 wide is
+   * counted at 1280, so a box drawn as though it were in the camera's own
+   * picture lands two thirds of the way up and across: boxes floating on the
+   * ceiling while the people underneath have none. Reported as "NOT
+   * ACCURATE", with five boxes on the light fittings.
+   */
+  frameW: number; frameH: number;
   countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean;
 }
 
@@ -321,6 +333,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // to place somebody — a number that is about to change is worse than
       // no number, because no number cannot be mistaken for an identity.
       tracked: c.tracker.seenNow().map((x) => ({ track: x.track, box: x.box, person: c.whoIs[x.track] ?? null })),
+      // The picture those boxes are in: the one the AI was given, scaled down
+      // from the camera's. See frameW on CamView.
+      frameW: c.grabCanvas.width || c.video?.videoWidth || 0,
+      frameH: c.grabCanvas.height || c.video?.videoHeight || 0,
       countedAt: c.countedAt, secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
@@ -811,7 +827,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // used for both the seat states and the register, so the two cannot
         // disagree about where somebody is sitting.
         const following = c.tracker.seenNow();
-        const frameW = c.video?.videoWidth || 1280, frameH = c.video?.videoHeight || 720;
+        // The picture the boxes were measured in — the one the AI was given,
+        // which is scaled down from the camera's own. Using the camera's size
+        // here put every seat and every reported position two thirds of the
+        // way up and across the picture. See frameW on CamView.
+        const frameW = c.grabCanvas.width || c.video?.videoWidth || 1280;
+        const frameH = c.grabCanvas.height || c.video?.videoHeight || 720;
         const seatOf = c.isDoor ? [] : c.seatFinder.whoIsWhere(
           following.map((x) => x.box as [number, number, number, number]),
           frameW, frameH).seatOfPerson;
@@ -825,7 +846,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // service is five seats and one person in the attendance register.
         ...(c.isDoor ? {} : { seats: c.seatFinder.occupancy(
           c.people.map((p) => p.box as [number, number, number, number]),
-          c.video?.videoWidth || 1280, c.video?.videoHeight || 720, Date.now()) }),
+          frameW, frameH, Date.now()) }),
         // Everyone this camera is following, for the website's register of
         // people. A look is eight small numbers; a face only travels while
         // face matching is switched on, and is a list of numbers either way —

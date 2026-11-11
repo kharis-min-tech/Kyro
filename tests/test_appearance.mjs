@@ -244,8 +244,21 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
 {
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   const reports = ctx.slice(ctx.indexOf("const reports: CameraReport[]"), ctx.indexOf("try {", ctx.indexOf("const reports")));
+  /**
+   * The check used to ban the WORD "canvas" from this block, which is not the
+   * same thing as banning a picture. The report now carries the size of the
+   * picture the AI was given — grabCanvas.width — because a box only means
+   * something alongside the picture it was measured in, and getting that
+   * wrong drew five green boxes on a ceiling. A width is a number.
+   *
+   * So the ban is on the things that actually turn a canvas into a picture.
+   */
   ok("what is sent is numbers, not a picture",
-     /l: x\.look \? \[x\.look\.top\[0\]/.test(reports) && !/canvas|toDataURL|jpeg|image/i.test(reports));
+     /l: x\.look \? \[x\.look\.top\[0\]/.test(reports)
+     && !/toDataURL|toBlob|getImageData|convertToBlob|jpeg|png|base64/i.test(reports));
+  ok("and a canvas is only ever asked how big it is",
+     [...reports.matchAll(/grabCanvas\.(\w+)/g)].every(([, m]) => m === "width" || m === "height"),
+     [...reports.matchAll(/grabCanvas\.\w+/g)].map((m) => m[0]).join(", "));
   ok("a face only travels while face matching is on", /f: faceOnRef\.current && x\.face \? packFace/.test(reports));
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("and the website refuses to register one otherwise",
