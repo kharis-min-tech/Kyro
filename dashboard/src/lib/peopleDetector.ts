@@ -261,7 +261,31 @@ export function tidy(people: Person[], frameH: number, bigHeight = 0.25, bigMinS
     if (ratio > WIDE_NEEDS_SURE && p.score < SURE) return false;
     if (p.score >= SURE) return true;
     const [x1, y1, x2, y2] = p.box;
-    if (y2 - y1 > bigHeight * frameH && p.score < bigMinScore) return false;
+    /**
+     * A big box the AI is only half sure of — but ONLY when somebody it IS
+     * sure of explains it.
+     *
+     * The reasoning behind this rule is sound and the rule was not: "people
+     * near the camera are clearly visible, so the AI is sure of them; an
+     * unsure big box is a part of someone." A PART OF SOMEONE presupposes a
+     * someone, and this dropped the box whether or not there was one.
+     *
+     * In a packed room that is most of the congregation. Everybody is close
+     * to the camera, so every box is big; everybody is half behind somebody
+     * else, so the AI is modest about every one of them. Measured on a
+     * crowded frame of six people with one in the foreground: tidy() threw
+     * away three of them, and the whole chain kept two.
+     *
+     * "these people are not being counted."
+     *
+     * So it now asks what the box would be a part OF. An arm, a shoulder or
+     * a box straddling two people lies inside somebody Kyro is sure of. A
+     * person standing in a crowd does not lie inside anybody — they are
+     * their own outline, half hidden, and they count.
+     */
+    if (y2 - y1 > bigHeight * frameH && p.score < bigMinScore
+        && sure.some((q) => q !== p && area(q.box) >= area(p.box) * 1.3
+          && overlap(p.box, q.box) / (area(p.box) || 1) > 0.7)) return false;
     const wide = x2 - x1 > 1.6 * (y2 - y1);
     return !(wide && sure.some((q) => area(q.box) >= area(p.box) * 1.5 && overlap(p.box, q.box) / (area(p.box) || 1) > 0.85));
   });
@@ -301,6 +325,29 @@ function containedIn(a: [number, number, number, number], b: [number, number, nu
 export const INSIDE_SOMEBODY = 0.85;
 /** …and it has to be this much smaller, or two people really are overlapping. */
 export const MUCH_SMALLER = 0.4;
+/**
+ * …and it has to start this far down the person holding it.
+ *
+ * ── Why a third test was needed ───────────────────────────────────────────
+ *
+ * "these people are not being counted" — a photograph of a packed room, the
+ * nearest person filling half the frame, and the people behind her gone.
+ *
+ * Two of the three tests above were true of them. Somebody standing behind
+ * somebody else IS much smaller (they are further away) and IS inside their
+ * outline (they are behind them). Measured on that frame, a real person was
+ * deleted as something held.
+ *
+ * What actually separates the two is height, and it is a fact about arms. A
+ * phone, a magazine, an order of service is held in front of the chest: its
+ * box starts a third of the way down the person holding it, never at their
+ * head. Somebody standing behind them appears over their shoulder — at the
+ * TOP of their outline, because that is the only part of them not hidden.
+ *
+ * So something whose box begins near the top of the box containing it is a
+ * person, whatever its size.
+ */
+export const HELD_BELOW_HEAD = 0.2;
 
 /**
  * People a person is carrying are not people.
@@ -336,7 +383,9 @@ export function notHeldBySomebody(people: Person[]): Person[] {
     !people.some((other, j) =>
       j !== i
       && area(p.box) < area(other.box) * MUCH_SMALLER
-      && containedIn(other.box, p.box) >= INSIDE_SOMEBODY));
+      && containedIn(other.box, p.box) >= INSIDE_SOMEBODY
+      // …and held in front of them rather than standing over their shoulder.
+      && p.box[1] - other.box[1] > HELD_BELOW_HEAD * (other.box[3] - other.box[1])));
 }
 
 /** A box at least this tall, as a share of the picture, is judged on the plain threshold. */
