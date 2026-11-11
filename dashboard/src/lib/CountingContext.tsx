@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import {
   loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
-  sendReport, sendPicture, sendPersonPicture, rememberCameraStep, type Engine, type CameraReport, type Zone, type WantedPicture,
+  sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
@@ -52,6 +52,16 @@ const PICTURE_EVERY_MS = 20_000;
  * same time.
  */
 const FACES_EVERY_MS = 4_000;
+/**
+ * How often each followed person's kept picture is refreshed.
+ *
+ * Drawn, not encoded — encoding is the expensive part and only happens if a
+ * picture is actually asked for. Often enough that the one kept of somebody
+ * is recent; rarely enough that a hall of a hundred costs almost nothing.
+ */
+const CROP_EVERY_MS = 8_000;
+/** How many of those are kept per camera, oldest dropped first. */
+const MOST_CROPS = 60;
 const DOOR_FACES_EVERY_MS = 1_200;
 /**
  * And at most this many people each time.
@@ -88,6 +98,9 @@ function packFace(v: Float32Array): string {
 interface Cam {
   deviceId: string; key: string; label: string;
   stream: MediaStream | null; video: HTMLVideoElement | null; grabCanvas: HTMLCanvasElement;
+  /** A recent picture of each person this camera is following, so somebody
+   *  who has gone out of view can still be shown. See the report tick. */
+  crops: Map<number, { at: number; crop: HTMLCanvasElement }>;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
   countedAt: number; secondsPerCount: number; error: string | null; lastPicture: number;
   /** When this camera last gave a picture, or first failed to. A camera can be
@@ -252,6 +265,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(), faces: null, facesAt: 0,
           watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
+          crops: new Map(),
         };
         // What this camera has already worked out about its seats, from last
         // time. Seats don't move; starting again every reload would mean
@@ -636,16 +650,61 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // anything to do with a picture stays out of it. A crop only ever
       // leaves this computer because somebody is being asked to look at it,
       // one person at a time, by name of question. See sendPersonPicture.
+      /**
+       * A recent picture of everybody this camera is following.
+       *
+       * ── Why it has to be kept rather than taken on demand ──────────────
+       *
+       * "when you show me the question of the same person, you didnt show me
+       * a picture of the person."
+       *
+       * A question compares somebody in front of the camera NOW with
+       * somebody it saw EARLIER — and the earlier one has, by definition,
+       * gone out of view. That is the whole reason Kyro is unsure. Asking
+       * for their picture at the moment the question is written asks for a
+       * picture of somebody who is not there, so the second half of every
+       * question arrived blank.
+       *
+       * So a small crop of each person is kept as it is taken, and the
+       * picture of somebody who left is the last one of them. Drawn into a
+       * canvas and not encoded — encoding is the expensive part, and it only
+       * happens if a picture is actually asked for.
+       */
+      const now = Date.now();
+      for (const c of list) {
+        if (!c.grabCanvas || !c.stream) continue;
+        const seen = c.tracker.seenNow();
+        for (const x of seen) {
+          const had = c.crops.get(x.track);
+          if (had && now - had.at < CROP_EVERY_MS) continue;
+          const crop = cropOf(c.grabCanvas, x.box as [number, number, number, number]);
+          if (crop) c.crops.set(x.track, { at: now, crop });
+        }
+        // Oldest first, so the people most recently in shot are the ones
+        // kept — and a morning's worth of tracks never piles up.
+        if (c.crops.size > MOST_CROPS) {
+          const old = [...c.crops.entries()].sort((a, b) => a[1].at - b[1].at);
+          for (const [k] of old.slice(0, c.crops.size - MOST_CROPS)) c.crops.delete(k);
+        }
+      }
+
+      // Crops Kyro has asked for, sent before the report is built and kept
+      // well away from it.
+      //
+      // A routine report carries numbers and nothing else — eight for an
+      // appearance, and a face code only while face matching is on. That is
+      // guarded by a test, and the guard reads the report-building code, so
+      // anything to do with a picture stays out of it. A crop only ever
+      // leaves this computer because somebody is being asked to look at it,
+      // one person at a time, by name of question.
       if (wantPics.current.length) {
         for (const c of list) {
-          if (!c.grabCanvas || !c.stream) continue;
           const mine = wantPics.current.filter((w) => w.key === c.key);
           if (!mine.length) continue;
-          const here = c.tracker.seenNow();
           for (const want of mine) {
-            const who = here.find((x) => x.track === want.track);
-            if (!who) continue;      // looked away; the website asks again
-            sendPersonPicture(want.id, want.side, c.grabCanvas, who.box as [number, number, number, number])
+            const kept = c.crops.get(want.track);
+            if (!kept) continue;     // never had a picture of them; the website asks again
+            sendPersonPicture(want.id, want.side, kept.crop)
               .catch(() => { /* a missing picture only means the question isn't asked */ });
             wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
           }

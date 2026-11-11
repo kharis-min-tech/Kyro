@@ -430,25 +430,28 @@ export async function sendSeats(key: string, seats: unknown[], stage: "top" | "b
  * room around them so a coat and a build are visible, and small. It is
  * deleted the moment the question is answered.
  */
-export async function sendPersonPicture(
-  id: string, side: "a" | "b", canvas: HTMLCanvasElement,
-  box: [number, number, number, number],
-): Promise<void> {
-  const dev = savedDevice();
-  if (!dev) return;
+export function cropOf(
+  canvas: HTMLCanvasElement, box: [number, number, number, number], width = 240,
+): HTMLCanvasElement | null {
   const [x1, y1, x2, y2] = box;
   const pad = Math.max(8, (x2 - x1) * 0.25);
   const sx = Math.max(0, Math.round(x1 - pad)), sy = Math.max(0, Math.round(y1 - pad));
   const sw = Math.min(canvas.width - sx, Math.round(x2 - x1 + pad * 2));
   const sh = Math.min(canvas.height - sy, Math.round(y2 - y1 + pad * 2));
-  if (sw < 8 || sh < 8) return;
+  if (sw < 8 || sh < 8) return null;
   // Big enough to recognise somebody by, small enough to be nothing else.
-  const scale = Math.min(1, 320 / sw);
+  const scale = Math.min(1, width / sw);
   const out = document.createElement("canvas");
   out.width = Math.max(1, Math.round(sw * scale));
   out.height = Math.max(1, Math.round(sh * scale));
   out.getContext("2d")!.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
-  const blob = await new Promise<Blob | null>((r) => out.toBlob(r, "image/jpeg", 0.72));
+  return out;
+}
+
+export async function sendPersonPicture(id: string, side: "a" | "b", crop: HTMLCanvasElement): Promise<void> {
+  const dev = savedDevice();
+  if (!dev) return;
+  const blob = await new Promise<Blob | null>((r) => crop.toBlob(r, "image/jpeg", 0.72));
   if (!blob) return;
   await fetch(`/api/devices/question-snapshot?id=${encodeURIComponent(id)}&side=${side}`, {
     method: "PUT", headers: { "Content-Type": "image/jpeg", Authorization: `Bearer ${dev.token}` }, body: blob,

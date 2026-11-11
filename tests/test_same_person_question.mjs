@@ -155,10 +155,28 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
 
   ok("the browser sends a crop of that one person", /export async function sendPersonPicture\(/.test(cam));
   ok("cropped round them with a little room, and small",
-     /const pad = Math\.max\(8, \(x2 - x1\) \* 0\.25\);/.test(cam) && /Math\.min\(1, 320 \/ sw\)/.test(cam));
-  ok("it only sends one when that person is still in shot",
-     /const who = here\.find\(\(x\) => x\.track === want\.track\);/.test(ctx)
-     && /if \(!who\) continue;      \/\/ looked away; the website asks again/.test(ctx));
+     /const pad = Math\.max\(8, \(x2 - x1\) \* 0\.25\);/.test(cam) && /Math\.min\(1, width \/ sw\)/.test(cam));
+  /**
+   * The picture has to be KEPT, not taken on demand.
+   *
+   * A question compares somebody in view NOW with somebody seen EARLIER —
+   * and the earlier one has, by definition, gone out of view. That is the
+   * whole reason Kyro is unsure. Asking for their picture at the moment the
+   * question is written asks for a picture of somebody who is not there, so
+   * the second half of every question arrived blank: "when you show me the
+   * question of the same person, you didnt show me a picture of the person".
+   */
+  ok("a recent picture of everybody being followed is kept",
+     /const had = c\.crops\.get\(x\.track\);/.test(ctx)
+     && /if \(crop\) c\.crops\.set\(x\.track, \{ at: now, crop \}\);/.test(ctx));
+  ok("so somebody who has gone out of view can still be shown",
+     /const kept = c\.crops\.get\(want\.track\);/.test(ctx)
+     && /sendPersonPicture\(want\.id, want\.side, kept\.crop\)/.test(ctx));
+  ok("drawn rather than encoded, so keeping them costs almost nothing",
+     /const CROP_EVERY_MS = 8_000;/.test(ctx) && /const MOST_CROPS = 60;/.test(ctx)
+     && /crop\.toBlob\(r, "image\/jpeg", 0\.72\)/.test(cam));
+  ok("and a morning's worth of them never piles up",
+     /for \(const \[k\] of old\.slice\(0, c\.crops\.size - MOST_CROPS\)\) c\.crops\.delete\(k\);/.test(ctx));
   // A routine report carries numbers and nothing else. A crop only ever
   // leaves the computer because somebody is being asked to look at it, so it
   // is sent well away from the report-building code — which has its own
@@ -213,6 +231,11 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
 // ── The panel ──────────────────────────────────────────────────────────────
 {
   ok("it shows both pictures", /<Side id=\{q\.review_id\} side="a"/.test(panel) && /side="b"/.test(panel));
+  // An empty grey box looks like a picture still loading. If half the
+  // question never arrived, that has to be said rather than mimed.
+  ok("and says so when one is missing, rather than showing an empty box",
+     /No picture of this one/.test(panel)
+     && /const \[state, setState\] = useState<"loading" \| "shown" \| "none">\("loading"\);/.test(panel));
   ok("with three honest answers", /Same person/.test(panel) && /Different people/.test(panel) && /Can&apos;t tell/.test(panel));
   ok("it says what Kyro thought, and why", /Kyro counted them as/.test(panel) && /\{q\.why \? `, \$\{q\.why\}` : ""\}/.test(panel));
   ok("it says when no face was readable", /No face was readable, so only their clothes and build were compared/.test(panel));

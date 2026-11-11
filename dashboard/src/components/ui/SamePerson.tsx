@@ -57,6 +57,17 @@ interface Learning {
 /** A picture of one side, fetched with the sign-in token and shown as a blob. */
 function Side({ id, side, label }: { id: string; side: "a" | "b"; label: string }) {
   const [url, setUrl] = useState<string | null>(null);
+  /**
+   * An empty box used to be all this said when a picture was missing.
+   *
+   * It was missing a lot — a question compares somebody in view now with
+   * somebody seen earlier, and Kyro was asking for a picture of the earlier
+   * one at the moment their track had already ended. The box was a grey
+   * rectangle with an icon in it, which looks like a picture still loading,
+   * so there was nothing to tell anybody the half of the question they were
+   * being asked to judge had never arrived.
+   */
+  const [state, setState] = useState<"loading" | "shown" | "none">("loading");
   useEffect(() => {
     let alive = true;
     let made: string | null = null;
@@ -67,21 +78,30 @@ function Side({ id, side, label }: { id: string; side: "a" | "b"; label: string 
     })
       .then((r) => (r.ok && r.status !== 204 ? r.blob() : null))
       .then((b) => {
-        if (!alive || !b) return;
+        if (!alive) return;
+        if (!b || !b.size) { setState("none"); return; }
         made = URL.createObjectURL(b);
         setUrl(made);
+        setState("shown");
       })
-      .catch(() => {});
+      .catch(() => { if (alive) setState("none"); });
     return () => { alive = false; if (made) URL.revokeObjectURL(made); };
   }, [id, side]);
   return (
     <div className="flex-1 min-w-0 flex flex-col gap-1">
-      <div className="rounded-lg overflow-hidden flex items-center justify-center"
+      <div className="rounded-lg overflow-hidden flex flex-col items-center justify-center gap-1.5 p-2"
         style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}`, aspectRatio: "3/4" }}>
-        {url
+        {state === "shown" && url ? (
           /* eslint-disable-next-line @next/next/no-img-element */
-          ? <img src={url} alt={label} className="w-full h-full object-contain" draggable={false} />
-          : <Users size={20} style={{ color: "var(--text-faint)" }} />}
+          <img src={url} alt={label} className="w-full h-full object-contain" draggable={false} />
+        ) : state === "loading" ? (
+          <Loader2 size={18} className="animate-spin" style={{ color: "var(--text-faint)" }} />
+        ) : (<>
+          <Users size={18} style={{ color: "var(--text-faint)" }} />
+          <span className="text-center" style={{ fontSize: 10, color: "var(--text-faint)", lineHeight: 1.3 }}>
+            No picture of this one
+          </span>
+        </>)}
       </div>
       <p className="text-center truncate" style={{ fontSize: 11, color: "var(--text-muted)" }}>{label}</p>
     </div>
