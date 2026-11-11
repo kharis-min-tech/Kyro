@@ -339,6 +339,60 @@ export function notHeldBySomebody(people: Person[]): Person[] {
       && containedIn(other.box, p.box) >= INSIDE_SOMEBODY));
 }
 
+/** A box at least this tall, as a share of the picture, is judged on the plain threshold. */
+export const BIG_ENOUGH = 0.20;
+/** Below this share of the picture, a box has to be much more convincing. */
+export const SMALL = 0.08;
+/** What a small box has to score instead. */
+export const SMALL_NEEDS = 0.5;
+/** A person is taller than they are wide. Much wider than tall is furniture. */
+export const TALLEST_WIDE = 0.8;
+
+/**
+ * Is this shaped and scored like a person, or like a corner of a wall?
+ *
+ * ── What happened ─────────────────────────────────────────────────────────
+ *
+ * "who are you counting, this walls not people."
+ *
+ * Two small green boxes, side by side, on a blank painted pillar. The AI is
+ * asked "where are the people" and it answers with its best guess for every
+ * patch that is vaguely person-shaped; on a featureless wall its best guess
+ * is a weak one, and the threshold it had to clear was a flat 0.3 whatever
+ * the box looked like.
+ *
+ * Two things separate those boxes from a person, and neither needs a second
+ * AI:
+ *
+ * 1. SIZE AND CONFIDENCE TOGETHER. A big box that scores 0.3 is a person the
+ *    AI can see plainly and is merely being modest about. A small box
+ *    scoring 0.3 is the AI shrugging at a few hundred pixels. Small boxes are
+ *    where false positives live, so a small box has to be more convincing.
+ *    The bar slides: full-height boxes keep the plain threshold, and it rises
+ *    as they shrink.
+ *
+ * 2. SHAPE. People are taller than they are wide, standing or sitting. A box
+ *    appreciably wider than it is tall is a radiator, a bench, a bag or a
+ *    patch of wall — never somebody facing a camera.
+ *
+ * Deliberately not a judgement about what something IS — see the stillness
+ * check in personTracker.ts for the pillow, which is person-shaped and
+ * convincing and simply never moves.
+ */
+export function looksLikeAPerson(people: Person[], frameH: number, minScore: number): Person[] {
+  const h = Math.max(frameH, 1);
+  return people.filter(({ box: [x1, y1, x2, y2], score }) => {
+    const tall = (y2 - y1) / h;
+    const wide = x2 - x1;
+    if ((y2 - y1) / Math.max(wide, 1) < TALLEST_WIDE) return false;
+    if (tall >= BIG_ENOUGH) return score >= minScore;
+    // Between SMALL and BIG_ENOUGH the bar slides from SMALL_NEEDS down to
+    // the plain threshold, so nothing changes abruptly at one pixel of height.
+    const k = Math.max(0, Math.min(1, (BIG_ENOUGH - tall) / (BIG_ENOUGH - SMALL)));
+    return score >= minScore + k * Math.max(0, SMALL_NEEDS - minScore);
+  });
+}
+
 /** Smooths the headcount: the middle of the last few readings, so one odd picture doesn't make it jump. */
 export class SteadyCount {
   private readings: number[] = [];

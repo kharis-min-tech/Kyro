@@ -1287,6 +1287,8 @@ export default function AttendancePage() {
   const netFromRegister = (venueTotal as { counted_net_from_register?: boolean } | null)?.counted_net_from_register ?? false;
   /** Sightings that are one person in front of two cameras at once. */
   const seenTwice = (venueTotal as { seen_on_two_cameras?: number } | null)?.seen_on_two_cameras ?? 0;
+  /** More people counted than the building is set to hold — see over_capacity. */
+  const overCapacity = (venueTotal as { over_capacity?: { seats: number; counted: number } | null } | null)?.over_capacity ?? null;
   /**
    * Room cameras that are counting, and which rooms they are set to.
    *
@@ -1531,6 +1533,17 @@ export default function AttendancePage() {
                         )}
                       </p>
                     </details>
+                  )}
+                  {/* More people than the building holds. Said where the
+                      figure is, not only in the health panel — "114 people
+                      can fit in this room, so if there is more, than
+                      something is wrong". */}
+                  {metric === "people" && isToday && edge && overCapacity && (
+                    <p style={{ fontSize: 12, marginTop: 6, lineHeight: 1.45, color: "#f87171" }}>
+                      <strong>More people than the building holds.</strong> {overCapacity.counted} counted in a
+                      building set to hold {overCapacity.seats}. Something is being counted that is not a person, or
+                      somebody is being counted twice — look at the green boxes on the Cameras page.
+                    </p>
                   )}
                   {/* Two rooms, both with somebody in them, and nothing
                       saying they might be the same somebody. */}

@@ -41,6 +41,14 @@ The figure under the big number on [AI Count](/pages/ai-count) now tells you how
 2. **Two cameras are set as different rooms.** Cameras sharing a **room name** are two views of one room, and Kyro takes the fullest view. Cameras with different room names are different rooms and are added up — right for a balcony and a main floor, wrong for two cameras pointed at the same place. A camera that adds itself is named after itself, so two cameras in one computer start out added together. Give them the **same room name** on [Cameras](/pages/cameras) (the pencil).
 3. **Something that isn't a person is being counted.** On [Cameras](/pages/cameras), the preview under **Counting on this computer** draws a green box round everything it counts. Look at where the extra boxes are: a poster or photo of people, a face on a screen, or **the camera seeing the very screen it's previewing on** all get counted.
 
+**It's counting a blank wall, or a pillar.**
+The AI is asked *where are the people* and answers with its best guess for every patch that's vaguely person-shaped. On a featureless wall that guess is a weak one — so a **small** box now has to be much more convincing than a big one before it's counted, and a box wider than it is tall is never a person. If a particular spot is counted every service anyway, mark it once with **Don't count an area** on [Cameras](/pages/cameras).
+
+**It says more people than the room holds.**
+That's a check worth having, and it only works once you've set the real seat count (**Cameras → pencil → Seat capacity**). If the count goes above it, Kyro says so in red under the figure and raises it under **Is Kyro working?** — because a hall with 114 seats doesn't hold 300 people, so a count above that has gone wrong somewhere.
+
+**The figure isn't capped**, deliberately: people do stand at the back, and a number quietly clamped to 114 is a number nobody can investigate. Look at the green boxes on the Cameras preview to see what's being counted.
+
 **Something got counted that wasn't a person — how do I take the number back down?**
 Kyro drops a photograph held up to the lens by itself (it sits entirely inside the box round the person holding it), and **asks** about anything that hasn't moved for four minutes — a pillow, a coat over a chair, a poster. Open [AI Count](/pages/ai-count) and look for **Kyro needs a second opinion**.
 

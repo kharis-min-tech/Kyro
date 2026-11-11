@@ -21,7 +21,7 @@ import {
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
-import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, type Person } from "@/lib/peopleDetector";
+import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
@@ -442,8 +442,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // Confident enough, not in a "don't count this" area, and not a
           // picture of people held up in front of the lens — see
           // notHeldBySomebody.
+          // Shaped and scored like a person, not in a "don't count this"
+          // area, and not a picture of people held up in front of the lens.
           c.people = notHeldBySomebody(
-            outsideZones(people.filter((p) => p.score >= countConfidenceRef.current), zonesRef.current[c.key], px.width, px.height));
+            outsideZones(
+              looksLikeAPerson(people, px.height, countConfidenceRef.current),
+              zonesRef.current[c.key], px.width, px.height));
           const codes = await faceCodes(c, px);
           // What each person looks like — the colour of what they're wearing,
           // their build, how tall they are in the picture. Costs nothing (no

@@ -1073,6 +1073,20 @@ export class VenueHub extends DurableObject {
     // Only when NOTHING is left counting, anywhere: stopping one camera of
     // three, or reloading the page on a second computer, must not end a
     // service that is still being counted somewhere else.
+    // More people counted than the building holds. See over_capacity.
+    try {
+      const v = await this.venueTotal();
+      if (v.over_capacity) {
+        await this.wrong("Counting",
+          `The cameras are counting ${v.over_capacity.counted} people in a building set to hold `
+          + `${v.over_capacity.seats}. Something is being counted that is not a person, or somebody is `
+          + `being counted twice — check the green boxes on the Cameras page.`,
+          `${v.over_capacity.counted} of ${v.over_capacity.seats}`);
+      } else {
+        await this.working("Counting");
+      }
+    } catch { /* the check is a bonus; never the thing that stops a report */ }
+
     const lastCameraOff = stopped.length > 0 && !this.anyCameraOn(cams, live, now);
     try {
       // Ending the session is itself the service decision for this report —
@@ -2229,6 +2243,27 @@ export class VenueHub extends DurableObject {
       counted_net_from_door: doorNet !== null,
       /** Where "how many are here" came from when the door didn't answer. */
       counted_net_from_register: doorNet === null && registerNow > 0,
+      /**
+       * More people than the room holds.
+       *
+       * "a reminder, 114 people can fit in this room, so if there is more,
+       * than something is wrong."
+       *
+       * She is right, and it is the only sanity check on a count that comes
+       * from a fact about the building rather than from the thing being
+       * checked. A hall with 114 seats does not hold 300 people, so a count
+       * above its capacity is a count that has gone wrong — a wall counted
+       * as two people, a photograph on a screen, somebody counted on both
+       * cameras.
+       *
+       * Reported rather than silently capped. People do stand at the back,
+       * so "more than the seats" is not impossible, only wrong often enough
+       * to be worth saying out loud — and a figure quietly clamped to 114 is
+       * a figure that cannot be investigated. It is only ever raised against
+       * a capacity somebody ENTERED: against a seat count Kyro guessed from
+       * the picture it would be one guess accusing another.
+       */
+      over_capacity: cap > 0 && hereNow > cap ? { seats: cap, counted: hereNow } : null,
       /**
        * How many people the register has not yet recorded leaving.
        *
