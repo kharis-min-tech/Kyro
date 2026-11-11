@@ -305,7 +305,11 @@ function chairsChangeHands({ freeForReports, alike }) {
   ok("and writes the number to every room camera", /for \(const c of rooms\) await updateCamera\(c\.camera_id, \{ zone_capacity: n \}\);/.test(page));
   ok("never to a doorway or a queue, which have no seats",
      /cameras\.filter\(\(c\) => c\.location !== "entrance" && c\.location !== "queue"\)/.test(page));
-  ok("and only an administrator may", /onSetSeats=\{edge && !userChoseDemo\(\) && role === "admin" \? setRoomSeats : undefined\}/.test(page));
+  ok("an operator may set it as well as an administrator",
+     /\(role === "admin" \|\| role === "operator"\) \? setRoomSeats : undefined\}/.test(page));
+  ok("and the way to fix the figure sits under the figure",
+     /Kyro doesn't know how many seats this room has\. Set it/.test(card));
+  ok("with the field scrolled to rather than hunted for", /seatBox\.current\?\.scrollIntoView/.test(card));
 }
 
 // ── Two boxes, one person ───────────────────────────────────────────────────

@@ -1677,7 +1677,11 @@ export default function AttendancePage() {
                    beside the figure it corrects, because the settings page
                    it used to live on is three screens from the mistake. */
                 seats={roomSeats}
-                onSetSeats={edge && !userChoseDemo() && role === "admin" ? setRoomSeats : undefined}
+                /* An operator may set it too. How many chairs are in the hall
+                   is an operational fact known by whoever is standing in it,
+                   not a privilege — and locking it to admin was one more
+                   reason the figure stayed wrong. */
+                onSetSeats={edge && !userChoseDemo() && (role === "admin" || role === "operator") ? setRoomSeats : undefined}
                 doorMode={doorMode} doorModeBy={doorModeBy}
                 onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}

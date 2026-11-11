@@ -48,7 +48,18 @@ function niceMax(v: number): number {
   return step * mag;
 }
 
-function StatTile({ label, value, sub, swatch }: { label: string; value: string; sub?: string; swatch?: string }) {
+function StatTile({ label, value, sub, swatch, action }: {
+  label: string; value: string; sub?: string; swatch?: string;
+  /**
+   * Something to do about this figure, under the figure itself.
+   *
+   * "i still cant see 114 ... it says 237, this is false." The one thing
+   * that fixes that number was a panel further up the same card, and she
+   * never found it. A fix the reader cannot see from the mistake may as
+   * well not exist, so it goes under the mistake.
+   */
+  action?: { label: string; onClick: () => void };
+}) {
   return (
     <div className="rounded-xl px-3 py-2.5 min-w-0" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
       <p className="flex items-center gap-1.5" style={{ fontSize: 11, color: "var(--text-muted)" }}>
@@ -59,6 +70,13 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
       {/* Wrapped, not truncated. "281 more came in than ..." tells the reader
           nothing except that something was hidden from them. */}
       {sub && <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.35 }}>{sub}</p>}
+      {action && (
+        <button type="button" onClick={action.onClick}
+          className="underline mt-1 text-left"
+          style={{ fontSize: 11, color: "var(--brand-gold, #b7791f)", lineHeight: 1.35 }}>
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -151,6 +169,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   const [seatDraft, setSeatDraft] = useState("");
   const [savingSeats, setSavingSeats] = useState(false);
   const [seatErr, setSeatErr] = useState<string | null>(null);
+  const seatBox = useRef<HTMLDivElement>(null);
   const extra = (unverifiedSeries?.length ?? 0) - (series?.length ?? 0);
   const canShowUnverified = !!unverifiedSeries && (extra > 0 || unverifiedSeries.some((p, i) => p.length !== (series?.[i]?.length ?? 0)));
   const picked = unverified && unverifiedSeries ? unverifiedSeries : series;
@@ -456,7 +475,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
             * one field, and the sentence says what it buys.
             */}
           {usingRegister && onSetSeats && (!seats || seatDraft !== "") && (
-            <div className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
+            <div ref={seatBox} className="rounded-xl px-3 py-2.5" style={{ background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                 <strong>How many seats are in this room?</strong>{" "}
                 {seats
@@ -540,7 +559,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${summary.totalArrived.toLocaleString()}`
                 : usingRegister
                 ? "Different people, counted once each"
-                : `${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
+                : `${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`}
+              action={onSetSeats && !seats && usingRegister
+                ? { label: "Kyro doesn't know how many seats this room has. Set it \u2192",
+                    onClick: () => { setSeatDraft("114"); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                : held != null && onSetSeats
+                ? { label: "Change the number of seats \u2192",
+                    onClick: () => { setSeatDraft(String(held)); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                : undefined} />
             <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={summary.totalLeft.toLocaleString()}
               sub={usingRegister
