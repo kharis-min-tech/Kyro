@@ -10,6 +10,7 @@ import { GlobalSeatAlertOverlay } from "@/components/ui/GlobalSeatAlertOverlay";
 import { NewCameraPrompt } from "@/components/ui/NewCameraPrompt";
 import { CountingProvider } from "@/lib/CountingContext";
 import { ServiceEndedPrompt } from "@/components/ui/AutoServices";
+import { NewVersion } from "@/components/ui/NewVersion";
 import { BackendStatusBanner } from "@/components/ui/BackendStatusBanner";
 import { PushRegistrationRefresher } from "@/components/ui/PushRegistrationRefresher";
 import { PageGuard } from "@/components/ui/PageGuard";
@@ -73,6 +74,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <PageGuard />
                 {/* Backend-unreachable banner (only shown in Live mode) */}
                 <BackendStatusBanner />
+                {/* "Kyro has been updated — reload." An open page keeps its
+                    old files for days by design, so it has to be told. */}
+                <NewVersion />
                 {children}
                 {/* Global AI question overlay — visible on every page */}
                 <GlobalReviewOverlay />

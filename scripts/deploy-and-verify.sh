@@ -54,9 +54,25 @@ keep_old_chunks() {
   echo "   keeping $(find "$ARCHIVE" -type f | wc -l | tr -d ' ') files from earlier builds, so open tabs don't break"
 }
 
+# A name for THIS build, baked into the pages and published beside them.
+#
+# The archive above means an already-open page never breaks — it goes on
+# finding the files it was built with, for days. That is the right trade, and
+# it has one cost: a page left open goes on running old code for ever, in
+# silence. Four deploys were made during one service while the page doing the
+# counting ran the code from before any of them, and every fix looked like it
+# had failed: "still not 114", "this is not working", "i dont understand".
+#
+# So each build is named, the name is compiled into the pages, and the same
+# name is published at /build.json. An open page compares the two and says
+# when it is out of date. See NewVersion in the dashboard.
+BUILD="$(git rev-parse --short HEAD 2>/dev/null || echo nogit)-$(date +%H%M%S)"
+
 echo "→ Building"
-( cd dashboard && CF_PAGES=1 npm run build 2>&1 | grep -E "Failed|error|Compiled successfully" | head -5 )
+( cd dashboard && CF_PAGES=1 NEXT_PUBLIC_KYRO_BUILD="$BUILD" npm run build 2>&1 | grep -E "Failed|error|Compiled successfully" | head -5 )
 [ -f "$OUT/index.html" ] || { echo "✗ No build output — stopping"; exit 1; }
+printf '{"build":"%s"}' "$BUILD" > "$OUT/build.json"
+echo "   this build is $BUILD"
 keep_old_chunks
 
 # Every page's own file, plus the shared ones the pages load.
