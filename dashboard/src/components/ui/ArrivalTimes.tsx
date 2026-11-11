@@ -48,8 +48,10 @@ function niceMax(v: number): number {
   return step * mag;
 }
 
-function StatTile({ label, value, sub, swatch, action }: {
+function StatTile({ label, value, sub, swatch, action, note }: {
   label: string; value: string; sub?: string; swatch?: string;
+  /** Something true about this figure that the reader cannot act on here. */
+  note?: string;
   /**
    * Something to do about this figure, under the figure itself.
    *
@@ -70,6 +72,9 @@ function StatTile({ label, value, sub, swatch, action }: {
       {/* Wrapped, not truncated. "281 more came in than ..." tells the reader
           nothing except that something was hidden from them. */}
       {sub && <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.35 }}>{sub}</p>}
+      {note && (
+        <p className="mt-1" style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.35 }}>{note}</p>
+      )}
       {action && (
         <button type="button" onClick={action.onClick}
           className="underline mt-1 text-left"
@@ -566,6 +571,20 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 : held != null && onSetSeats
                 ? { label: "Change the number of seats \u2192",
                     onClick: () => { setSeatDraft(String(held)); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                : undefined}
+              /**
+               * …and when this login may not set it, SAY THAT.
+               *
+               * The line above renders only for somebody allowed to change
+               * the seat count. For anybody else there was nothing at all —
+               * not the control, not the reason, no sign that a seat count
+               * is what this figure is missing. The failure and the silence
+               * looked identical from the outside, which is how "its still
+               * not 114" was asked six times about a setting that was never
+               * on the screen.
+               */
+              note={!onSetSeats && !seats && usingRegister
+                ? "Kyro has not been told how many seats this room has, so this figure has nothing to answer to. An administrator can set it on the Cameras page."
                 : undefined} />
             <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={summary.totalLeft.toLocaleString()}

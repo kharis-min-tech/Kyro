@@ -82,5 +82,36 @@ const layout = read("dashboard/src/app/layout.tsx");
   ok("and imported there", /import \{ NewVersion \} from "@\/components\/ui\/NewVersion";/.test(layout));
 }
 
+// ── And it can be read off the screen ───────────────────────────────────────
+//
+// The banner only helps a page new enough to have it. A page older than the
+// banner itself shows nothing — and finding out which version somebody is
+// looking at meant fetching the live files and comparing them by hand, five
+// times in one evening. So the version is printed where anybody can read it
+// out: on "Is Kyro working?", which is the card you are already looking at
+// when you doubt what Kyro is telling you.
+{
+  const health = read("dashboard/src/components/ui/SystemHealth.tsx");
+  ok("the health card knows its own build", /const BUILD = process\.env\.NEXT_PUBLIC_KYRO_BUILD \?\? "";/.test(health));
+  ok("and prints it", /This page is running \{BUILD\}/.test(health));
+  ok("saying nothing when there is nothing to say", /\{BUILD && \(/.test(health));
+}
+
+// ── A figure that cannot be fixed here still says why ───────────────────────
+//
+// "its still not 114", six times, about a control that was never on her
+// screen: the line offering to set the seat count renders only for somebody
+// allowed to set one. For anybody else there was no control, no reason and
+// no sign that a seat count was the missing thing. The failure and the
+// silence looked identical.
+{
+  const card = read("dashboard/src/components/ui/ArrivalTimes.tsx");
+  ok("a tile can carry something true it cannot act on", /note\?: string;/.test(card));
+  ok("and says so when the seats cannot be set from here",
+     /note=\{!onSetSeats && !seats && usingRegister/.test(card));
+  ok("naming where they CAN be set",
+     /An administrator can set it on the Cameras page\./.test(card));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A page that is out of date says so.");
 process.exit(fails ? 1 : 0);

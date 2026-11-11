@@ -66,6 +66,9 @@ const ago = (s: number) => {
 };
 const when = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "short", timeStyle: "short" });
 
+/** The build these page files came from — see NewVersion.tsx. */
+const BUILD = process.env.NEXT_PUBLIC_KYRO_BUILD ?? "";
+
 export function SystemHealth() {
   const { role } = useAuth();
   const admin = role === "admin";
@@ -136,6 +139,21 @@ export function SystemHealth() {
               : `${live.length > 0 ? `${live.length} problem${live.length === 1 ? "" : "s"}` : "Something needs attention"}`
                 + ` · ${h.cameras_working} of ${h.cameras_total} cameras working`}
           </p>
+          {/**
+            * Which version of Kyro this page is actually running.
+            *
+            * An open page keeps its own files for days, by design, so it can
+            * be running code from before a fix and look perfectly healthy
+            * doing it. That happened five times in one evening, and the only
+            * way to find out was for me to fetch the live files and compare
+            * them by hand. Printed here, anybody can read it off the screen
+            * and say which version they are looking at.
+            */}
+          {BUILD && (
+            <p style={{ fontSize: 11, color: "var(--text-faint)", marginTop: 3 }}>
+              This page is running {BUILD}
+            </p>
+          )}
         </div>
         <span style={{ fontSize: 12, color: "var(--text-tertiary)" }}>{open ? "Hide" : "Show"}</span>
       </button>
