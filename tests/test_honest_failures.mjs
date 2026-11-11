@@ -164,7 +164,10 @@ const root = path.resolve(import.meta.dirname, "..");
      /sendReport\(reports, \{ error: faceErr\.current, ready: !!faceEngine\.current \}, problems\.current, well\)/.test(ctx));
   ok("including a camera it cannot count on", /say\(c\.label, "Counting failed on this camera"/.test(ctx));
   ok("and a seat list it could not send", /couldn't send them to Kyro/.test(ctx));
-  ok("a black picture is acted on, not just reported", /if \(c\.watch\.black && c\.tries < 3\)/.test(ctx));
+  // A frozen picture used to be reported and nothing else — and it is the
+  // commonest way a camera on a crowded USB socket fails. Both are acted on.
+  ok("a black or frozen picture is acted on, not just reported",
+     /if \(\(c\.watch\.black \|\| c\.watch\.frozen\) && c\.tries < 3\)/.test(ctx));
 
   const health = fs.readFileSync(path.join(root, "worker/health.js"), "utf8");
   ok("green means the checks passed", /ok: failed\.length === 0/.test(health));

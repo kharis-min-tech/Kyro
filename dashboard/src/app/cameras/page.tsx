@@ -1739,6 +1739,53 @@ function HelpPanel() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Two cameras, the same seat count, different rooms.
+ *
+ * ── Why this is worth a line ───────────────────────────────────────────────
+ *
+ * "there are 114 chairs in the room, when i start the session make sure this
+ * is accurate."
+ *
+ * Typing 114 into both cameras pointed at that one room is the obvious thing
+ * to do, and it is wrong in a way nothing on the screen would show: cameras
+ * with DIFFERENT room names are different rooms, so Kyro adds them up and the
+ * building is set to hold 228. Every figure built on capacity — space left,
+ * how full, the filling-up alert — is then measured against twice the real
+ * number, and reads comfortable when the hall is full.
+ *
+ * Cameras sharing a room name are two views of ONE room: Kyro takes the
+ * fullest view and the room holds 114. So the fix is a room name, and it is
+ * one word, and nothing else would tell her.
+ */
+function SameSeatsWarning({ cameras }: { cameras: CameraType[] }) {
+  const rooms = new Map<string, { name: string; cams: string[]; seats: number }>();
+  for (const c of cameras) {
+    if (isQueueCamera(c) || c.location === "entrance" || !c.zone_capacity) continue;
+    const key = (c.zone_name || c.name || c.camera_id).trim().toLowerCase();
+    const r = rooms.get(key) ?? { name: c.zone_name || c.name, cams: [] as string[], seats: c.zone_capacity };
+    r.cams.push(c.name);
+    rooms.set(key, r);
+  }
+  const list = [...rooms.values()];
+  // Two separate rooms that hold exactly the same number is possible, and is
+  // far more often one room counted twice.
+  const same = list.filter((r) => list.filter((x) => x.seats === r.seats).length > 1);
+  if (list.length < 2 || same.length < 2) return null;
+  const total = list.reduce((n, r) => n + r.seats, 0);
+  return (
+    <div className="rounded-xl px-4 py-3 mb-3" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)" }}>
+      <p className="text-xs leading-relaxed" style={{ color: "#fcd34d" }}>
+        <strong>{same.map((r) => r.name).join(" and ")}</strong> are set as different rooms and both hold{" "}
+        <strong>{same[0].seats.toLocaleString()}</strong> seats, so Kyro thinks the building holds{" "}
+        <strong>{total.toLocaleString()}</strong>. If they are pointed at the <strong>same room</strong>, give
+        them the <strong>same room name</strong> with the pencil — Kyro then takes the fullest view instead of
+        adding them, and the room holds {same[0].seats.toLocaleString()}.
+      </p>
+    </div>
+  );
+}
+
 export default function CamerasPage() {
   const { cameras, loading, error, refresh, updateCamera, deleteCamera } = useCameras();
   // More than one camera, every one in a zone of its own: either they really
@@ -1841,6 +1888,7 @@ export default function CamerasPage() {
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">
               {edge ? "Cameras" : "Registered"} ({cameras.length})
             </p>
+            <SameSeatsWarning cameras={cameras} />
             <div className="flex flex-col gap-3">
               {cameras.map((cam) => (
                 <CameraCard key={cam.camera_id} cam={cam} onUpdated={refresh} onUpdate={updateCamera}

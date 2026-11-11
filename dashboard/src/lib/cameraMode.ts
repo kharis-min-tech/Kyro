@@ -164,11 +164,36 @@ export function countPeople(engine: Engine, px: ImageData, tiles?: number, fast?
  */
 export function openCamera(deviceId: string, step = 0): Promise<MediaStream> {
   const size = SIZES[Math.min(step, SIZES.length - 1)];
+  if (!size) return navigator.mediaDevices.getUserMedia({ audio: false, video: { deviceId: { exact: deviceId } } });
+  /**
+   * "ideal" on the first ask, a HARD CAP on every one after it.
+   *
+   * ── Why the stepping down did nothing ─────────────────────────────────
+   *
+   * Every step used `ideal`, which is a preference and not a limit: the
+   * browser hands back whatever the camera likes best and calls that a
+   * success. So asking for 1920x1080, then 1280x720, then 640x480 opened
+   * the SAME stream three times. The retry ran, the counter went up, the
+   * message changed — and the camera was still being asked for exactly what
+   * it could not do.
+   *
+   * That is the whole fix for a HuddleCam. These are UVC cameras that offer
+   * 1080p over MJPEG and lower sizes over raw video; on a USB 2 socket, or
+   * sharing a controller with a second camera, there is not enough bandwidth
+   * for 1080p and the camera answers with black frames or one frame over and
+   * over rather than an error. Kyro's own message has been saying "it may
+   * need to be asked for 1280x720 instead" for months while never actually
+   * asking for it.
+   *
+   * `max` is a real constraint: the browser must come back at or under it,
+   * or fail — and failing is fine, because the next step is smaller again.
+   */
+  const first = step === 0;
   return navigator.mediaDevices.getUserMedia({
     audio: false,
-    video: size
+    video: first
       ? { deviceId: { exact: deviceId }, width: { ideal: size[0] }, height: { ideal: size[1] } }
-      : { deviceId: { exact: deviceId } },
+      : { deviceId: { exact: deviceId }, width: { max: size[0] }, height: { max: size[1] } },
   });
 }
 
@@ -194,11 +219,50 @@ const SIZES: ([number, number] | null)[] = [[1920, 1080], [1280, 720], [640, 480
  * and said "Another program is using this camera" about a camera no program
  * was using. 720p counts people perfectly well.
  */
+/**
+ * The picture size that last worked for a camera, remembered per camera.
+ *
+ * A HuddleCam on a USB 2 socket cannot carry 1920x1080, and it says so by
+ * sending black frames or the same frame over and over rather than by
+ * failing. So Kyro asks for less, finds 1280x720 works, and counts happily —
+ * until the next time counting is started, when it begins at 1080p again and
+ * goes through the whole black-picture dance a second time, and a third.
+ *
+ * It is the same camera on the same socket. Remember what worked and start
+ * there. Nothing is locked in: every step below the remembered one is still
+ * tried if it stops opening, and moving the camera to a better socket is
+ * picked up the next time the remembered size fails.
+ */
+const SIZE_KEY = "kyro_camera_size";
+
+function rememberedStep(deviceId: string): number {
+  try {
+    const all = JSON.parse(localStorage.getItem(SIZE_KEY) ?? "{}") as Record<string, number>;
+    const n = all[deviceId];
+    return Number.isInteger(n) && n > 0 && n < SIZES.length ? n : 0;
+  } catch { return 0; }
+}
+
+/** Remember the size a camera actually works at. Step 0 forgets it. */
+export function rememberCameraStep(deviceId: string, step: number): void {
+  try {
+    const all = JSON.parse(localStorage.getItem(SIZE_KEY) ?? "{}") as Record<string, number>;
+    if (step > 0) all[deviceId] = step;
+    else delete all[deviceId];
+    localStorage.setItem(SIZE_KEY, JSON.stringify(all));
+  } catch { /* fine without it */ }
+}
+
 export async function openCameraAnySize(deviceId: string): Promise<MediaStream> {
   let last: unknown = new Error("No camera");
-  for (let step = 0; step < SIZES.length; step++) {
+  // Start at whatever worked last time for this camera, then keep stepping
+  // down. Nothing is skipped on the way out — the remembered step is a head
+  // start, not a cage.
+  for (let step = rememberedStep(deviceId); step < SIZES.length; step++) {
     try {
-      return await openCamera(deviceId, step);
+      const stream = await openCamera(deviceId, step);
+      rememberCameraStep(deviceId, step);
+      return stream;
     } catch (e) {
       last = e;
       // Not being allowed to use cameras at all is not a size problem, and

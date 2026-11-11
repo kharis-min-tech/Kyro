@@ -102,5 +102,32 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
   ok("the guess is offered there too", /Kyro thinks it can see about/.test(seating));
 }
 
+// ── One room's seats, typed into two cameras ───────────────────────────────
+//
+// "there are 114 chairs in the room, when i start the session make sure this
+// is accurate." Typing 114 into both cameras pointed at that one room is the
+// obvious thing to do, and it silently sets the building to hold 228 — every
+// figure measured against twice the real number, reading comfortable when the
+// hall is full. Cameras sharing a room NAME are one room and take the fullest
+// view; the fix is one word, and nothing else on the page would say so.
+{
+  const cams = fs.readFileSync(path.join(root, "dashboard/src/app/cameras/page.tsx"), "utf8");
+  ok("the Cameras page notices one room's seats entered twice",
+     /function SameSeatsWarning\(\{ cameras \}/.test(cams));
+  ok("it only fires when two rooms hold exactly the same number",
+     /const same = list\.filter\(\(r\) => list\.filter\(\(x\) => x\.seats === r\.seats\)\.length > 1\);/.test(cams));
+  ok("it says what Kyro currently thinks the building holds",
+     /so Kyro thinks the building holds/.test(cams.replace(/\s+/g, " ")));
+  ok("and gives the one word that fixes it",
+     /give\s*\n?\s*them the <strong>same room name<\/strong>/.test(cams)
+     || /give them the <strong>same room name<\/strong>/.test(cams.replace(/\s+/g, " ")));
+  ok("doorway and queue cameras are left out, since they have no seats",
+     /if \(isQueueCamera\(c\) \|\| c\.location === "entrance" \|\| !c\.zone_capacity\) continue;/.test(cams));
+
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("and the claim is true: one room's seats are its seats",
+     /r\.capacity = take\(r\.capacity, z\.capacity\);/.test(worker));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. A guess is offered, never assumed.");
 process.exit(fails ? 1 : 0);

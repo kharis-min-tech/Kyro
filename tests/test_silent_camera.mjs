@@ -46,10 +46,26 @@ const openCamera = new Function("navigator", `${body}; return openCamera;`)(navi
 {
   await openCamera("cam-1", 1);
   ok("the second try is still the same camera", asked.video.deviceId.exact === "cam-1");
-  ok("and asks for less", asked.video.width.ideal === 1280 && asked.video.height.ideal === 720);
+  /**
+   * This assertion used to read `width.ideal === 1280`, and it passed, and
+   * the feature did not work.
+   *
+   * `ideal` is a PREFERENCE, not a limit: the browser hands back whatever
+   * the camera likes best and calls it a success. So every step of the
+   * step-down opened the same stream, and a camera that could not manage
+   * 1920x1080 was asked for it three times in a row while Kyro's own message
+   * said it should be asked for 1280x720 instead. The test enshrined the bug
+   * by checking that the wrong constraint was present.
+   *
+   * `max` is a real limit — the browser must come back at or under it, or
+   * fail, and failing is fine because the next step is smaller again.
+   */
+  ok("and asks for less — a hard cap, not a preference",
+     asked.video.width.max === 1280 && asked.video.height.max === 720
+     && asked.video.width.ideal === undefined);
 
   await openCamera("cam-1", 2);
-  ok("the third asks for less again", asked.video.width.ideal === 640);
+  ok("the third asks for less again", asked.video.width.max === 640);
 
   await openCamera("cam-1", 3);
   ok("the last asks for no particular size", asked.video.width === undefined);

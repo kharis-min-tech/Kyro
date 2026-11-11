@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import {
   loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
-  sendReport, sendPicture, sendPersonPicture, type Engine, type CameraReport, type Zone, type WantedPicture,
+  sendReport, sendPicture, sendPersonPicture, rememberCameraStep, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
@@ -371,22 +371,34 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // healthy doing it.
         if (c.watch.saw(px) && (c.watch.black || c.watch.frozen)) {
           say(c.label, c.watch.black
-            ? "The picture is black. Check the lens cap and the lighting — and if this is a HuddleCam at 1920x1080, it may need to be asked for 1280x720 instead."
-            : "The same picture over and over: this camera has stopped, although it is still connected. Unplug it and plug it back in.");
+            ? "The picture is black. Kyro is asking the camera for a smaller picture — check the lens cap and the lighting too."
+            : "The same picture over and over: the camera has stopped sending new frames, although it is still connected. Kyro is asking it for a smaller picture, which is usually a USB socket with too little bandwidth for 1920x1080.");
         }
-        // A black picture is the same fault as no picture wearing a disguise,
-        // so it gets the same answer: ask the camera for less and try again.
-        if (c.watch.black && c.tries < 3) {
+        // A black picture, or the same frame over and over, is the same fault
+        // as no picture wearing a disguise: ask the camera for less and try
+        // again.
+        //
+        // FROZEN used to only be complained about. It is the commonest way a
+        // HuddleCam fails — asked for 1080p on a USB socket that cannot carry
+        // it, the camera does not refuse, it just stops sending new frames —
+        // and the answer is the same one a black picture gets. Telling
+        // somebody to unplug it and plug it back in, when Kyro could have
+        // asked for a smaller picture instead, is work handed to a person
+        // that the program should have done.
+        if ((c.watch.black || c.watch.frozen) && c.tries < 3) {
           c.tries++;
           try {
             c.stream?.getTracks().forEach((t) => t.stop());
             c.stream = await openCamera(c.deviceId, c.tries);
+            // So the next time counting starts, this camera is asked for the
+            // size that works rather than going through this again.
+            rememberCameraStep(c.deviceId, c.tries);
             c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c.stream = null; c.error = "Unplugged"; refreshViews(); });
             if (c.video) { c.video.srcObject = c.stream; c.video.play().catch(() => {}); }
             c.watch.reset();
             c.error = null;
           } catch {
-            c.error = "This camera sends a black picture at every size Kyro can ask for.";
+            c.error = "This camera sends no usable picture at any size Kyro can ask for. Try its own USB socket rather than one shared with another camera.";
           }
           continue;
         }

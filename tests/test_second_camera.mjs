@@ -78,7 +78,11 @@ function openAnySize(opensAt, { throws } = {}) {
 // 4. Every size is tried, largest first.
 {
   ok("there is a step-down open", /export async function openCameraAnySize/.test(mode));
-  ok("it walks every size", /for \(let step = 0; step < SIZES\.length; step\+\+\)/.test(mode));
+  // It starts at whatever size this camera worked at last time, so a camera
+  // that needs 720p is not put through the black-picture dance on every
+  // start — and then walks down from there, skipping nothing on the way out.
+  ok("it walks every size", /for \(let step = rememberedStep\(deviceId\); step < SIZES\.length; step\+\+\)/.test(mode));
+  ok("remembering what worked", /rememberCameraStep\(deviceId, step\);/.test(mode));
   ok("it stops asking when permission is the problem",
      /e\.name === "NotAllowedError" \|\| e\.name === "SecurityError"/.test(mode));
   ok("and it throws the real reason, not a made-up one", /throw last;/.test(mode));
