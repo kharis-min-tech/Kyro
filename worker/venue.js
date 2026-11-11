@@ -477,6 +477,33 @@ export class VenueHub extends DurableObject {
       // Deleting a day has to take the people seen that day with it, or the
       // day comes straight back in Analytics with its attendance intact.
       try { ctx.storage.sql.exec("ALTER TABLE people ADD COLUMN deleted_at INTEGER"); } catch { /* already there */ }
+
+      /**
+       * Decide, once, where each camera's existing seat count came from.
+       *
+       * A capacity now carries its source, and one with no source recorded
+       * is treated as a guess — which drives nothing. That is right for the
+       * numbers the seat finder invented, and WRONG for a number somebody
+       * had already typed in before the field existed: their seat count
+       * silently stopped working and the page read "Seats —".
+       *
+       * There is one honest way to tell them apart. A capacity the seat
+       * finder produced matches the "Found by Kyro" layout it produced it
+       * from, seat for seat. Anything else was typed. Decided here, once, at
+       * startup rather than on every read.
+       */
+      const cams = await ctx.storage.get("cameras");
+      if (cams) {
+        let changed = false;
+        for (const c of Object.values(cams)) {
+          if (!c || c.capacity_from || !c.zone_capacity) continue;
+          const layouts = (await ctx.storage.get(`layouts:${c.camera_id}`)) ?? [];
+          const found = layouts.find((l) => l.source === "auto" && l.is_active);
+          c.capacity_from = found && found.seat_count === c.zone_capacity ? "found" : "admin";
+          changed = true;
+        }
+        if (changed) await ctx.storage.put("cameras", cams);
+      }
     });
   }
 

@@ -1520,7 +1520,23 @@ export class IdentityRegistry {
   restore(snap) {
     if (!snap || !Array.isArray(snap.people)) return;
     this.service = snap.service ?? null;
-    this.nextId = snap.nextId ?? 1;
+    /**
+     * Never hand out a number somebody already has.
+     *
+     * "make sure you lock ids."
+     *
+     * This read the saved next-id and fell back to 1. The fallback is the
+     * landmine: a snapshot written by an older version, or trimmed, or
+     * half-read, and the register starts numbering at 1 again while people
+     * 1, 2 and 3 are still in it — so the next person to walk in IS person
+     * 1, and two human beings share one entry for the rest of the service.
+     *
+     * The highest id actually restored is the floor, whatever the snapshot
+     * claims. An id, once given, belongs to that person until the service
+     * ends.
+     */
+    const highest = snap.people.reduce((n, p) => Math.max(n, p.i ?? p.id ?? 0), 0);
+    this.nextId = Math.max(snap.nextId ?? 1, highest + 1);
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, ...(snap.stats ?? {}) };
     this.people.clear();
     this.seats.clear();

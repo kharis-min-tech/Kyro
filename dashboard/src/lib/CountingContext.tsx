@@ -74,7 +74,32 @@ const DOOR_FACES_EVERY_MS = 1_200;
  * The biggest people in the picture are chosen: biggest means nearest, and
  * nearest is where a face is large enough to read at all.
  */
-const MOST_FACES_AT_ONCE = 3;
+/**
+ * How many faces are read in one go, at a minimum.
+ *
+ * Reading a face is the expensive part, so only the nearest few are read each
+ * time — three was a cap chosen to be safe on the slowest computer.
+ */
+const FEWEST_FACES_AT_ONCE = 3;
+/**
+ * …and the most, when the computer is plainly keeping up.
+ *
+ * "make sure face recognition is on point."
+ *
+ * Three at a time is defensible on a laptop struggling to count at all, and
+ * far too cautious everywhere else. In a hall of 114, three faces every four
+ * seconds means any given person's face is read about once every two and a
+ * half minutes — so face matching, the thing that actually tells two people
+ * in dark coats apart, almost never gets a look at most of them.
+ *
+ * The cap now follows how fast this camera is actually counting. A computer
+ * with headroom reads more faces; the moment counting slows, it drops back.
+ * Counting is never traded for faces: a figure that lags behind the room is
+ * worse than a figure that occasionally splits somebody.
+ */
+const MOST_FACES_AT_ONCE = 10;
+/** Counting this often or better means there is room to read more faces. */
+const FAST_ENOUGH_S = 1.2;
 /** How often the seats Kyro has found are sent to the website. They don't move. */
 const SEATS_EVERY_MS = 60_000;
 
@@ -565,10 +590,18 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     // The nearest few only — see MOST_FACES_AT_ONCE. Their places are kept so
     // the codes come back lined up with the people they belong to; handing the
     // tracker a list in the wrong order would give people each other's faces.
+    // How many to read this time: more when this camera is counting
+    // comfortably, never fewer than the safe floor, and never so many that
+    // the count starts lagging. secondsPerCount is measured, not assumed.
+    const pace = c.secondsPerCount || 0;
+    const howMany = pace > 0 && pace <= FAST_ENOUGH_S
+      ? Math.round(FEWEST_FACES_AT_ONCE + (MOST_FACES_AT_ONCE - FEWEST_FACES_AT_ONCE)
+          * Math.max(0, Math.min(1, (FAST_ENOUGH_S - pace) / FAST_ENOUGH_S)))
+      : FEWEST_FACES_AT_ONCE;
     const nearest = c.people
       .map((p, i) => ({ i, size: p.box[3] - p.box[1] }))
       .sort((a, b) => b.size - a.size)
-      .slice(0, MOST_FACES_AT_ONCE)
+      .slice(0, Math.max(FEWEST_FACES_AT_ONCE, howMany))
       .map((x) => x.i);
     const read = await faceEngine.current.codesFor(px, nearest.map((i) => c.people[i].box));
     const codes: (Float32Array | null)[] = c.people.map(() => null);

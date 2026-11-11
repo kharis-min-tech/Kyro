@@ -114,8 +114,20 @@ const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), 
      && /c\.isDoor \? DOOR_FACES_EVERY_MS : FACES_EVERY_MS/.test(ctx));
   ok("rooms are unchanged", /const FACES_EVERY_MS = 4_000;/.test(ctx));
   // Which is only affordable because the cost is capped.
-  ok("only the nearest few faces are read", /const MOST_FACES_AT_ONCE = 3;/.test(ctx)
-     && /\.slice\(0, MOST_FACES_AT_ONCE\)/.test(ctx));
+  // Three at a time was a cap chosen to be safe on the slowest computer, and
+  // far too cautious everywhere else: in a hall of 114 it means any given
+  // person's face is read about once every two and a half minutes, so the
+  // one thing that tells two people in dark coats apart barely gets a look
+  // at most of them. It follows the measured pace now — and never trades the
+  // count for faces, because a figure that lags the room is worse than one
+  // that occasionally splits somebody.
+  ok("only the nearest are read, and only as many as the computer can manage",
+     /const FEWEST_FACES_AT_ONCE = 3;/.test(ctx)
+     && /const MOST_FACES_AT_ONCE = 10;/.test(ctx)
+     && /\.slice\(0, Math\.max\(FEWEST_FACES_AT_ONCE, howMany\)\)/.test(ctx));
+  ok("with the floor held whatever happens",
+     /const pace = c\.secondsPerCount \|\| 0;/.test(ctx)
+     && /: FEWEST_FACES_AT_ONCE;/.test(ctx));
   ok("the nearest are chosen by how big they are", /size: p\.box\[3\] - p\.box\[1\]/.test(ctx));
   // And only if the codes come back against the right people. A list in the
   // wrong order would hand people each other's faces, which is worse than no

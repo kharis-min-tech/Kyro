@@ -129,5 +129,35 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
      /r\.capacity = take\(r\.capacity, z\.capacity\);/.test(worker));
 }
 
+// ── A seat count typed in BEFORE the source was recorded ───────────────────
+//
+// "seats need to show 114" — on a page reading "Seats —". A capacity with no
+// source recorded is treated as a guess and drives nothing, which is right
+// for the numbers the seat finder invented and WRONG for one somebody had
+// already typed before the field existed: their seat count silently stopped
+// working. There is one honest way to tell them apart.
+{
+  ok("existing seat counts are given a source, once, at startup",
+     /for \(const c of Object\.values\(cams\)\) \{\s*\n\s*if \(!c \|\| c\.capacity_from \|\| !c\.zone_capacity\) continue;/.test(worker));
+  ok("a capacity matching the Found by Kyro layout is a guess",
+     /c\.capacity_from = found && found\.seat_count === c\.zone_capacity \? "found" : "admin";/.test(worker));
+  ok("and anything else was typed by somebody",
+     /Anything else was typed/.test(worker.replace(/\s+/g, " ")));
+  ok("it runs before anything else can read it",
+     worker.indexOf("Decide, once, where each camera's existing seat count came from")
+       > worker.indexOf("ctx.blockConcurrencyWhile(async () => {"));
+  ok("and never runs twice", /if \(!c \|\| c\.capacity_from \|\| !c\.zone_capacity\) continue;/.test(worker));
+}
+
+// ── The service card says what is missing, and what it costs ───────────────
+{
+  const svc = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
+  ok("the service shows how many different people came in",
+     /<p className="text-xs text-gray-500">Came in<\/p>/.test(svc)
+     && /people_seen/.test(svc));
+  ok("and a missing seat count says where to set it",
+     /set it on Cameras/.test(svc));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. A guess is offered, never assumed.");
 process.exit(fails ? 1 : 0);

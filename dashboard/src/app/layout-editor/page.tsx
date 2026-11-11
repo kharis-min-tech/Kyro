@@ -12,6 +12,9 @@ import { useCameras } from "@/hooks/useCameras";
 
 const DEFAULT_CAMERA = process.env.NEXT_PUBLIC_CAMERA_ID ?? "cam-01";
 
+/** Which camera the Seat Editor was last working on, per device. */
+const LAST_CAMERA_KEY = "kyro_seat_editor_camera";
+
 export default function LayoutEditorPage() {
   const [cameraId, setCameraId]         = useState(DEFAULT_CAMERA);
   const [layouts, setLayouts]           = useState<SeatLayout[]>([]);
@@ -24,10 +27,44 @@ export default function LayoutEditorPage() {
   const [edge, setEdge]                 = useState<boolean | null>(null);
   useEffect(() => { setEdge(isEdgeLive()); }, []);
   const { cameras } = useCameras();
-  // The camera switcher's default id doesn't exist on the live site: start on the first camera.
+  /**
+   * The camera you were last working on, remembered.
+   *
+   * ── Why ────────────────────────────────────────────────────────────────
+   *
+   * "why do you keep changing the seat editors camera."
+   *
+   * It wasn't reacting to anything — it simply never remembered. Every visit
+   * reset to a constant that does not exist on the live site, so the next
+   * line put it on cameras[0], whichever that happened to be. Draw a
+   * layout, go to the Cameras page to set something, come back, and you are
+   * looking at a different camera's seats with no indication that the
+   * editor moved. The work isn't lost; it is on the camera you left it on,
+   * which is worse, because it looks lost.
+   *
+   * Remembered per device, and only ever restored to a camera that still
+   * exists — a remembered id for a camera that has been removed would strand
+   * the page on nothing.
+   */
   useEffect(() => {
-    if (edge && cameras.length && !cameras.some((c) => c.camera_id === cameraId)) setCameraId(cameras[0].camera_id);
+    if (edge === null || !cameras.length) return;
+    if (cameras.some((c) => c.camera_id === cameraId)) return;
+    let remembered: string | null = null;
+    try { remembered = localStorage.getItem(LAST_CAMERA_KEY); } catch { /* fine without it */ }
+    const keep = remembered && cameras.find((c) => c.camera_id === remembered);
+    if (keep) { setCameraId(keep.camera_id); return; }
+    if (edge) setCameraId(cameras[0].camera_id);
   }, [edge, cameras, cameraId]);
+
+  /** The camera being edited, when it is one that has no seats to draw. */
+  const doorway = cameras.find((c) => c.camera_id === cameraId
+    && (c.location === "entrance" || c.location === "queue"));
+
+  /** Chosen by hand, so it is the one to come back to. */
+  const chooseCamera = (id: string) => {
+    setCameraId(id);
+    try { localStorage.setItem(LAST_CAMERA_KEY, id); } catch { /* fine without it */ }
+  };
 
   async function loadLayouts() {
     try { setLayouts(await seatsApi.listLayouts(cameraId)); }
@@ -77,8 +114,25 @@ export default function LayoutEditorPage() {
               Venue snapshot loads automatically — draw seats and mark zones (stage, altar, entrance) right on it
             </p>
           </div>
-          {edge !== null && <CameraSwitcher activeCameraId={cameraId} onChange={setCameraId} />}
+          {edge !== null && <CameraSwitcher activeCameraId={cameraId} onChange={chooseCamera} />}
         </div>
+
+        {/* A doorway has no seats.
+            "you literally changed the seat editors when i saved it as
+            entrance and exit" — the editor did not react to that at all, it
+            simply never remembered which camera she was on and went back to
+            the first one. But it also said nothing about the camera it WAS
+            on being a doorway, which has no seats to draw and whose seats
+            are ignored. Saying so costs one line and saves an afternoon. */}
+        {doorway && (
+          <div className="rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)" }}>
+            <p className="text-xs leading-relaxed" style={{ color: "#fcd34d" }}>
+              <strong>{doorway.name}</strong> is set as a {doorway.location === "queue" ? "queue" : "doorway"} camera, so it
+              has no seats — it counts people crossing, not sitting. Anything drawn here is kept but never used. Pick a
+              room camera above, or change this one&apos;s type with the pencil on the Cameras page.
+            </p>
+          </div>
+        )}
 
         {edge !== null && (!edge || cameras.some((c) => c.camera_id === cameraId)) && <>
         {/* Editor */}

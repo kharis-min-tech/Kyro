@@ -137,7 +137,28 @@ export function AutoServices() {
             <div className="grid grid-cols-3 gap-3">
               <div><p className="text-xs text-gray-500">Here now</p><p className="text-2xl font-bold text-white tabular-nums">{venue?.total_current ?? "–"}</p></div>
               <div><p className="text-xs text-gray-500">Busiest</p><p className="text-2xl font-bold text-white tabular-nums">{live.peak}</p><p className="text-xs text-gray-500">at {time(live.peak_at)}</p></div>
-              <div><p className="text-xs text-gray-500">Seats</p><p className="text-2xl font-bold text-white tabular-nums">{venue?.total_capacity || "–"}</p></div>
+              {/* Different people this service — the attendance figure, which
+                  is what a church actually writes down. "the people that came
+                  in needs to be shown too": it was on the AI Count page and
+                  nowhere near the service it belongs to. */}
+              <div>
+                <p className="text-xs text-gray-500">Came in</p>
+                <p className="text-2xl font-bold text-white tabular-nums">
+                  {(venue as { people_seen?: number } | undefined)?.people_seen ?? "–"}
+                </p>
+                <p className="text-xs text-gray-500">different people</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Seats</p>
+                <p className="text-2xl font-bold text-white tabular-nums">{venue?.total_capacity || "–"}</p>
+                {/* A dash here is not a missing figure, it is a question
+                    nobody has answered — and without it "space left", "how
+                    full" and the filling-up alerts all stay off. Saying so is
+                    the difference between a gap and a job. */}
+                {!venue?.total_capacity && (
+                  <p className="text-xs" style={{ color: "#fcd34d" }}>set it on Cameras</p>
+                )}
+              </div>
             </div>
             {live.quiet_since && <p className="text-xs text-gray-400">The hall has been nearly empty since {time(live.quiet_since)} — the service ends by itself 15 minutes after that.</p>}
             {data?.face_matching_now && (
