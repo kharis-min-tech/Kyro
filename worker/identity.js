@@ -250,6 +250,15 @@ export const ASK_IF_STILL_S = 240;
  * made it is still looking at it.
  */
 export const STILL_WATCHING_MS = 60_000;
+/**
+ * How many visits are kept for one person in one service.
+ *
+ * An usher on the door all morning genuinely does go in and out dozens of
+ * times, and a register that grows without limit is a register that stops
+ * being saved. The oldest go first; the count of them does not, so
+ * "somebody who came and went nine times" is still true afterwards.
+ */
+export const VISITS_KEPT = 24;
 /** A sighting that stopped coming before it earned a place in the register. */
 export const WAITING_STALE_MS = 60_000;
 /** Faces kept per identity, so one bad reading can't define anybody. */
@@ -1012,6 +1021,29 @@ export class IdentityRegistry {
       looks: [], faces: [],
       seen: 1,
       uncertain: 0,
+      /**
+       * Every spell this person has been in the building for: in at, out at.
+       *
+       * ── Why a LIST and not two times ───────────────────────────────────
+       *
+       * "make sure when people come in you log them in case they come out."
+       *
+       * The register already knew when somebody was first seen and when they
+       * were last seen — and that is not the same thing. Somebody who comes
+       * in at ten, steps out at half past, and comes back at twenty to
+       * eleven has their last-seen time moved forward, and the fact that
+       * they LEFT disappears. Right for the attendance figure, which must
+       * not count them twice. Useless for the question a church actually
+       * asks at the end of a service, which is whether the building is
+       * clear.
+       *
+       * So each spell is kept: in at ten, out at half past; in again at
+       * twenty to eleven, still here. One person, one entry in the register,
+       * two visits — and nothing has to be guessed from a last-seen time.
+       *
+       * The last spell is open (out === null) while they are here.
+       */
+      spells: [{ in: now, out: null }],
       /** Where they are sitting, if anywhere. Never part of who they are. */
       seat: null, seatKey: null, seatAt: 0, seatCamera: "",
     };
@@ -1066,6 +1098,16 @@ export class IdentityRegistry {
     const p = this.people.get(id);
     if (!p) return this.create(cameraId, o, now, waited);
     this.setSeat(p, cameraId, o.seat ?? null, now);
+    // Seen again after Kyro had recorded them leaving: that is a new visit,
+    // not a correction of the old one. The one they walked out of stays
+    // exactly as it was.
+    p.spells ??= [{ in: p.firstAt ?? now, out: null }];
+    const last = p.spells[p.spells.length - 1];
+    if (last.out !== null) {
+      p.spells.push({ in: now, out: null });
+      if (p.spells.length > VISITS_KEPT) p.spells.splice(0, p.spells.length - VISITS_KEPT);
+      this.stats.cameBack = (this.stats.cameBack || 0) + 1;
+    }
     p.lastAt = now;
     p.lastCamera = cameraId;
     p.lastTrack = o.track ?? p.lastTrack ?? null;
@@ -1269,6 +1311,66 @@ export class IdentityRegistry {
   }
 
   /**
+   * Everybody nobody has seen for a while has left, and it is written down.
+   *
+   * Called by the hub on every report. A spell is closed at the moment the
+   * person was LAST SEEN, not at the moment Kyro noticed — somebody who
+   * walked out at half past did not leave at twenty-five to, however long it
+   * took to be sure of it.
+   *
+   * Deliberately slower than the live headline. "How many can we see" wants
+   * to drop the moment somebody is out of shot; "have they left" must not
+   * record a departure for somebody standing behind a pillar. The two
+   * answers can differ for a few minutes, and the log is the one that has to
+   * be right rather than quick.
+   *
+   * @returns the people whose spell was closed, for the hub to write down.
+   */
+  closeDeparted(now = Date.now(), after = 5 * 60_000) {
+    const gone = [];
+    for (const p of this.people.values()) {
+      if (!p.spells || !p.spells.length) continue;
+      const last = p.spells[p.spells.length - 1];
+      if (last.out !== null) continue;
+      if (now - p.lastAt <= after) continue;
+      last.out = p.lastAt;
+      gone.push(p);
+    }
+    return gone;
+  }
+
+  /**
+   * Who is in the building, by the register's own record rather than by a
+   * last-seen time: everybody whose latest visit has not been closed.
+   */
+  inBuilding() {
+    let n = 0;
+    for (const p of this.people.values()) {
+      const last = p.spells?.[p.spells.length - 1];
+      if (last && last.out === null) n++;
+    }
+    return n;
+  }
+
+  /**
+   * Every coming and going, newest first.
+   *
+   * A person is a number. Kyro does not know who anybody is, and this is the
+   * one place somebody might expect it to — so it is worth saying that these
+   * are anonymous for one service and go when the service does.
+   */
+  visits(limit = 200) {
+    const out = [];
+    for (const p of this.people.values()) {
+      for (const sp of p.spells ?? []) {
+        out.push({ person: p.id, in: sp.in, out: sp.out, cameras: [...p.cameras] });
+      }
+    }
+    out.sort((a, b) => b.in - a.in);
+    return out.slice(0, limit);
+  }
+
+  /**
    * How many of the people on the register are still here.
    *
    * The honest answer to "how many are in the building" when there is no
@@ -1389,6 +1491,11 @@ export class IdentityRegistry {
           if (p.seatKey) { o.s = p.seat; o.sk = p.seatKey; o.sa = p.seatAt; if (p.seatCamera) o.sc = p.seatCamera; }
           const looks = looksEach > 0 ? p.looks.slice(-looksEach) : [];
           if (looks.length) o.b = looks;
+          // Comings and goings. Kept even when the readings are trimmed away
+          // to fit: losing somebody's coat costs the chance of recognising
+          // them again, losing their visits costs the record of whether the
+          // building is clear.
+          if (p.spells?.length) o.v = p.spells.map((sp) => [sp.in, sp.out]);
           return o;
         }),
     });
@@ -1434,6 +1541,12 @@ export class IdentityRegistry {
         seat: p.s ?? p.seat ?? null, seatKey, seatAt: p.sa ?? p.seatAt ?? 0,
         seatCamera: p.sc ?? p.seatCamera ?? "",
         looks: p.b ?? p.looks ?? [],
+        // Comings and goings. A register restored without them would have
+        // everybody's visit starting again at the restart, which would say
+        // the building emptied and refilled at the moment Kyro restarted.
+        spells: Array.isArray(p.v) && p.v.length
+          ? p.v.map(([i, o]) => ({ in: i, out: o ?? null }))
+          : [{ in: p.f ?? p.firstAt ?? 0, out: null }],
         // Faces are not in the snapshot: they are kept in their own table, so
         // they can be deleted on their own the moment the service ends. The
         // worker puts them back here after restoring — see loadFaces.

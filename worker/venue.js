@@ -447,6 +447,29 @@ export class VenueHub extends DurableObject {
         "CREATE TABLE IF NOT EXISTS people (service TEXT NOT NULL, person INTEGER NOT NULL, first_at INTEGER NOT NULL, last_at INTEGER NOT NULL, PRIMARY KEY (service, person))",
       );
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS people_first ON people (first_at)");
+      /**
+       * Comings and goings — one row per visit, not per person.
+       *
+       * "make sure when people come in you log them in case they come out."
+       *
+       * The people table holds first seen and last seen, which is not the
+       * same thing: somebody who comes in at ten, steps out at half past and
+       * comes back at twenty to eleven has their last-seen time moved
+       * forward and the fact that they LEFT disappears. Right for the
+       * attendance figure, which must not count them twice; useless for the
+       * question a church asks at the end of a service, which is whether the
+       * building is clear.
+       *
+       * out_at is null while somebody is still here, which is what makes
+       * "who is in the building" a thing that can be read back rather than
+       * inferred from a clock. Each exec is its own call: a second argument
+       * becomes a bind parameter and throws, which would take the whole
+       * Durable Object down on startup.
+       */
+      ctx.storage.sql.exec(
+        "CREATE TABLE IF NOT EXISTS visits (service TEXT NOT NULL, person INTEGER NOT NULL, in_at INTEGER NOT NULL, out_at INTEGER, PRIMARY KEY (service, person, in_at))",
+      );
+      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS visits_in ON visits (in_at)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
       // Deleting a day marks its rows instead of removing them, so it can be
       // undone. They are only really gone after DELETED_KEPT_DAYS.
@@ -597,6 +620,11 @@ export class VenueHub extends DurableObject {
       // "What did you actually count?" — every decision the door cameras made
       // in the last little while, so it can be checked against the door.
       if (p === "/api/live/door-log" && request.method === "GET") return json(await this.doorLogFor());
+      // Who came in, and whether they have gone out again.
+      if (p === "/api/live/visits" && request.method === "GET") {
+        if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
+        return json(await this.visitLog());
+      }
       // How the register of people is doing: counts and confidences, never a
       // face, a picture or anything about who anybody is.
       // ── The building: one master seat per physical chair ──────────────
@@ -1012,6 +1040,10 @@ export class VenueHub extends DurableObject {
     // the only place they can be compared with each other.
     try {
       await this.rememberPeople(device, body, cams, now);
+      // Anybody nobody has seen for five minutes has left, and it is written
+      // down at the moment they were last seen rather than the moment Kyro
+      // became sure of it. See closeDeparted in worker/identity.js.
+      this.register?.closeDeparted?.(now, LEFT_AFTER_MS);
       await this.working("Register of people");
     } catch (e) {
       // This is the serious one. With the register gone, attendance falls back
@@ -1504,6 +1536,10 @@ export class VenueHub extends DurableObject {
       for (const id of gone) {
         this.ctx.storage.sql.exec(
           "UPDATE people SET deleted_at = ? WHERE deleted_at IS NULL AND service = ? AND person = ?", at, service, id);
+        // Their comings and goings go with them. A visit by somebody who
+        // turned out to be a pillow, or to be somebody else all along, is
+        // not a visit.
+        this.ctx.storage.sql.exec("DELETE FROM visits WHERE service = ? AND person = ?", service, id);
         n++;
       }
       // Every figure below is built from those rows, so none of them may be
@@ -1535,11 +1571,25 @@ export class VenueHub extends DurableObject {
           service, id, p.firstAt || 0, p.lastAt || 0,
         );
       }
+      // Every visit, with its end left open while somebody is still here.
+      // Written with the people, so the two can never disagree about who was
+      // in the building.
+      for (const [id, p] of this.register.people) {
+        if ((p.lastAt || 0) < since) continue;
+        for (const sp of p.spells ?? []) {
+          this.ctx.storage.sql.exec(
+            "INSERT INTO visits (service, person, in_at, out_at) VALUES (?, ?, ?, ?)"
+            + " ON CONFLICT (service, person, in_at) DO UPDATE SET out_at = excluded.out_at",
+            service, id, sp.in || 0, sp.out ?? null,
+          );
+        }
+      }
       this.peopleSavedFor = service;
       this.peopleSavedAt = Date.now();
       this.movementCache = null;      // the figures below are built from these rows
       // A year is plenty, and keeps the table from growing without end.
       this.ctx.storage.sql.exec("DELETE FROM people WHERE first_at < ?", Date.now() - PEOPLE_KEPT_MS);
+      this.ctx.storage.sql.exec("DELETE FROM visits WHERE in_at < ?", Date.now() - PEOPLE_KEPT_MS);
     } catch (e) {
       // Attendance quietly reverting to counting flicker is exactly the
       // failure this is here to end, so it is never swallowed.
@@ -1878,6 +1928,44 @@ export class VenueHub extends DurableObject {
    * repeats were turned away. "I don't know what you're counting" deserves an
    * answer that can be held up against the door itself.
    */
+  /**
+   * Every coming and going this service, and how many are still inside.
+   *
+   * Read from the register in memory when there is one, and from the table
+   * otherwise — so a page opened after a restart, or on a phone that was
+   * never doing the counting, shows the same thing.
+   *
+   * A person is a NUMBER. Kyro does not know who anybody is, and this is the
+   * one screen somebody might expect it to, so the page says so.
+   */
+  async visitLog() {
+    const service = (await this.get("service_live", null));
+    if (!service) return { service: null, inside: 0, visits: [], people: 0 };
+    let rows;
+    try {
+      rows = this.ctx.storage.sql.exec(
+        "SELECT v.person, v.in_at, v.out_at FROM visits v"
+        + " JOIN people p ON p.service = v.service AND p.person = v.person AND p.deleted_at IS NULL"
+        + " WHERE v.service = ? ORDER BY v.in_at DESC LIMIT 300",
+        service.id).toArray();
+    } catch (e) {
+      await this.wrong("Comings and goings", "Couldn't read who came in and out", e && e.message);
+      return { service: service.id, inside: 0, visits: [], people: 0, error: true };
+    }
+    return {
+      service: service.id,
+      service_name: service.name,
+      /** Visits with no end yet — the people the register has not recorded leaving. */
+      inside: this.register?.inBuilding?.() ?? rows.filter((r) => r.out_at === null).length,
+      people: this.register?.size ?? new Set(rows.map((r) => r.person)).size,
+      visits: rows.map((r) => ({
+        person: r.person,
+        in: new Date(r.in_at).toISOString(),
+        out: r.out_at ? new Date(r.out_at).toISOString() : null,
+      })),
+    };
+  }
+
   async doorLogFor() {
     const cams = await this.get("cameras", {});
     const events = [];
@@ -2141,6 +2229,15 @@ export class VenueHub extends DurableObject {
       counted_net_from_door: doorNet !== null,
       /** Where "how many are here" came from when the door didn't answer. */
       counted_net_from_register: doorNet === null && registerNow > 0,
+      /**
+       * How many people the register has not yet recorded leaving.
+       *
+       * Different from "seen in the last few seconds" on purpose: this is
+       * the written record — every visit has an end, and these are the ones
+       * that do not have one yet. It is what answers "is the building
+       * clear", which a live count cannot.
+       */
+      in_building_now: this.register?.inBuilding?.() ?? 0,
       /** The arrivals sum came out higher than the number of different people
        *  seen all service, so the register held the headline down. The page
        *  says so rather than quietly showing a smaller number than the sum

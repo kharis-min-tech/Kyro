@@ -5,6 +5,20 @@ AI Count is the main dashboard. It shows how many people are in the building, ho
 <Shot name="ai-count" alt="AI Count page: total people in building, chart of the day, arrival and exit times, Live Overview, AI Alerts and System Status" />
 
 
+## Comings and goings
+
+When somebody comes in, Kyro **logs it** — and when they go out, that visit is closed. If they come back, it's a **second visit**, not a second person.
+
+The panel shows how many are **still inside**, every visit with its in and out time, and how long each person has been there. It's the answer to the question nobody can get from an attendance total: *is the building clear?*
+
+- Somebody counts as having left once **no camera has seen them for five minutes**. Behind a pillar for two minutes isn't leaving.
+- The time shown is **when they were last seen**, not when Kyro became sure of it. Somebody who walked out at half past didn't leave at twenty-five to.
+- It survives a restart, so the building doesn't appear to empty and refill when Kyro restarts mid-service.
+
+::: info A person here is a number
+Kyro has **no names and no photographs**, and can't recognise anybody from one Sunday to the next. A person is a number, for that service only, and it goes when the service ends. This is the one screen where somebody might reasonably assume otherwise, so it says so on the panel too.
+:::
+
 ## Is this a person?
 
 The AI is asked *where are the people in this picture*, and it answers honestly. A cushion is person-shaped. So is a photograph of somebody held up to the lens. **Nothing in a single frame can settle it.**
