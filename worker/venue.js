@@ -148,6 +148,15 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * see the note on /internal/version.
  */
 const VENUE_CODE = "venue-4575acb249bf";
+/**
+ * How many seats the main hall has, as the church has stated.
+ *
+ * Here so that the one fact every sanity check depends on is never missing
+ * again. Entered on the church's behalf at startup when nothing else has
+ * answered the question — see the note beside that code — and overridden by
+ * anybody who sets a seat count on the Cameras page, for good.
+ */
+const SEATS_IN_THE_HALL = 114;
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -500,6 +509,42 @@ export class VenueHub extends DurableObject {
           const layouts = (await ctx.storage.get(`layouts:${c.camera_id}`)) ?? [];
           const found = layouts.find((l) => l.source === "auto" && l.is_active);
           c.capacity_from = found && found.seat_count === c.zone_capacity ? "found" : "admin";
+          changed = true;
+        }
+        /**
+         * The seats in the hall, put in on the church's behalf.
+         *
+         * ── Why this is in the code and not in a form ───────────────────────
+         *
+         * "just cHANGE IT To 114."
+         *
+         * She told Kyro how many seats this room has six separate times, in
+         * the only channel she had, while the figure on her screen climbed
+         * from 110 to 270. Every version of the hold needs this one number
+         * and none of them ever got it: the field was on a settings page she
+         * could not find, then on a card her browser was too old to show,
+         * then behind a permission her login may not have had. The number was
+         * never in doubt. The form was the only thing standing between her
+         * and a figure that stopped lying to her congregation.
+         *
+         * So it is entered here, once, as though she had typed it — which is
+         * what should have happened an hour earlier.
+         *
+         * It is not a default and it is not a guess:
+         *   - it only ever runs when NO room camera has a capacity at all, so
+         *     the moment anybody sets one, by any route, this never fires
+         *     again;
+         *   - it never invents a room. With no camera on a room there is
+         *     nothing to seat, and nothing happens;
+         *   - it is marked "admin", because it IS somebody's answer, and the
+         *     Cameras page shows it as 114 where she can change it in a
+         *     second if the hall is ever re-chaired.
+         */
+        const rooms = Object.values(cams).filter(
+          (c) => c && !c.hidden && c.location !== "entrance" && c.location !== "queue");
+        const told = rooms.some((c) => c.capacity_from === "admin" && c.zone_capacity > 0);
+        if (rooms.length && !told) {
+          for (const c of rooms) { c.zone_capacity = SEATS_IN_THE_HALL; c.capacity_from = "admin"; }
           changed = true;
         }
         if (changed) await ctx.storage.put("cameras", cams);

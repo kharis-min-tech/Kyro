@@ -355,5 +355,36 @@ function chairsChangeHands({ freeForReports, alike }) {
      r.diagnostics().two_boxes_one_person >= 1, `${r.diagnostics().two_boxes_one_person}`);
 }
 
+// ── The number is in, without a form ────────────────────────────────────────
+
+/**
+ * "just cHANGE IT To 114."
+ *
+ * She told Kyro how many seats this room has six separate times, in the only
+ * channel she had, while the figure on her screen climbed from 110 to 270.
+ * Every version of the hold needs that one number and none of them ever got
+ * it — the field was on a settings page she could not find, then on a card
+ * her browser was too old to show, then behind a permission her login may not
+ * have had. The number was never in doubt. The form was.
+ */
+{
+  const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
+  ok("the seats in the hall are written down where nothing can lose them",
+     /const SEATS_IN_THE_HALL = 114;/.test(worker));
+  ok("and put in on the church's behalf when nothing else has answered",
+     /for \(const c of rooms\) \{ c\.zone_capacity = SEATS_IN_THE_HALL; c\.capacity_from = "admin"; \}/.test(worker));
+  ok("only when no room camera has a capacity at all",
+     /const told = rooms\.some\(\(c\) => c\.capacity_from === "admin" && c\.zone_capacity > 0\);/.test(worker)
+     && /if \(rooms\.length && !told\) \{/.test(worker));
+  ok("never on a doorway or a queue, and never on a hidden camera",
+     /c && !c\.hidden && c\.location !== "entrance" && c\.location !== "queue"\);/.test(worker));
+  ok("it never invents a room to seat", /if \(rooms\.length && !told\)/.test(worker));
+  ok("and it is hers to change, for good, the moment she sets one",
+     /overridden by\s*\n \* anybody who sets a seat count on the Cameras page, for good\./.test(worker));
+  // The whole point: once it is in, the hold has something to hold against.
+  ok("so the hold finally has a number to answer to",
+     /attendance_over_seats: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap/.test(worker));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A hall of 114 chairs does not hold 300 people.");
 process.exit(fails ? 1 : 0);
