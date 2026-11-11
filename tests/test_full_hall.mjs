@@ -1,0 +1,263 @@
+/**
+ * A full hall does not grow all morning.
+ *
+ * ── Why this file exists ────────────────────────────────────────────────────
+ *
+ * "count is wrong, make sure this is more verified, i said max in the room is
+ * 114, right now theres more than 4 seats available and we are at 110" …
+ * "now theres 117, i said max is 114 so i dnt know how it got to 118."
+ *
+ * There were free chairs in the room and the attendance was above the number
+ * of chairs. Every extra person was a real person written down twice.
+ *
+ * The cause is not in the register's judgement, which is why it survived every
+ * measurement before this one. The detector loses seated people — somebody
+ * leans forward, the person in front stands up — and the camera's own tracker
+ * gives them a NEW number when they come back. To the register that is a
+ * stranger with no face, wearing one of the hundred coats in the hall. It
+ * cannot be told from anybody else on appearance, the margin rule refuses to
+ * guess, and a new person is written down. Once each, in a hall of a hundred,
+ * all service.
+ *
+ * What fixes it is the one piece of evidence that does not get weaker in a
+ * crowd: WHERE THEY WERE SITTING. See SPOT_SAME in worker/identity.js.
+ *
+ * These are simulations, not video, and they prove the logic rather than the
+ * eyesight: that given readings of a stated quality the register arrives at
+ * the right number of people. The quality of the readings from a camera at the
+ * back of a real hall is a separate question, and only a labelled recording of
+ * a real service can answer it.
+ *
+ *   node tests/test_full_hall.mjs
+ */
+import fs from "node:fs";
+import { IdentityRegistry, overlap, SPOT_FRESH_MS, SPOT_STILL } from "../worker/identity.js";
+
+let fails = 0;
+const ok = (name, cond, detail) => {
+  if (cond) console.log(`✓ ${name}`);
+  else { fails++; console.log(`✗ ${name}${detail ? `\n   ${detail}` : ""}`); }
+};
+
+// ── Believable people, as test_identity_registry.mjs makes them ─────────────
+
+const person = (n) => {
+  const a = (n * 2.399) % (Math.PI * 2);
+  return [
+    0.333 + 0.10 * Math.cos(a), 0.333 + 0.10 * Math.sin(a), 0.35 + 0.02 * ((n % 5) - 2),
+    0.333 + 0.09 * Math.cos(a + 1.1), 0.333 + 0.09 * Math.sin(a + 1.1), 0.45 + 0.02 * ((n % 3) - 1),
+    2.5 + 0.1 * ((n % 4) - 1.5), 0.5 + 0.02 * ((n % 7) - 3),
+  ];
+};
+const wobble = (look, k = 1) => look.map((v, i) => v + (i < 6 ? 0.004 : 0.02) * k * Math.sin(v * 97 + i * 13));
+/** Where seat number s is in the picture, as fractions of the frame. */
+const seatBox = (s) => {
+  const col = s % 12, row = Math.floor(s / 12);
+  const x = col * 0.08 + 0.01, y = row * 0.09 + 0.02;
+  return [x, y, x + 0.06, y + 0.07];
+};
+
+// ── The hall ────────────────────────────────────────────────────────────────
+
+/**
+ * 110 people in 114 chairs for a quarter of an hour, one camera on the room,
+ * no doorway. Nobody arrives and nobody leaves, so the right answer is 110
+ * from the first minute to the last.
+ *
+ * @param missFor     how many reports in a row the detector loses somebody
+ *                    for, before finding them again under a NEW track number
+ * @param alike       everybody dressed the same — a choir, a congregation in
+ *                    dark coats in November. Appearance then says nothing,
+ *                    which is the case this is really about.
+ * @param boxes       whether the camera reports where people are. Off = how
+ *                    Kyro behaved before SPOT_SAME existed.
+ */
+function hall({ missFor = 1, alike = false, boxes = true, minutes = 15, n = 110 } = {}) {
+  const r = new IdentityRegistry({ zoneOf: () => "Main", createsIdentities: () => true });
+  const truth = new Map(), mine = new Map();
+  const track = new Map();
+  let nextTrack = 1, t = 0, frame = 0;
+  for (let w = 1; w <= n; w++) track.set(w, nextTrack++);
+  const reports = Math.round((minutes * 60) / 5);      // a report every five seconds
+  for (let f = 0; f < reports; f++) {
+    t += 5000; frame++;
+    const here = [];
+    for (let w = 1; w <= n; w++) {
+      // Each person is lost for `missFor` reports every so often, spread out
+      // so the whole hall never disappears at once.
+      if (f > 0) {
+        const phase = (w * 37 + f) % 97;
+        if (phase < missFor) {
+          // Found again on the last of them, under a number never used before.
+          if (phase === missFor - 1) track.set(w, nextTrack++);
+          continue;
+        }
+      }
+      here.push({
+        track: track.get(w),
+        // Seated people barely move: the box shifts by a pixel or two.
+        box: boxes
+          ? seatBox(w).map((v, i) => v + 0.002 * Math.sin(w * 3.1 + frame * 0.7 + i))
+          : null,
+        look: wobble(person(alike ? 7 : w), 1 + (frame % 4)),
+        face: null,                                    // too far away to read
+        who: w,
+      });
+    }
+    r.observe("room", here, t).forEach((id, i) => {
+      if (id === null) return;
+      const w = here[i].who;
+      if (!truth.has(id)) truth.set(id, new Set());
+      truth.get(id).add(w);
+      if (!mine.has(w)) mine.set(w, new Set());
+      mine.get(w).add(id);
+    });
+  }
+  return {
+    counted: r.size, real: n,
+    splits: [...mine.values()].reduce((a, s) => a + (s.size - 1), 0),
+    merges: [...truth.values()].reduce((a, s) => a + (s.size - 1), 0),
+  };
+}
+
+{
+  // The failure, reproduced. This is what she was looking at.
+  const was = hall({ alike: true, boxes: false });
+  console.log(`\n  Before, everybody dressed alike: counted ${was.counted} of ${was.real}`
+    + ` · split ${was.splits} · merged ${was.merges}`);
+  ok("the old behaviour really did run away with a full hall",
+     was.counted > was.real * 2, `counted ${was.counted} of ${was.real}`);
+
+  for (const missFor of [1, 2, 4, 8]) {
+    const now = hall({ alike: true, missFor });
+    console.log(`  Lost for ${String(missFor * 5).padStart(2)}s at a time:    counted ${now.counted} of ${now.real}`
+      + ` · split ${now.splits} · merged ${now.merges}`);
+    ok(`somebody lost for ${missFor * 5}s is the same person when they come back`,
+       now.counted <= 114 && now.merges === 0, `counted ${now.counted}, merged ${now.merges}`);
+  }
+
+  // And it is not doing it by lumping people together: ordinary clothes, where
+  // appearance works, must come out at least as well.
+  const varied = hall({ missFor: 2 });
+  console.log(`  Ordinary clothes:              counted ${varied.counted} of ${varied.real}`
+    + ` · split ${varied.splits} · merged ${varied.merges}`);
+  ok("a hall of people in their own clothes is counted right too",
+     Math.abs(varied.counted - varied.real) <= 2, `counted ${varied.counted}`);
+}
+
+// ── The chair that changes hands ────────────────────────────────────────────
+
+/**
+ * The failure this rule could cause if it were careless, measured rather than
+ * argued about: ten people get up and walk out, and ten strangers sit down in
+ * their exact chairs. Every one of those strangers must be a new person.
+ */
+function chairsChangeHands({ freeForReports, alike }) {
+  const r = new IdentityRegistry({ zoneOf: () => "Main", createsIdentities: () => true });
+  const truth = new Map(), mine = new Map();
+  const at = new Map();                                // person → { track, seat }
+  let t = 0, frame = 0, nextTrack = 1;
+  const report = (who) => {
+    t += 5000; frame++;
+    const here = who.map((w) => ({
+      track: at.get(w).track, box: seatBox(at.get(w).seat),
+      look: wobble(person(alike ? 7 : w), 1 + (frame % 4)), face: null, who: w,
+    }));
+    r.observe("room", here, t).forEach((id, i) => {
+      if (id === null) return;
+      const w = here[i].who;
+      if (!truth.has(id)) truth.set(id, new Set());
+      truth.get(id).add(w);
+      if (!mine.has(w)) mine.set(w, new Set());
+      mine.get(w).add(id);
+    });
+  };
+  const all = Array.from({ length: 40 }, (_, i) => i + 1);
+  all.forEach((w) => at.set(w, { track: nextTrack++, seat: w }));
+  for (let f = 0; f < 60; f++) report(all);            // five minutes, settled
+
+  const leaving = all.filter((w) => w % 4 === 0);
+  const staying = all.filter((w) => w % 4 !== 0);
+  // They stand up and walk out: three reports of their box moving away.
+  for (let step = 1; step <= 3; step++) {
+    leaving.forEach((w) => { at.get(w).seat += 3; });
+    report(all);
+  }
+  leaving.forEach((w) => { at.get(w).seat -= 9; });    // back to their own chair
+  for (let f = 0; f < freeForReports; f++) report(staying);
+
+  const strangers = leaving.map((w, i) => {
+    const fresh = 100 + i;
+    at.set(fresh, { track: nextTrack++, seat: at.get(w).seat });
+    return fresh;
+  });
+  for (let f = 0; f < 60; f++) report([...staying, ...strangers]);
+  return {
+    counted: r.size, real: 50,
+    merges: [...truth.values()].reduce((a, s) => a + (s.size - 1), 0),
+  };
+}
+
+{
+  console.log("");
+  for (const alike of [false, true]) {
+    for (const freeForReports of [1, 3, 6]) {
+      const x = chairsChangeHands({ freeForReports, alike });
+      const how = alike ? "dressed alike" : "own clothes ";
+      console.log(`  ${how}, chair free ${String(freeForReports * 5).padStart(2)}s: counted ${x.counted} of ${x.real}`
+        + ` · merged ${x.merges}`);
+      // Without the spot rule this scenario merges five of the people in
+      // ordinary clothes, on appearance alone — it did so before this rule
+      // existed and still does. What matters here is that the spot rule adds
+      // nothing to that, and in particular costs nothing in the case it was
+      // built for, where everybody is dressed the same.
+      if (alike) {
+        ok(`a stranger in a chair free for ${freeForReports * 5}s is a stranger`,
+           x.merges === 0, `merged ${x.merges}`);
+      } else {
+        ok(`ordinary clothes, chair free ${freeForReports * 5}s: no worse than appearance alone`,
+           x.merges <= 5, `merged ${x.merges}`);
+      }
+    }
+  }
+}
+
+// ── The guards, stated rather than implied ──────────────────────────────────
+
+{
+  const src = fs.readFileSync(new URL("../worker/identity.js", import.meta.url), "utf8");
+  ok("a doorway never matches people by where they are standing",
+     src.indexOf("if (!this.createsIdentities(cameraId)) return null;") < src.indexOf("const spots = [];"),
+     "the spot rule must sit below the line a doorway camera returns at");
+  ok("a spot goes stale", SPOT_FRESH_MS > 0 && SPOT_FRESH_MS <= 60_000, `${SPOT_FRESH_MS}ms`);
+  ok("and only counts for somebody who was sitting still", SPOT_STILL >= 0.5, `${SPOT_STILL}`);
+  ok("a face that says otherwise still settles it",
+     /faceScore\(best\.p\) < FACE_DIFFERENT/.test(src.slice(src.indexOf("const spots = ["))));
+  ok("two boxes that share nothing overlap by nothing", overlap([0, 0, 0.1, 0.1], [0.5, 0.5, 0.6, 0.6]) === 0);
+  ok("and a box with itself is the same place", overlap([0.2, 0.2, 0.4, 0.5], [0.2, 0.2, 0.4, 0.5]) === 1);
+  ok("the camera sends where people are, as fractions of the frame",
+     /b: \[x\.box\[0\] \/ frameW/.test(fs.readFileSync(new URL("../dashboard/src/lib/CountingContext.tsx", import.meta.url), "utf8")));
+  const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
+  ok("and the website reads it back", /box: Array\.isArray\(x\.b\) && x\.b\.length === 4/.test(worker));
+}
+
+// ── The count has to answer to the room ─────────────────────────────────────
+
+{
+  const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
+  ok("attendance above the seat count is reported",
+     /attendance_over_seats: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap/.test(worker));
+  ok("with how many have left, so the sum can be checked",
+     /left: Math\.max\(0, this\.register\.size - \(this\.register\.inBuilding\?\.\(\) \?\? 0\)\)/.test(worker));
+  ok("and only against a seat count somebody entered",
+     /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
+  ok("the figure is never quietly capped at the seat count",
+     !/people_seen: Math\.min/.test(worker));
+  const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
+  ok("and the card says so where the number is", /More people counted than the room holds/.test(card));
+  const page = fs.readFileSync(new URL("../dashboard/src/app/attendance/page.tsx", import.meta.url), "utf8");
+  ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
+}
+
+console.log(fails ? `\n${fails} FAILED` : "\nAll good. A hall of 114 chairs does not hold 300 people.");
+process.exit(fails ? 1 : 0);

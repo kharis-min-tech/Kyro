@@ -185,6 +185,64 @@ export const UNIFORM_SEEN_MS = 60_000;
 export const SEAT_HELPS = 0.04;
 /** How long a seat stays believable as a hint about who somebody is. */
 export const SEAT_FRESH_MS = 60_000;
+/**
+ * The same place in the picture, a moment later: the same person.
+ *
+ * ── Why ─────────────────────────────────────────────────────────────────────
+ *
+ * "count is wrong, make sure this is more verified, i said max in the room is
+ * 114 ... now theres 117."
+ *
+ * A seated congregation is the hardest thing in this file, for a reason that
+ * has nothing to do with the register. The detector loses people: somebody
+ * leans forward, the person in front stands up, the light changes, and for
+ * one report they are not there. The camera's own tracker gives them a NEW
+ * number when they come back — and from the register's point of view a new
+ * number with no face is a stranger. Everything else here then does its job
+ * properly and arrives at the wrong answer: their coat is the same as fifty
+ * other coats in the hall, so appearance cannot pick them out of the people
+ * on file; the margin rule refuses to guess; and a new person is written
+ * down. Once an hour each, in a hall of a hundred, is a register that climbs
+ * all service and never comes back down.
+ *
+ * Measured on a simulated full hall — 110 people, nobody leaving, the
+ * detector dropping somebody about once every eight minutes: the register
+ * reached 200. Not one of them was a merge. They were all the same people,
+ * written down again.
+ *
+ * WHERE THEY WERE SITTING answers it, and it is evidence of a completely
+ * different kind from a coat: it does not get weaker in a crowd. A hall where
+ * everybody is dressed alike is still a hall where only one person is in that
+ * spot. Five seconds later they are, to the pixel, where they were.
+ *
+ * Guarded so that it can only ever say "this is the person who was here":
+ *   - never at a doorway, where a stream of different people cross the same
+ *     patch of floor all morning (see createsIdentities);
+ *   - only against somebody nobody else is already accounted as;
+ *   - only when ONE person was in that spot — a second candidate anywhere
+ *     near means the spot is not telling you anything;
+ *   - a readable face that says "not them" still settles it the other way,
+ *     and an appearance that says "obviously somebody else" still blocks it.
+ */
+export const SPOT_SAME = 0.5;
+/** …and how far clear of the next-best spot it has to be. */
+export const SPOT_MARGIN = 0.2;
+/**
+ * How long a spot stays believable.
+ *
+ * Short on purpose. The failure this exists for lasts seconds — a person
+ * missed for a report or two and found again. Stretch it to minutes and it
+ * starts answering a different question, "who was sitting here earlier",
+ * which is how one person gets handed somebody else's chair.
+ */
+export const SPOT_FRESH_MS = 45_000;
+/**
+ * How still somebody has to have been for their spot to be theirs.
+ *
+ * Their last two boxes, overlapped. A seated person barely moves between one
+ * report and the next; somebody walking out of a row does not.
+ */
+export const SPOT_STILL = 0.6;
 /** Two cameras reporting one person this close together is the same moment. */
 export const CO_SEEN_MS = 6_000;
 /** A camera's own track stays attached to its identity for this long. */
@@ -296,6 +354,24 @@ export const LOOK_SAMPLES_SAVED = 8;
 /** Nobody crosses a building in less than this, so two cameras that don't
  *  overlap cannot both see the same person inside it. */
 export const TRAVEL_MS = 1_500;
+
+/**
+ * How much two boxes are the same patch of picture, 0–1.
+ *
+ * The shared area over the area they cover between them. Both are fractions
+ * of the frame, so this means the same thing whatever the camera's
+ * resolution — and goes on meaning it when she plugs in a different camera.
+ */
+export const overlap = (a, b) => {
+  if (!a || !b || a.length < 4 || b.length < 4) return 0;
+  const w = Math.min(a[2], b[2]) - Math.max(a[0], b[0]);
+  const h = Math.min(a[3], b[3]) - Math.max(a[1], b[1]);
+  if (w <= 0 || h <= 0) return 0;
+  const both = w * h;
+  const area = (x) => Math.max(0, x[2] - x[0]) * Math.max(0, x[3] - x[1]);
+  const all = area(a) + area(b) - both;
+  return all > 0 ? both / all : 0;
+};
 
 const dot = (a, b) => {
   let s = 0;
@@ -774,6 +850,70 @@ export class IdentityRegistry {
     // to decide that — see createsIdentities.
     if (!this.createsIdentities(cameraId)) return null;
 
+    /**
+     * …but somebody was standing in exactly this spot a moment ago.
+     *
+     * This is the rule that keeps a full hall from climbing all morning. Its
+     * reasoning, its guards and what it was measured against are written out
+     * at SPOT_SAME; what follows is only the arithmetic.
+     *
+     * Deliberately BEFORE the waiting list below. Everything below this line
+     * is about being careful with a stranger — and this is not a stranger,
+     * it is somebody already in the register who was lost for a moment. Made
+     * to wait, they would be written down as new all over again.
+     */
+    if (o.box) {
+      const spots = [];
+      for (const p of this.people.values()) {
+        if (claimed.has(p.id)) continue;
+        const s = p.spots?.get(cameraId);
+        if (!s || now - s.at > SPOT_FRESH_MS) continue;
+        /**
+         * They were SITTING there, not walking past.
+         *
+         * This is what tells the two cases apart, and without it the rule
+         * cuts both ways. Somebody the detector dropped was sitting still
+         * when it lost them: their last two boxes are the same handful of
+         * pixels. Somebody who got up and walked out was moving when they
+         * were last seen — and their chair is now genuinely free for
+         * somebody else, who must be counted as somebody else.
+         *
+         * Measured: ten people leaving and ten strangers taking their exact
+         * chairs, everybody dressed alike — the worst case there is. Without
+         * this line all ten strangers inherited somebody else's entry and
+         * the attendance was ten short. With it, none of them did, and the
+         * full hall above is still rescued.
+         */
+        if (!s.prev || overlap(s.prev, s.box) < SPOT_STILL) continue;
+        // Seen since, somewhere else: they have moved, and where they were
+        // sitting says nothing about who is sitting there now.
+        if (p.lastAt - s.at > CO_SEEN_MS) continue;
+        const score = overlap(s.box, o.box);
+        if (score > 0) spots.push({ p, score });
+      }
+      spots.sort((x, y) => y.score - x.score);
+      const best = spots[0];
+      const second = spots[1]?.score ?? 0;
+      if (best && best.score >= SPOT_SAME && best.score - second >= SPOT_MARGIN
+          // A readable face that is plainly not theirs settles it the other
+          // way, and an appearance that says "obviously somebody else"
+          // blocks it — the same two vetoes every other rule here answers to.
+          && !(faceReads.length && best.p.faces.length && faceScore(best.p) < FACE_DIFFERENT)
+          && !(lookReads.length && best.p.looks.length && lookScore(best.p) < LOOK_ASK)) {
+        this.stats.matchedBySpot = (this.stats.matchedBySpot || 0) + 1;
+        // Only worth a human's time when the spot was a near thing. At the
+        // top of the range it is the same handful of pixels five seconds
+        // later, and there is nothing for anybody to look at.
+        if (best.score < 0.8) {
+          askAbout("same", best.p, {
+            score: Math.round(best.score * 1000) / 1000, had_face: faceReads.length > 0,
+            reason: "they were in this exact spot a moment ago",
+          });
+        }
+        return matched(this.touch(best.p.id, cameraId, o, now, w).id);
+      }
+    }
+
     // Nobody fits YET.
     //
     // A sighting that matches nobody is not a new person until it has given
@@ -1018,6 +1158,14 @@ export class IdentityRegistry {
        * written down.
        */
       seenAt: new Map([[cameraId, now]]),
+      /**
+       * Where each camera last saw them in its picture, and when.
+       *
+       * Transient like seenAt, and for the same reason: it is a statement
+       * about the last few seconds, not a record of the service, and the
+       * next report rebuilds it. See SPOT_SAME.
+       */
+      spots: o.box ? new Map([[cameraId, { box: o.box, prev: null, at: now }]]) : new Map(),
       looks: [], faces: [],
       seen: 1,
       uncertain: 0,
@@ -1114,6 +1262,11 @@ export class IdentityRegistry {
     p.cameras.add(cameraId);
     if (!p.seenAt) p.seenAt = new Map();
     p.seenAt.set(cameraId, now);
+    if (o.box) {
+      if (!p.spots) p.spots = new Map();
+      const was = p.spots.get(cameraId);
+      p.spots.set(cameraId, { box: o.box, prev: was?.box ?? null, at: now });
+    }
     p.seen++;
     // Keep a few readings each, so somebody is recognised in the light they
     // are standing in rather than the light they first appeared in.
@@ -1447,6 +1600,13 @@ export class IdentityRegistry {
       in_a_uniform: this.stats.uniformed,
       /** Matches where the seat they were in tipped the balance. */
       helped_by_their_seat: this.stats.helpedBySeat,
+      /**
+       * Somebody the detector lost for a moment, recognised as the person
+       * who was sitting in that spot rather than written down as new. In a
+       * full hall this is the biggest single thing standing between the
+       * attendance and a number that climbs all morning — see SPOT_SAME.
+       */
+      found_again_in_their_seat: this.stats.matchedBySpot ?? 0,
       /** Times somebody changed seats. Never a new person. */
       changed_seats: this.stats.movedSeat,
       seated_now: [...this.seats.keys()].length,
@@ -1550,7 +1710,7 @@ export class IdentityRegistry {
       this.people.set(id, {
         // Who was seen a moment ago is a question about now, not about the
         // service so far, so it starts empty and the next report fills it.
-        seenAt: new Map(),
+        seenAt: new Map(), spots: new Map(),
         id, firstAt: p.f ?? p.firstAt ?? 0, lastAt: p.l ?? p.lastAt ?? 0,
         seen: p.n ?? p.seen ?? 1, uncertain: p.u ?? p.uncertain ?? 0,
         cameras: new Set(p.c ?? p.cameras ?? []), lastCamera: p.k ?? p.lastCamera ?? "",

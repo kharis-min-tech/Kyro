@@ -795,9 +795,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // used for both the seat states and the register, so the two cannot
         // disagree about where somebody is sitting.
         const following = c.tracker.seenNow();
+        const frameW = c.video?.videoWidth || 1280, frameH = c.video?.videoHeight || 720;
         const seatOf = c.isDoor ? [] : c.seatFinder.whoIsWhere(
           following.map((x) => x.box as [number, number, number, number]),
-          c.video?.videoWidth || 1280, c.video?.videoHeight || 720).seatOfPerson;
+          frameW, frameH).seatOfPerson;
         return ({
         key: c.key, label: c.label, current: c.count, peak: c.peak,
         entries: c.tracker.entries, exits: c.tracker.exits,
@@ -815,6 +816,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // never a picture. See worker/identity.js.
         seen: following.slice(0, 40).map((x, i) => ({
           t: x.track,
+          // Where in the picture they are, as four fractions of the frame.
+          // Fractions rather than pixels so it means the same thing on any
+          // camera. The website uses it to recognise somebody the detector
+          // lost for a report or two as the person who was sitting in that
+          // spot, instead of writing them down as a new arrival — which in a
+          // full hall is where a register goes wrong. See SPOT_SAME in
+          // worker/identity.js.
+          b: [x.box[0] / frameW, x.box[1] / frameH, x.box[2] / frameW, x.box[3] / frameH]
+            .map((v) => Math.round(Math.max(0, Math.min(1, v)) * 1000) / 1000),
           // Which seat this person is in, if any. Context for the register,
           // never proof of who they are — see SEAT_HELPS in identity.js.
           s: seatOf[i] ?? null,

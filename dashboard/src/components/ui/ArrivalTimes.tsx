@@ -63,7 +63,7 @@ function StatTile({ label, value, sub, swatch }: { label: string; value: string;
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -116,6 +116,13 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * arrival, every time.
    */
   movement?: PeopleMovement | null;
+  /**
+   * More different people counted this service than the room has seats, when
+   * that has happened and hardly anybody has left — the one check on this
+   * count that comes from a fact about the building rather than from the
+   * thing being checked. See attendance_over_seats in worker/venue.js.
+   */
+  overSeats?: { seats: number; counted: number; left: number } | null;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -406,6 +413,26 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 counted both ways, and arrivals climbed while rooms emptied. They are shown because
                 nothing is ever deleted, not because they are right. The attendance counts are
                 unaffected, and were always measured properly.
+              </p>
+            </div>
+          )}
+
+          {/* The room's own answer, against the count. A hall with 114 seats
+              did not hold 117 different people in a morning when three of
+              them have left. */}
+          {overSeats && usingRegister && (
+            <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+              style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.45)" }}>
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#b45309" }} />
+              <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                <strong>More people counted than the room holds.</strong> You have told Kyro
+                there are {overSeats.seats.toLocaleString()} seats. It has counted{" "}
+                {overSeats.counted.toLocaleString()} different people and recorded{" "}
+                {overSeats.left.toLocaleString()} of them leaving, so at least{" "}
+                {Math.max(1, overSeats.counted - overSeats.left - overSeats.seats).toLocaleString()}{" "}
+                of them had nowhere to sit. Either people are standing, or somebody has been
+                counted twice — most often somebody the camera lost for a moment and found
+                again. The figure is shown as it was measured, not quietly corrected.
               </p>
             </div>
           )}

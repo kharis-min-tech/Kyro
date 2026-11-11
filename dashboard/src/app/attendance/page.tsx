@@ -1642,6 +1642,12 @@ export default function AttendancePage() {
                    this is here the card uses it instead of the cameras' own
                    tallies — see the note in lib/arrivals.ts. */
                 movement={edge && isToday ? (venueTotal as { movement?: PeopleMovement | null } | null)?.movement ?? null : null}
+                /* The seat count she entered, against the number of different
+                   people counted. Today only: the seats in the room now say
+                   nothing about a service three weeks ago. */
+                overSeats={edge && isToday
+                  ? (venueTotal as { attendance_over_seats?: { seats: number; counted: number; left: number } | null } | null)?.attendance_over_seats ?? null
+                  : null}
                 doorMode={doorMode} doorModeBy={doorModeBy}
                 onDoorMode={edge && !userChoseDemo() && (venueTotal?.in_out_from_door ?? false) ? setDoorMode : undefined} />
             )}

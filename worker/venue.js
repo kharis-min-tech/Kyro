@@ -1299,6 +1299,14 @@ export class VenueHub extends DurableObject {
         face: faceOk && typeof x.f === "string" ? unpackFace(x.f) : null,
         // Which seat they are in, if any — context, never proof of who.
         seat: typeof x.s === "string" ? clean(x.s, 24) : null,
+        // Where in the picture this sighting is, as four fractions of the
+        // frame. Resolution-independent on purpose, so it goes on meaning
+        // the same thing when a different camera is plugged in. It is how
+        // somebody the detector lost for a moment is recognised as the
+        // person who was sitting there — see SPOT_SAME in identity.js.
+        box: Array.isArray(x.b) && x.b.length === 4 && x.b.every((v) => Number.isFinite(Number(v)))
+          ? x.b.map((v) => Math.max(0, Math.min(1, Number(v))))
+          : null,
         // How many seconds this box has not moved at all, when that is long
         // enough to be worth asking about. A seated person is never still;
         // a pillow, a coat over a chair or a poster is.
@@ -2291,6 +2299,41 @@ export class VenueHub extends DurableObject {
        * the picture it would be one guess accusing another.
        */
       over_capacity: cap > 0 && hereNow > cap ? { seats: cap, counted: hereNow } : null,
+      /**
+       * More DIFFERENT people counted this service than the room has seats.
+       *
+       * "count is wrong, make sure this is more verified, i said max in the
+       * room is 114 ... now theres 117, i said max is 114 so i dnt know how
+       * it got to 118."
+       *
+       * Different from over_capacity above, which is about this moment: a
+       * hall of 114 seats holding 130 people. This is about the service as a
+       * whole, and it is the check that catches the failure she actually
+       * hit. Attendance counts each person once and only climbs, so it CAN
+       * honestly pass the seat count — a morning where fifty people leave
+       * and fifty more arrive is 100 in a hall of 60, and nothing is wrong.
+       * What makes it wrong is passing the seat count when hardly anybody
+       * has left: there was never anywhere for the extra people to sit.
+       *
+       * So the figures that decide it are sent with it — the seats, the
+       * count, and how many the register has actually recorded leaving — and
+       * the page says the sum out loud rather than printing a number that
+       * the room contradicts. Reported, never capped: a count quietly held
+       * at 114 is a count nobody can investigate, and this is Kyro saying it
+       * got something wrong, which it must be able to do.
+       *
+       * Only ever raised against a seat count somebody ENTERED. Against one
+       * Kyro guessed from the picture it would be one guess accusing
+       * another — see capacity_from.
+       */
+      attendance_over_seats: cap > 0 && (this.register?.size || 0) > cap
+        ? {
+            seats: cap,
+            counted: this.register.size,
+            /** Recorded as having left — every visit the register has closed. */
+            left: Math.max(0, this.register.size - (this.register.inBuilding?.() ?? 0)),
+          }
+        : null,
       /**
        * How many people the register has not yet recorded leaving.
        *
