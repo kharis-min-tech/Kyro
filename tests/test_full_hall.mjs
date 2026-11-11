@@ -246,10 +246,10 @@ function chairsChangeHands({ freeForReports, alike }) {
 {
   const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
   ok("attendance above the seat count is reported",
-     /attendance_over_seats: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap/.test(worker));
+     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
   ok("with how many have left, so the sum can be checked",
      /left: Math\.max\(0, this\.register\.size - \(this\.register\.inBuilding\?\.\(\) \?\? 0\)\)/.test(worker));
-  ok("and only against a seat count somebody entered",
+  ok("built from capacities somebody entered, never ones Kyro guessed",
      /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
   ok("the figure is never quietly capped at the seat count",
      !/people_seen: Math\.min/.test(worker));
@@ -268,7 +268,33 @@ function chairsChangeHands({ freeForReports, alike }) {
    * become a number nobody can check.
    */
   ok("the figure on the screen is held at the seat count",
-     /people_seen_shown: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap\s*\n\s*\? cap/.test(worker));
+     /people_seen_shown: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere\s*\n\s*\? seatsHere/.test(worker));
+  /**
+   * And the seats are a fact about the HALL, not about a camera.
+   *
+   * "both cameras are set as entrance and exit."
+   *
+   * Seats were stored against a room camera. A building whose cameras are
+   * all on doorways has no room — so there was nowhere to put a seat count,
+   * the field never appeared, the number entered on her behalf had nothing
+   * to attach to, and every version of the hold checked an attendance of 280
+   * against a capacity of zero and let it through. Six rounds of "114 is
+   * still not there", and the number had nowhere to live.
+   */
+  ok("the seats fall back to what the church has stated about the building",
+     /const seatsHere = cap > 0 \? cap : SEATS_IN_THE_HALL;/.test(worker));
+  ok("and the hold is checked against that, not against a camera's capacity",
+     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
+  // But NOT "spaces left" or "how full": a building with no camera on a room
+  // genuinely cannot say how full it is, and must not pretend to.
+  ok("while how-full still needs a camera actually watching a room",
+     /over_capacity: cap > 0 && hereNow > cap/.test(worker)
+     && /total_capacity: cap,/.test(worker));
+  ok("and having no camera on a room is said out loud, not left to be noticed",
+     /Every camera is set as a doorway, so nothing is watching the room itself\./.test(worker));
+  ok("with the two clicks that fix it",
+     /set its location to the indoor /.test(worker));
+  ok("cleared the moment one is", /\} else if \(anyRoom\) \{\s*\n\s*await this\.working\("Cameras"\);/.test(worker));
   ok("but the measurement itself is not touched",
      /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
   const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
@@ -383,7 +409,7 @@ function chairsChangeHands({ freeForReports, alike }) {
      /overridden by\s*\n \* anybody who sets a seat count on the Cameras page, for good\./.test(worker));
   // The whole point: once it is in, the hold has something to hold against.
   ok("so the hold finally has a number to answer to",
-     /attendance_over_seats: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap/.test(worker));
+     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A hall of 114 chairs does not hold 300 people.");

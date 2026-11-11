@@ -147,7 +147,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-const VENUE_CODE = "venue-4575acb249bf";
+const VENUE_CODE = "venue-10fa093ea618";
 /**
  * How many seats the main hall has, as the church has stated.
  *
@@ -1117,6 +1117,34 @@ export class VenueHub extends DurableObject {
       // became sure of it. See closeDeparted in worker/identity.js.
       this.register?.closeDeparted?.(now, LEFT_AFTER_MS);
       await this.working("Register of people");
+      /**
+       * Nothing is watching a room.
+       *
+       * "both cameras are set as entrance and exit."
+       *
+       * A camera on a doorway answers "who went through". It cannot answer
+       * "how many are in the hall", it has no seats, and it cannot hold a
+       * seat count — so a building whose cameras are ALL on doorways
+       * silently loses the seat count, the room count, how full it is, the
+       * filling-up alerts, and every sanity check that rests on them. Kyro
+       * went on reporting a confident attendance figure throughout, with
+       * nothing left able to contradict it.
+       *
+       * It is a two-click fix and it was invisible for an entire service,
+       * which is the only reason this is here. Said once, cleared the moment
+       * a camera is pointed at a room.
+       */
+      const anyRoom = Object.values(cams).some(
+        (c) => c && !c.hidden && !c.pending && c.location !== "entrance" && c.location !== "queue");
+      if (!anyRoom && Object.values(cams).some((c) => c && !c.hidden && !c.pending)) {
+        await this.wrong("Cameras",
+          "Every camera is set as a doorway, so nothing is watching the room itself.",
+          "A doorway camera counts people through a door; it has no seats and cannot say how full the hall is. "
+          + "On the Cameras page, open the camera pointed at the congregation and set its location to the indoor "
+          + "option. Seats, how full the room is and the filling-up alerts all come back on.");
+      } else if (anyRoom) {
+        await this.working("Cameras");
+      }
     } catch (e) {
       // This is the serious one. With the register gone, attendance falls back
       // to each camera's own tally, which counts the same congregation over
@@ -2191,6 +2219,34 @@ export class VenueHub extends DurableObject {
     // would make "space left" and "how full" for the whole building rest on
     // what a camera thought it could see — see syncCapacity.
     const cap = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
+    /**
+     * The seats in the building, for checking the attendance figure against.
+     *
+     * ── Why this is not `cap` ───────────────────────────────────────────────
+     *
+     * "both cameras are set as entrance and exit."
+     *
+     * Seats were stored against a ROOM camera, and a building whose cameras
+     * are all on doorways has no room. So there was nowhere to put a seat
+     * count: the field never appeared on the Cameras page, the number
+     * entered on her behalf had nothing to attach to, and every version of
+     * the hold built tonight was checking an attendance of 280 against a
+     * capacity of zero and letting it through. Six rounds of "114 is still
+     * not there", and the number had nowhere to live.
+     *
+     * The seats are a fact about the HALL. It has 114 chairs in it whether a
+     * camera is pointed at them or not. So the check falls back to what the
+     * church has stated about its own building.
+     *
+     * Kept apart from `cap` on purpose, and used ONLY here. `cap` drives
+     * "spaces left", "how full" and the filling-up alerts, and those must go
+     * on meaning "a camera is watching a room and somebody said how many
+     * chairs are in it" — a building with no room camera genuinely cannot
+     * say how full it is and must not pretend to. This answers a different
+     * question: is the number of DIFFERENT PEOPLE recorded even possible in
+     * this building?
+     */
+    const seatsHere = cap > 0 ? cap : SEATS_IN_THE_HALL;
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);
@@ -2413,13 +2469,15 @@ export class VenueHub extends DurableObject {
        * at 114 is a count nobody can investigate, and this is Kyro saying it
        * got something wrong, which it must be able to do.
        *
-       * Only ever raised against a seat count somebody ENTERED. Against one
-       * Kyro guessed from the picture it would be one guess accusing
-       * another — see capacity_from.
+       * Raised against a seat count somebody ENTERED, or against the seat
+       * count the church has stated for this building when no camera is
+       * watching a room to hang one on — never against a count Kyro guessed
+       * from a picture, which would be one guess accusing another. See
+       * capacity_from and seatsHere.
        */
-      attendance_over_seats: cap > 0 && (this.register?.size || 0) > cap
+      attendance_over_seats: seatsHere > 0 && (this.register?.size || 0) > seatsHere
         ? {
-            seats: cap,
+            seats: seatsHere,
             counted: this.register.size,
             /** Recorded as having left — every visit the register has closed. */
             left: Math.max(0, this.register.size - (this.register.inBuilding?.() ?? 0)),
@@ -2458,8 +2516,8 @@ export class VenueHub extends DurableObject {
        * on her say-so, it does not. Only ever against a seat count somebody
        * entered — never one Kyro guessed.
        */
-      people_seen_shown: cap > 0 && (this.register?.size || 0) > cap
-        ? cap
+      people_seen_shown: seatsHere > 0 && (this.register?.size || 0) > seatsHere
+        ? seatsHere
         : (this.register?.size ?? sum("people")),
       /**
        * How many people the register has not yet recorded leaving.
