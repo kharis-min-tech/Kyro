@@ -14,7 +14,7 @@ import { useCameras } from "@/hooks/useCameras";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
 const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
-import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2, RotateCcw } from "lucide-react";
+import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { AttendancePoint, AnalyticsSummary, HourlyBucket } from "@/types";
 
@@ -542,6 +542,9 @@ export default function AnalyticsPage() {
   const firstHalf  = filtered.slice(0,Math.floor(filtered.length/2)).reduce((s,d)=>s+d.attendance,0)/(Math.floor(filtered.length/2)||1);
   const secondHalf = filtered.slice(Math.floor(filtered.length/2)).reduce((s,d)=>s+d.attendance,0)/(Math.ceil(filtered.length/2)||1);
   const trend      = firstHalf>0?Math.round(((secondHalf-firstHalf)/firstHalf)*100):0;
+  /** How many days are being shown held at what the room holds — see
+   *  days_held in worker/venue.js. */
+  const held      = summary?.days_held ?? 0;
 
   return (
     <div className="flex min-h-screen text-gray-100" style={{ background: BG }}>
@@ -631,6 +634,32 @@ export default function AnalyticsPage() {
                 <Stat label="Avg occupancy" value={`${summary.avg_occupancy_pct}%`} sub="Of seat capacity" icon={BarChart2} accent="#818cf8"/>
               </div>
             )}
+            {/**
+              * Said where the numbers are, when they are being held.
+              *
+              * "its not accurate, not 302 but 114." The live card was holding
+              * its figure at the seat count while this page, one click away,
+              * reported the same day as 302. One number saying two different
+              * things on two screens is worse than either alone — so the hold
+              * now happens where the figure is worked out, and this says so
+              * rather than letting a quietly smaller number pass as a
+              * correction nobody was told about.
+              */}
+            {summary && held > 0 && (
+              <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+                style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.45)" }}>
+                <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#b45309" }} />
+                <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+                  <strong>Held at what the room holds.</strong>{" "}
+                  {held === 1 ? "One day is" : `${held} days are`}{" "}
+                  showing {(summary.seats_in_building ?? 0).toLocaleString()} rather than what was
+                  counted, because this building does not have room for more. The largest figure behind these is{" "}
+                  {(summary.counted_before_holding ?? 0).toLocaleString()},
+                  and every reading is kept exactly as it was recorded — nothing here has been deleted or rewritten.
+                </p>
+              </div>
+            )}
+
             {/* Where these numbers come from. A camera on the door answers
                 "how many are in the building" far better than a camera on the
                 room, which can only report its own corner of a wide hall — and

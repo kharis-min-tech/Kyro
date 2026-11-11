@@ -249,6 +249,11 @@ export interface AnalyticsSummary {
   camera_id: string;
   total_sessions: number;
   all_time_peak: number;
+  /** Days whose attendance is being shown held at what the room holds,
+   *  and what was counted on them. See attendance_held_at in worker/venue.js. */
+  days_held?: number;
+  counted_before_holding?: number;
+  seats_in_building?: number;
   avg_attendance: number;
   avg_occupancy_pct: number;
   first_session: string | null;

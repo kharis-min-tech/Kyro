@@ -43,6 +43,12 @@ function run({ rows, cams, people }) {
     // and when each of them arrived and left. Empty unless a case supplies it,
     // which is also the truth for every day recorded before it existed.
     peopleByDay: () => people ?? new Map(),
+    // How many seats the building has. Zero here on purpose: these cases are
+    // about how a day's attendance is WORKED OUT, and holding it at what the
+    // room holds is a separate question with its own file
+    // (test_full_hall.mjs). Zero means "nothing to hold against", which is
+    // also the truth for a building nobody has told.
+    seatsInBuilding: async () => 0,
   };
   const fn = new Function("IN_OUT_TRUSTED_FROM", "countedMovement", `return (async function () {
     ${body.replace("async daily(url) {", "const daily = async function (url) {").replace(/\n  }$/, "\n  };")}

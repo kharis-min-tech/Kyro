@@ -282,7 +282,7 @@ function chairsChangeHands({ freeForReports, alike }) {
    * still not there", and the number had nowhere to live.
    */
   ok("the seats fall back to what the church has stated about the building",
-     /const seatsHere = cap > 0 \? cap : SEATS_IN_THE_HALL;/.test(worker));
+     /const entered = \[\.\.\.byRoom\.values\(\)\]\.reduce\(\(n, v\) => n \+ v, 0\);\s*\n\s*return entered > 0 \? entered : SEATS_IN_THE_HALL;/.test(worker));
   ok("and the hold is checked against that, not against a camera's capacity",
      /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
   // But NOT "spaces left" or "how full": a building with no camera on a room
@@ -341,6 +341,35 @@ function chairsChangeHands({ freeForReports, alike }) {
      pair(294, 0, 114)[1] === 0, JSON.stringify(pair(294, 0, 114)));
   ok("with the people still in the building kept exactly right",
      pair(300, 299, 114)[0] - pair(300, 299, 114)[1] === 1);
+
+  /**
+   * One number, on every screen.
+   *
+   * "its not accurate, not 302 but 114."
+   *
+   * The live card held its figure at the seat count while the history page,
+   * one click away, reported the same day as 302 under "Busiest day" and
+   * "Average attendance". One number saying two different things on two
+   * screens is worse than either of them alone — so the hold moved to where
+   * a day's attendance is worked out, and both pages read the same answer.
+   */
+  ok("there is one answer to how many seats this building has",
+     /async seatsInBuilding\(\) \{/.test(worker));
+  ok("the live figures use it", /const seatsHere = await this\.seatsInBuilding\(\);/.test(worker));
+  ok("and so does every day in the history", /const seats = await this\.seatsInBuilding\(\);/.test(worker));
+  ok("a day is held at the seats, or the most ever seen at once, whichever is larger",
+     /const ceiling = Math\.max\(seats, v\.peak \|\| 0\);/.test(worker)
+     && /const attendance = seats > 0 \? Math\.min\(measured, ceiling\) : measured;/.test(worker));
+  ok("and what was counted is kept beside it, never overwritten",
+     /attendance_measured: attendance === measured \? null : measured,/.test(worker));
+  ok("two cameras on one hall do not make it two halls",
+     /byRoom\.set\(room, Math\.max\(byRoom\.get\(room\) \?\? 0, c\.zone_capacity\)\);/.test(worker));
+  ok("and a doorway or a queue is never counted as a room",
+     /if \(c\.location === "entrance" \|\| c\.location === "queue"\) continue;/.test(worker));
+  const an = fs.readFileSync(new URL("../dashboard/src/app/analytics/page.tsx", import.meta.url), "utf8");
+  ok("the history page says when a figure is being held",
+     /Held at what the room holds\./.test(an));
+  ok("naming the largest figure behind it", /counted_before_holding/.test(an));
   const page = fs.readFileSync(new URL("../dashboard/src/app/attendance/page.tsx", import.meta.url), "utf8");
   ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
 
@@ -433,14 +462,24 @@ function chairsChangeHands({ freeForReports, alike }) {
   const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
   ok("the seats in the hall are written down where nothing can lose them",
      /const SEATS_IN_THE_HALL = 114;/.test(worker));
-  ok("and put in on the church's behalf when nothing else has answered",
-     /for \(const c of rooms\) \{ c\.zone_capacity = SEATS_IN_THE_HALL; c\.capacity_from = "admin"; \}/.test(worker));
-  ok("only when no room camera has a capacity at all",
-     /const told = rooms\.some\(\(c\) => c\.capacity_from === "admin" && c\.zone_capacity > 0\);/.test(worker)
-     && /if \(rooms\.length && !told\) \{/.test(worker));
-  ok("never on a doorway or a queue, and never on a hidden camera",
-     /c && !c\.hidden && c\.location !== "entrance" && c\.location !== "queue"\);/.test(worker));
-  ok("it never invents a room to seat", /if \(rooms\.length && !told\)/.test(worker));
+  /**
+   * …and it is NOT copied onto the cameras.
+   *
+   * Writing 114 to every room camera was the wrong shape, and it broke in
+   * exactly the way everything else here breaks: two cameras watching one
+   * hall, under two different room names, each holding 114 — so Kyro decided
+   * the building seats 228 and the hold let 228 through. A fact about the
+   * building lives in one place and is never copied onto anything that can
+   * be duplicated.
+   */
+  ok("and it is never written onto a camera, where it would double",
+     !/c\.zone_capacity = SEATS_IN_THE_HALL/.test(worker));
+  ok("any copy that was already made is taken back off",
+     /if \(c\.zone_capacity !== SEATS_IN_THE_HALL\) continue;   \/\/ somebody's own number: leave it/.test(worker)
+     && /c\.zone_capacity = 0;/.test(worker));
+  ok("once only, so a number somebody types later is kept for good",
+     /if \(!\(await ctx\.storage\.get\("seats_off_cameras"\)\)\) \{/.test(worker)
+     && /await ctx\.storage\.put\("seats_off_cameras", true\);/.test(worker));
   ok("and it is hers to change, for good, the moment she sets one",
      /overridden by\s*\n \* anybody who sets a seat count on the Cameras page, for good\./.test(worker));
   // The whole point: once it is in, the hold has something to hold against.

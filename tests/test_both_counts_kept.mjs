@@ -89,7 +89,10 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   // Attendance is different people first — the register counts each person
   // once — and the cameras' own tally only for days recorded before it.
   ok("and a day's attendance is different people, then how many came in",
-     /const attendance = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker));
+     /const measured = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker)
+     // …and then held at what the room can hold, which is a separate
+     // question and has its own file. See test_full_hall.mjs.
+     && /const attendance = seats > 0 \? Math\.min\(measured, ceiling\) : measured;/.test(worker));
   ok("the door's own figure is carried alongside", /door_attendance: v\.door \|\| 0,/.test(worker));
   ok("and the hour-by-hour arrivals use every camera again",
      !/const movementCam = /.test(worker));

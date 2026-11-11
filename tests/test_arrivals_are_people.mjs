@@ -187,7 +187,10 @@ const at = (h, m = 0) => day + h * HOUR + m * 60_000;
 // 10. Attendance is different people, and says so.
 {
   ok("the day's attendance is the register first",
-     /const attendance = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(src));
+     /const measured = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(src)
+     // …and then held at what the room can hold, which is a separate
+     // question and has its own file. See test_full_hall.mjs.
+     && /const attendance = seats > 0 \? Math\.min\(measured, ceiling\) : measured;/.test(src));
   ok("every day says where its figure came from", /attendance_from: reg \? "register"/.test(src));
   ok("and the summary says so too", /attendance_from_register: history\.some/.test(src));
   ok("the hourly chart uses the register when it has one",

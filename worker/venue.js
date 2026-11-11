@@ -540,12 +540,29 @@ export class VenueHub extends DurableObject {
          *     Cameras page shows it as 114 where she can change it in a
          *     second if the hall is ever re-chaired.
          */
-        const rooms = Object.values(cams).filter(
-          (c) => c && !c.hidden && c.location !== "entrance" && c.location !== "queue");
-        const told = rooms.some((c) => c.capacity_from === "admin" && c.zone_capacity > 0);
-        if (rooms.length && !told) {
-          for (const c of rooms) { c.zone_capacity = SEATS_IN_THE_HALL; c.capacity_from = "admin"; }
-          changed = true;
+        /**
+         * …and taking it back off the cameras again.
+         *
+         * Writing 114 to every room camera was the wrong shape, and it broke
+         * in exactly the way everything else in this file breaks: two
+         * cameras watching one hall, under two different room names, each
+         * holding 114 seats — so Kyro decided the building seats 228, and
+         * the hold it was supposed to enable let 228 through.
+         *
+         * The seats are a fact about the BUILDING, so they live in one place
+         * (SEATS_IN_THE_HALL, read by seatsInBuilding) and are not copied
+         * onto anything that can be duplicated. Cleared once, so a number
+         * somebody types later is kept for good.
+         */
+        if (!(await ctx.storage.get("seats_off_cameras"))) {
+          for (const c of Object.values(cams)) {
+            if (!c || c.capacity_from !== "admin") continue;
+            if (c.zone_capacity !== SEATS_IN_THE_HALL) continue;   // somebody's own number: leave it
+            c.zone_capacity = 0;
+            c.capacity_from = null;
+            changed = true;
+          }
+          await ctx.storage.put("seats_off_cameras", true);
         }
         if (changed) await ctx.storage.put("cameras", cams);
       }
@@ -553,6 +570,35 @@ export class VenueHub extends DurableObject {
   }
 
   async get(key, fallback) { return (await this.ctx.storage.get(key)) ?? fallback; }
+
+  /**
+   * How many seats this building has.
+   *
+   * One answer, used by every figure that checks an attendance against the
+   * room — the live card and the history pages alike. They disagreed for an
+   * evening: the live figure was held at 114 while "Busiest day" and
+   * "Average attendance" on the next page over both read 302, which is the
+   * same number saying two different things on two screens.
+   *
+   * Entered capacities first, a room at a time: two cameras on one hall take
+   * the fullest view of it, never the sum, and separate rooms add up. When
+   * nothing has been entered — which is every building whose cameras are all
+   * on doorways, since seats hang off a room camera — it falls back to what
+   * the church has stated. See SEATS_IN_THE_HALL.
+   */
+  async seatsInBuilding() {
+    const cams = await this.get("cameras", {});
+    const byRoom = new Map();
+    for (const c of Object.values(cams)) {
+      if (!c || c.hidden || c.pending) continue;
+      if (c.location === "entrance" || c.location === "queue") continue;
+      if (c.capacity_from !== "admin" || !(c.zone_capacity > 0)) continue;
+      const room = (c.zone_name || c.name || c.camera_id).trim().toLowerCase();
+      byRoom.set(room, Math.max(byRoom.get(room) ?? 0, c.zone_capacity));
+    }
+    const entered = [...byRoom.values()].reduce((n, v) => n + v, 0);
+    return entered > 0 ? entered : SEATS_IN_THE_HALL;
+  }
 
   // Seat layouts and live seat states are kept one key PER CAMERA. A single
   // storage value is capped at 128 KB, and one 1,000-seat room already fills it —
@@ -2283,7 +2329,7 @@ export class VenueHub extends DurableObject {
      * question: is the number of DIFFERENT PEOPLE recorded even possible in
      * this building?
      */
-    const seatsHere = cap > 0 ? cap : SEATS_IN_THE_HALL;
+    const seatsHere = await this.seatsInBuilding();
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);
@@ -3010,6 +3056,8 @@ export class VenueHub extends DurableObject {
     // once" printed underneath, which was Kyro telling the truth and being
     // ignored by its own arithmetic.
     const byRegister = this.peopleByDay(since, tz);
+    // What this building holds — the same answer the live figures use.
+    const seats = await this.seatsInBuilding();
     // A day where the cameras never saw anyone (e.g. a quick test) isn't a service.
     const everyDate = new Set([...byDay.keys(), ...byRegister.keys()]);
     const history = [...everyDate].filter((d) => {
@@ -3024,9 +3072,31 @@ export class VenueHub extends DurableObject {
       // person once. Then how many the cameras counted walking in, and only
       // then the most seen at once — a floor, never the answer, because no
       // camera sees a whole hall.
-      const attendance = reg ? reg.people : v.came_in > 0 ? v.came_in : v.peak;
+      const measured = reg ? reg.people : v.came_in > 0 ? v.came_in : v.peak;
+      /**
+       * …held at what the building can hold.
+       *
+       * "its not accurate, not 302 but 114."
+       *
+       * The live card was holding its figure at the seat count while this
+       * page, one click away, reported the same day as 302 under "Busiest
+       * day" and "Average attendance". One number saying two different
+       * things on two screens is worse than either of them alone.
+       *
+       * The ceiling is the seats OR the most the cameras actually saw at one
+       * moment, whichever is larger: a reading of the room may lower a
+       * figure, it may never deny somebody who was plainly standing in it.
+       * The measurement is kept beside it, untouched, so the gap stays
+       * visible and nothing here is deleted or rewritten.
+       */
+      const ceiling = Math.max(seats, v.peak || 0);
+      const attendance = seats > 0 ? Math.min(measured, ceiling) : measured;
       return {
         timestamp: new Date(v.at || (reg ? Date.now() : 0)).toISOString(), date: d, attendance,
+        /** What was actually counted, when the figure above is being held. */
+        attendance_measured: attendance === measured ? null : measured,
+        /** The seats it is held at, so a page can say so. */
+        attendance_held_at: attendance === measured ? null : ceiling,
         /** Where that figure came from, so a page never has to guess. */
         attendance_from: reg ? "register" : v.came_in > 0 ? "entries" : "seen_at_once",
         /** Different people, counted once each. null before Kyro kept this. */
@@ -3078,6 +3148,12 @@ export class VenueHub extends DurableObject {
       // the place, not the day's attendance.
       all_time_peak: n ? Math.max(...history.map((h) => h.seen_at_once)) : 0,
       busiest_day: n ? Math.max(...history.map((h) => h.attendance)) : 0,
+      /** Days whose attendance is being held at what the room can hold, and
+       *  what was counted on them — so a page can say so rather than quietly
+       *  showing a smaller number than the record holds. */
+      days_held: history.filter((h) => h.attendance_measured !== null).length,
+      counted_before_holding: n ? Math.max(...history.map((h) => h.attendance_measured ?? h.attendance)) : 0,
+      seats_in_building: seats,
       avg_attendance: n ? Math.round(history.reduce((a, h) => a + h.attendance, 0) / n) : 0,
       avg_occupancy_pct: n ? Math.round((history.reduce((a, h) => a + h.occupancy_pct, 0) / n) * 10) / 10 : 0,
       first_session: n ? history[0].timestamp : null, last_session: n ? history[n - 1].timestamp : null,
