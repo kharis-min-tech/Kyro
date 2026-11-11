@@ -749,8 +749,35 @@ export class IdentityRegistry {
     }
 
     const scored = [];
+    /**
+     * The best match among the people ALREADY accounted for in this frame.
+     *
+     * Not a candidate — an identity may be claimed by at most one sighting
+     * from one camera at one moment, and that rule is right: two people
+     * standing side by side are two people however alike they look.
+     *
+     * But when it is the detector that has gone wrong, this is the only
+     * trace of it. One man near the camera came back as two boxes — one
+     * round his left side and the television behind him, one round his head
+     * and shoulders — barely overlapping, so nothing that compares boxes
+     * caught it. To the register they are two sightings of somebody in
+     * exactly the same clothes, one of which is already him; the other is
+     * made into a second person in silence, and the attendance is one too
+     * many for the rest of the service.
+     *
+     * It is not for Kyro to overrule the side-by-side rule on its own. It IS
+     * for Kyro to say that it noticed. Two pictures settle it in a second,
+     * and answering "same" merges them.
+     */
+    let taken = null;
     for (const p of this.people.values()) {
-      if (claimed.has(p.id)) continue;
+      if (claimed.has(p.id)) {
+        if (p.lastCamera === cameraId && now - p.lastAt <= CO_SEEN_MS) {
+          const f = faceScore(p), l = lookScore(p);
+          if (!taken || Math.max(f, l) > Math.max(taken.face, taken.look)) taken = { p, face: f, look: l };
+        }
+        continue;
+      }
       // Could this person physically be here? Somebody seen a moment ago on a
       // camera that cannot see this spot is not the person in front of it.
       if (p.lastCamera && p.lastCamera !== cameraId
@@ -1098,6 +1125,26 @@ export class IdentityRegistry {
     // in the room is dressed the same and appearance was refused outright.
     // This is the half that causes double counting, and the half a person can
     // settle from two pictures in a second. See LOOK_ASK.
+    // Somebody new only because the person they match is already accounted
+    // for by another box on this very camera — see `taken` above.
+    if (taken && (taken.look >= this.lookSame || taken.face >= FACE_SAME)) {
+      this.stats.twoBoxesOnePerson = (this.stats.twoBoxesOnePerson || 0) + 1;
+      const pair = `${cameraId}#${o.track}|${taken.p.id}`;
+      if (!this.ruled.has(pair) && !this.asks.some((a) => a.pair === pair)) {
+        this.ruled.set(pair, null);
+        this.asks.push({
+          pair, at: now, guess: "different",
+          camera: cameraId, track: o.track, person: taken.p.id,
+          other_camera: cameraId, other_track: taken.p.lastTrack ?? null,
+          score: Math.round(Math.max(taken.look, taken.face) * 1000) / 1000,
+          had_face: faceReads.length > 0,
+          reason: "this camera is drawing two boxes that look like the same person at the same moment",
+          made: made.id,
+        });
+        if (this.asks.length > 40) this.asks.shift();
+      }
+      return made.id;
+    }
     const near = (uniform ? scored.filter((x) => x.look > 0).sort((a, b) => b.look - a.look)[0] : looks[0]) ?? null;
     if (near && near.look >= LOOK_ASK) {
       const pair = `${cameraId}#${o.track}|${near.p.id}`;
@@ -1613,6 +1660,13 @@ export class IdentityRegistry {
       created: this.stats.created,
       /** Sightings joined to somebody another camera was looking at. */
       joined_across_cameras: this.stats.joinedAcrossCameras ?? 0,
+      /**
+       * Times one camera drew two boxes that look like the same person at
+       * the same moment. Each one is asked about rather than decided: it is
+       * either two people dressed alike standing together, or the detector
+       * cutting one person in half, and a human settles it from two pictures.
+       */
+      two_boxes_one_person: this.stats.twoBoxesOnePerson ?? 0,
       /** Things an operator said were not people at all. */
       not_people: this.stats.notPeople ?? 0,
       /** Sightings ignored because they looked like one of those. */

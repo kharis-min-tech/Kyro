@@ -259,5 +259,48 @@ function chairsChangeHands({ freeForReports, alike }) {
   ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
 }
 
+// ── Two boxes, one person ───────────────────────────────────────────────────
+
+/**
+ * "[the man with two boxes round him] who are you counting, make this right."
+ *
+ * One camera drew two boxes on one man — one round his left side and the
+ * television behind him, one round his head and shoulders. They barely
+ * overlapped, so nothing that compares boxes caught it.
+ *
+ * The register cannot simply join them: an identity may be claimed by at most
+ * one sighting from one camera at one moment, and that rule is what keeps two
+ * people standing side by side from collapsing into one. What it CAN do is
+ * notice, and say so, which is a question two pictures settle in a second.
+ */
+{
+  const r = new IdentityRegistry({ zoneOf: () => "Main", createsIdentities: () => true });
+  let t = 0;
+  const him = wobble(person(4), 2);
+  // Settled, one box, one person.
+  for (let f = 0; f < 10; f++) {
+    t += 5000;
+    r.observe("room", [{ track: 1, look: wobble(person(4), 1 + (f % 4)), box: [0.3, 0.2, 0.45, 0.8] }], t);
+  }
+  const before = r.size;
+  // Now the detector cuts him in half: a second box, same clothes, same moment.
+  for (let f = 0; f < 6; f++) {
+    t += 5000;
+    r.observe("room", [
+      { track: 1, look: wobble(person(4), 1 + (f % 4)), box: [0.3, 0.2, 0.45, 0.8] },
+      { track: 500, look: him, box: [0.44, 0.25, 0.56, 0.8] },
+    ], t);
+  }
+  ok("one person is still one person until it is told otherwise", before === 1, `${before}`);
+  const asks = r.takeAsks();
+  const raised = asks.find((a) => /two boxes/.test(a.reason ?? ""));
+  ok("and Kyro says out loud that it has drawn two boxes on one person", !!raised,
+     `asks: ${asks.map((a) => a.reason).join(" | ") || "none"}`);
+  ok("naming the person it thinks the second box already is", raised?.person === 1, `${raised?.person}`);
+  ok("and the entry it made, so answering \"same\" can undo it", !!raised?.made, `${raised?.made}`);
+  ok("it is counted, so how often it happens can be seen",
+     r.diagnostics().two_boxes_one_person >= 1, `${r.diagnostics().two_boxes_one_person}`);
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A hall of 114 chairs does not hold 300 people.");
 process.exit(fails ? 1 : 0);

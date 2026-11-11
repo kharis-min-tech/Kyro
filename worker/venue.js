@@ -1200,6 +1200,52 @@ export class VenueHub extends DurableObject {
             .filter((c) => c.device_id === device.id && c.location !== "entrance" && !c.hidden)
             .map((c) => c.camera_id))).duplicates
         : 0,
+      /**
+       * Which person in the register each of this computer's sightings
+       * turned out to be.
+       *
+       * ── Why ──────────────────────────────────────────────────────────────
+       *
+       * "theres one that has been standing for more than 5 minutes an usher,
+       * but you have given him different Id's, one time he was 20036, next
+       * hes 20057, next hes 2045, dont understand."
+       *
+       * She is reading the number drawn on the picture as that person's
+       * identity. It never was one. It is the camera's own scratch number
+       * for a box it is following — it is thrown away and reissued every
+       * time the detector loses somebody for a moment, which in a hall is
+       * constantly, and the number it starts from moves on by ten thousand
+       * on every reload so two browsers can't collide. 20036 then 20057 then
+       * 2045 is that number working exactly as designed, and it is useless
+       * as an answer to "who is that".
+       *
+       * The identity is the register's, it is decided here, and it is locked
+       * for the whole service. So it is sent back to the browser doing the
+       * counting, and the picture shows THAT — the number Kyro counts him
+       * as. One usher standing by the door for twenty minutes is one number
+       * that does not change, and if it does change, something is wrong and
+       * she can see it happen.
+       *
+       * Built after rememberPeople() has run, so it describes the sightings
+       * in THIS report rather than the one before it.
+       */
+      people: (() => {
+        const out = {};
+        if (!this.register) return out;
+        for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
+          const key = clean(c.key, 80);
+          if (!key || !Array.isArray(c.seen)) continue;
+          const camera_id = `${device.id}:${key}`;
+          const mine = {};
+          for (const x of c.seen.slice(0, 40)) {
+            const t = Number(x.t) || 0;
+            const id = this.register.idOfTrack(camera_id, t);
+            if (id) mine[t] = id;
+          }
+          if (Object.keys(mine).length) out[key] = mine;
+        }
+        return out;
+      })(),
       // "auto" = work out which way each person went. "in"/"out" = an operator
       // has said everybody crossing is arriving, or leaving.
       door_mode: (await this.get("door_mode", null))?.mode ?? "auto",

@@ -149,6 +149,15 @@ interface Cam {
   seatFinder: SeatFinder;
   /** When its seat list was last sent to the website. */
   seatsSentAt: number;
+  /**
+   * This camera's own track number → the person's number in the register.
+   *
+   * Comes back from the website with each report, because the website is the
+   * only place that knows it: a camera's track number is a scratch number
+   * for a box it is following, reissued whenever the detector loses somebody
+   * and never the same thing twice. See `people` in worker/venue.js.
+   */
+  whoIs: Record<number, number>;
   tracker: PersonTracker;      // follows people between counts → arrived / left
   faces: string[] | null;      // face codes to send, when face matching is on
   facesAt: number;
@@ -168,7 +177,7 @@ export interface CamView {
    * website keys who-is-who on — so a preview drawn from these shows exactly
    * what the figure beside it is made of.
    */
-  tracked: { track: number; box: [number, number, number, number] }[];
+  tracked: { track: number; box: [number, number, number, number]; person: number | null }[];
   countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean;
 }
 
@@ -305,7 +314,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // their position in the list, which renumbered every frame and is not
       // an identity at all. These are the people being counted, and the
       // number is the one the website keys who-is-who on.
-      tracked: c.tracker.seenNow().map((x) => ({ track: x.track, box: x.box })),
+      // …and who the website says each of them IS. A track number changes
+      // whenever the detector loses somebody for a moment; a person's number
+      // in the register is theirs for the whole service. The picture shows
+      // the second one, and shows nothing at all while the register has yet
+      // to place somebody — a number that is about to change is worse than
+      // no number, because no number cannot be mistaken for an identity.
+      tracked: c.tracker.seenNow().map((x) => ({ track: x.track, box: x.box, person: c.whoIs[x.track] ?? null })),
       countedAt: c.countedAt, secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
@@ -325,6 +340,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
+          whoIs: {},
           watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
           crops: new Map(),
         };
@@ -863,7 +879,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           && !!c.countedAt && Date.now() - c.countedAt < 60_000)
         .map((c) => c.label);
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);
         // Merged rather than replaced: the website keeps asking until the
         // pictures arrive, and one that is already on its way must not be
@@ -873,6 +889,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         }
         wantPics.current = wantPics.current.slice(-24);
         setSeenTwice(twice);
+        // Who each sighting turned out to be. Kept per camera so the picture
+        // can show the number Kyro counts somebody as — see whoIs on Cam.
+        for (const c of cams.current.values()) c.whoIs = people[c.key] ?? {};
         problems.current = [];
         // A different service, or none: forget everybody seen in the last one.
         // People are remembered only for as long as one service runs — see

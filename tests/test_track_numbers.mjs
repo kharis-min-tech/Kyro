@@ -117,16 +117,42 @@ fs.rmSync(tmp, { recursive: true, force: true });
 // ── The preview draws what is counted ──────────────────────────────────────
 {
   ok("the label is no longer a position in a list", !/const label = `\$\{i \+ 1\}`;/.test(preview));
-  ok("it is the camera's own number for that person", /const label = `\$\{p\.track\}`;/.test(preview));
+  /**
+   * It is no longer the camera's own track number either, and this test used
+   * to insist that it was.
+   *
+   * A track number is a scratch number for a box being followed. The detector
+   * loses somebody for a moment and the next sighting of them gets a new one;
+   * a reload moves the whole block on by ten thousand so two browsers cannot
+   * collide. Drawn on a picture it reads as an identity, and it is not one:
+   * "theres one that has been standing for more than 5 minutes an usher, but
+   * you have given him different Id's, one time he was 20036, next hes 20057,
+   * next hes 2045, dont understand."
+   *
+   * The identity is the register's. It is decided on the website, where every
+   * camera can be compared with every other, and it is locked for the whole
+   * service — so that is what the picture shows, and somebody not yet placed
+   * is drawn with no number rather than a number about to change.
+   */
+  ok("it is the number Kyro counts that person as", /const label = `\$\{who\}`;/.test(preview));
+  ok("and nobody is labelled with a number that is about to change",
+     /if \(who == null\) return;/.test(preview));
   ok("the boxes are the people being FOLLOWED, not every detection",
-     /const draw = tracked\?\.length \? tracked : people\.map\(\(p, i\) => \(\{ track: i \+ 1, box: p\.box \}\)\);/.test(preview));
-  ok("which the browser now sends", /tracked: c\.tracker\.seenNow\(\)\.map\(\(x\) => \(\{ track: x\.track, box: x\.box \}\)\),/.test(ctx));
+     /const draw = tracked\?\.length/.test(preview)
+     && /people\.map\(\(p\) => \(\{ track: 0, box: p\.box, person: null as number \| null \}\)\)/.test(preview));
+  ok("which the browser now sends, with who each of them is",
+     /tracked: c\.tracker\.seenNow\(\)\.map\(\(x\) => \(\{ track: x\.track, box: x\.box, person: c\.whoIs\[x\.track\] \?\? null \}\)\),/.test(ctx));
+  ok("told to it by the website, which is the only place that knows",
+     /people: \(\(\) => \{/.test(fs.readFileSync(path.join(root, "worker/venue.js"), "utf8"))
+     && /this\.register\.idOfTrack\(camera_id, t\)/.test(fs.readFileSync(path.join(root, "worker/venue.js"), "utf8")));
+  ok("and read back by the browser", /people: body\.people && typeof body\.people === "object" \? body\.people : \{\}/
+     .test(fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), "utf8")));
   ok("so the boxes and the figure beside them cannot disagree",
      /These are the ones confirmed and counted/.test(ctx));
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/CountingCard.tsx"), "utf8");
   ok("the card passes them on", /tracked=\{v\.tracked\}/.test(card));
   ok("and says what the number on a box means",
-     /the number on it is this camera&apos;s own number for them/.test(card));
+     /the number Kyro counts them as/.test(card) && /theirs\s*\n\s*for the whole service/.test(card));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. The number on a box means something.");

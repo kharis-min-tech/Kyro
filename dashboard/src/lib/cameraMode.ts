@@ -352,7 +352,10 @@ export async function sendReport(
    *  a problem is only ever cleared by the thing that failed working again,
    *  and nothing was saying when a camera came right. */
   well: string[] = [],
-): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number ; wantPictures: WantedPicture[] }> {
+): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number ; wantPictures: WantedPicture[];
+  /** Per camera key, this camera's own track number → the person's number in
+   *  the register. See `people` in worker/venue.js. */
+  people: Record<string, Record<number, number>> }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -389,6 +392,13 @@ export async function sendReport(
     // cameras. A camera cannot know this; the website can, because it sees
     // every camera at once. See seen_twice in worker/venue.js.
     seenTwice: Math.max(0, Number(body.seen_twice) || 0),
+    /**
+     * Who each sighting turned out to be, so the picture can be labelled with
+     * the number Kyro actually counts somebody as rather than the camera's
+     * own scratch number for a box — which is reissued whenever the detector
+     * loses them, and is not an identity. See `people` in worker/venue.js.
+     */
+    people: body.people && typeof body.people === "object" ? body.people : {},
     // People Kyro wants a human to look at. See sendPersonPicture.
     wantPictures: (Array.isArray(body.want_pictures) ? body.want_pictures : [])
       .filter((w: unknown): w is WantedPicture => {

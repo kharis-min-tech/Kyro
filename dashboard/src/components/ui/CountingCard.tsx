@@ -124,8 +124,9 @@ export function CountingCard() {
               <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} tracked={v.tracked} count={v.count} />
             ))}
             <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
-              A green box is someone being counted, and the number on it is this camera&apos;s own number for them —
-              it stays with them while they are in view, and the next person gets a new one. If the count looks too
+              A green box is someone being counted, and the number on it is the number Kyro counts them as — theirs
+              for the whole service, on every camera, and it does not change when the camera loses sight of them for a
+              moment. A box with no number is somebody Kyro has not placed yet. If the count looks too
               high, look at where the extra boxes are: a poster or photo of people, a face on a screen, or the camera
               seeing this very screen all get counted.
             </p>
