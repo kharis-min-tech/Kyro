@@ -19,7 +19,15 @@ export function CountingCard() {
   const on = phase === "running";
   const busy = phase === "starting";
   const live = views.filter((v) => v.streaming);
-  const slow = secondsPerCount > 4;
+  /**
+   * Slow is a judgement about the JOB, not a number.
+   *
+   * Four seconds is a shrug on a room camera and a disaster on a doorway,
+   * where somebody has to be seen twice and crosses in about a second. The
+   * card now asks whether any camera here is too slow for what it is doing,
+   * which the counting works out per camera.
+   */
+  const slow = views.some((v) => v.tooSlow);
 
   return (
     <div className="mb-6">
@@ -152,7 +160,11 @@ export function CountingCard() {
             {secondsPerCount > 0 && (
               <p className="text-xs" style={{ color: slow ? "#f59e0b" : "var(--text-faint)" }}>
                 A new count about every {secondsPerCount < 1 ? "second" : `${secondsPerCount.toFixed(1)} seconds`}
-                {slow ? " — slow for this computer, so the number will lag behind the room" : ""}
+                {slow
+                  ? views.some((v) => v.tooSlow && v.isDoor)
+                    ? " — too slow for a doorway. Somebody has to be seen twice to be counted and people cross a door in about a second, so the quick walkers are being missed. Close other tabs and programs, or count on fewer cameras from this computer."
+                    : " — slow for this computer, so the number will lag behind the room"
+                  : ""}
               </p>
             )}
             {engineInfo && <p className="text-xs" style={{ color: "var(--text-faint)" }}>{engineInfo}</p>}

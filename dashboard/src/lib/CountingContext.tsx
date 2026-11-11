@@ -38,6 +38,28 @@ const NO_PICTURE_MS = 6_000;
 // A camera missing this long is treated as gone for good, and only then are
 // its figures let go.
 const GONE_FOR_GOOD_MS = 5 * 60_000;
+/** The furthest apart the "would tiles help?" check is ever asked. */
+const TILE_CHECK_MOST = 120;
+/**
+ * How long one count may take before the camera is missing people.
+ *
+ * Judged against the JOB, which is the part that was missing. A doorway has
+ * to see somebody TWICE to count them — twice is the only way to know which
+ * way they were walking — and a person crosses a doorway in about a second.
+ * Half a second a count is the floor; slower than that and the fast walkers
+ * are simply not counted, which is invisible on the screen and looks exactly
+ * like a quiet morning.
+ *
+ * A room camera has all service. It is only too slow when the number on the
+ * screen visibly lags the room.
+ *
+ * "the count is very slow, people walk fast and you wouldnt even be able to
+ * capture the person." She is right, and Kyro was judging both jobs by one
+ * number — four seconds — which a doorway fails eight times over while
+ * reporting itself perfectly healthy.
+ */
+const DOOR_SLOW_S = 0.5;
+const ROOM_SLOW_S = 4;
 const OFF_KEY = "kyro_camera_mode_off";     // cameras switched off on the website
 const FRESH_KEY = "kyro_counts_fresh_from"; // the fresh start this browser has applied
 const REPORT_EVERY_MS = 5_000;
@@ -141,6 +163,17 @@ interface Cam {
   // the whole picture alone, and check now and then whether tiles would add
   // anyone; if they would, keep using them for this camera.
   needsTiles: boolean; sinceTileCheck: number;
+  /**
+   * How many times running the check has said tiles make no difference.
+   *
+   * The check costs SIX AI runs — five tiles and the whole picture — against
+   * one for an ordinary count, and it ran every tenth count for ever. On a
+   * camera where tiles have never once helped, that is a stall every ten
+   * counts in exchange for an answer that has not changed all morning. So it
+   * is asked less and less often, up to TILE_CHECK_MOST counts apart, and
+   * the moment tiles DO help it goes back to checking often.
+   */
+  tilesNoHelp: number;
   /** Watching a doorway. It gets more turns, and never splits the picture. */
   isDoor: boolean;
   /** Watches for a black or frozen picture — see lib/pictureCheck.ts. */
@@ -190,6 +223,11 @@ export interface CamView {
    * ACCURATE", with five boxes on the light fittings.
    */
   frameW: number; frameH: number;
+  /** Watching a doorway, where speed is the difference between counting
+   *  people and not. */
+  isDoor: boolean;
+  /** Too slow for what this camera is being asked to do — see DOOR_SLOW_S. */
+  tooSlow: boolean;
   countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean;
 }
 
@@ -337,6 +375,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // from the camera's. See frameW on CamView.
       frameW: c.grabCanvas.width || c.video?.videoWidth || 0,
       frameH: c.grabCanvas.height || c.video?.videoHeight || 0,
+      isDoor: c.isDoor, tooSlow: tooSlow(c),
       countedAt: c.countedAt, secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
@@ -355,7 +394,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
-          needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
+          needsTiles: true, sinceTileCheck: 0, tilesNoHelp: 0,
+          isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
           whoIs: {},
           watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
           crops: new Map(),
@@ -516,7 +556,11 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // lens and fill the frame, so the whole picture finds them — and
           // five runs a count is exactly how a door camera ends up looking
           // once a second while people walk through it faster than that.
-          const checking = !c.isDoor && ++c.sinceTileCheck >= 10;
+          // How many counts since the last check, before asking again. Ten
+          // at first; further apart each time the answer comes back the
+          // same. See tilesNoHelp.
+          const apart = Math.min(TILE_CHECK_MOST, 10 * (1 + c.tilesNoHelp));
+          const checking = !c.isDoor && ++c.sinceTileCheck >= apart;
           if (checking) c.sinceTileCheck = 0;
           const useTiles = !c.isDoor && (c.needsTiles || checking);
           // A doorway camera also uses the quicker AI: people cross a door in
@@ -527,6 +571,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
             const whole = await countPeople(engine.current, px, 1);
             const sure = (list: Person[]) => list.filter((p) => p.score >= countConfidenceRef.current).length;
             c.needsTiles = sure(people) > sure(whole);
+            // Ask less often while the answer keeps coming back the same,
+            // and go straight back to asking often the moment it changes.
+            c.tilesNoHelp = c.needsTiles ? 0 : c.tilesNoHelp + 1;
             if (!c.needsTiles) people = whole;
           }
           // Everything the AI noticed, before the "sure enough to count" cutoff,
@@ -596,6 +643,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       await new Promise((r) => setTimeout(r, did ? Math.min(door ? 100 : 350, rest) : 500));
     }
   }, [refreshViews]);
+
+  /**
+   * Is this camera too slow for what it is being asked to do?
+   *
+   * Nothing to say until it has actually counted something — a camera that
+   * has never managed a count has a different problem, and this must not
+   * shout over it. See DOOR_SLOW_S.
+   */
+  const tooSlow = useCallback((c: Cam) =>
+    !!c.stream && !c.error && c.secondsPerCount > 0
+    && c.secondsPerCount > (c.isDoor ? DOOR_SLOW_S : ROOM_SLOW_S), []);
 
   /** Face codes for this camera's people, every second or few while switched on. */
   const faceCodes = useCallback(async (c: Cam, px: ImageData): Promise<(Float32Array | null)[] | null> => {
@@ -897,8 +955,27 @@ export function CountingProvider({ children }: { children: ReactNode }) {
       // shift. Open, a changing non-black picture, counting: that is working.
       const well = list
         .filter((c) => c.stream && !c.error && !c.watch.black && !c.watch.frozen
-          && !!c.countedAt && Date.now() - c.countedAt < 60_000)
+          && !!c.countedAt && Date.now() - c.countedAt < 60_000
+          && !tooSlow(c))
         .map((c) => c.label);
+      /**
+       * Too slow to do its job, said out loud.
+       *
+       * A camera counting once every three seconds is open, healthy, sending
+       * a perfect picture and missing most of a congregation walking through
+       * a door — and every indicator Kyro had said it was fine. This is the
+       * failure that looks exactly like a quiet morning.
+       *
+       * Reported like any other fault, so it clears itself when the computer
+       * catches up (see `well` above) rather than sticking.
+       */
+      for (const c of list) {
+        if (!tooSlow(c)) continue;
+        say(c.label, c.isDoor
+          ? `Counting once every ${c.secondsPerCount.toFixed(1)}s — too slow for a doorway. Somebody has to be seen twice to be counted, and people cross a door in about a second, so the quick walkers are being missed.`
+          : `Counting once every ${c.secondsPerCount.toFixed(1)}s, so the number lags behind the room.`,
+          "Close other tabs and programs on this computer, or count on fewer cameras from it.");
+      }
       try {
         const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);

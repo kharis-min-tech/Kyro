@@ -86,5 +86,52 @@ const order = fs.readFileSync(path.join(root, "dashboard/src/lib/countOrder.ts")
   ok("and still uses the accurate AI", /c\.isDoor\)/.test(ctx) && !/fast: true/.test(ctx));
 }
 
+// ── Fast enough for WHAT ────────────────────────────────────────────────────
+//
+// "the count is very slow, people walk fast and you wouldnt even be able to
+// capture the person."
+//
+// She is right, and the part that was missing is that Kyro judged every
+// camera by one number — four seconds — and called anything quicker healthy.
+// Four seconds is a shrug on a room camera, which has all service to get the
+// number right. On a doorway it is eight times too slow: somebody has to be
+// seen TWICE to be counted, and a person crosses a door in about a second.
+//
+// A camera failing that is open, healthy, sending a perfect picture and
+// missing most of a congregation. It looks exactly like a quiet morning,
+// which is why it has to be said out loud rather than left to be noticed.
+{
+  ok("a doorway is judged by how long a person takes to cross one",
+     /const DOOR_SLOW_S = 0\.5;/.test(ctx));
+  ok("and a room by whether the number lags behind it", /const ROOM_SLOW_S = 4;/.test(ctx));
+  ok("the two are never judged by the same number",
+     /c\.secondsPerCount > \(c\.isDoor \? DOOR_SLOW_S : ROOM_SLOW_S\)/.test(ctx));
+  ok("nothing is said until a camera has actually counted something",
+     /c\.secondsPerCount > 0\s*\n?\s*&& c\.secondsPerCount > \(c\.isDoor/.test(ctx));
+  ok("being too slow is reported like any other fault", /for \(const c of list\) \{\s*\n\s*if \(!tooSlow\(c\)\) continue;/.test(ctx));
+  ok("and clears itself when the computer catches up", /&& !tooSlow\(c\)\)\s*\n\s*\.map\(\(c\) => c\.label\);/.test(ctx));
+  ok("with the one thing that helps, said plainly",
+     /Close other tabs and programs on this computer, or count on fewer cameras from it\./.test(ctx));
+  const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/CountingCard.tsx"), "utf8");
+  ok("the card stops calling a doorway healthy at four seconds",
+     !/const slow = secondsPerCount > 4;/.test(card)
+     && /const slow = views\.some\(\(v\) => v\.tooSlow\);/.test(card));
+  ok("and says what a slow doorway costs", /so the quick walkers are being missed/.test(card));
+}
+
+// ── Not paying for an answer that never changes ─────────────────────────────
+//
+// The "would tiles help?" check costs SIX AI runs — five tiles and the whole
+// picture — against one for an ordinary count, and it ran every tenth count
+// for ever. On a camera where tiles have never once helped, that is a stall
+// every ten counts for an answer that has not changed all morning.
+{
+  ok("the check is asked further apart each time the answer is the same",
+     /const apart = Math\.min\(TILE_CHECK_MOST, 10 \* \(1 \+ c\.tilesNoHelp\)\);/.test(ctx));
+  ok("and goes straight back to asking often the moment tiles do help",
+     /c\.tilesNoHelp = c\.needsTiles \? 0 : c\.tilesNoHelp \+ 1;/.test(ctx));
+  ok("with a limit, so it never stops asking altogether", /const TILE_CHECK_MOST = 120;/.test(ctx));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. The doorway gets the looks it needs.");
 process.exit(fails ? 1 : 0);
