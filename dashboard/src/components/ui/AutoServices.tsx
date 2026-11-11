@@ -99,6 +99,10 @@ export function AutoServices() {
 
   const live = data?.live;
   const ended = data?.services ?? [];
+  /** More different people counted than this room has seats, if that has
+   *  happened — see attendance_over_seats in worker/venue.js. */
+  const over = (venue as unknown as { attendance_over_seats?: { seats: number; counted: number; left: number } | null } | null | undefined)
+    ?.attendance_over_seats ?? null;
   const nameBox = (s: Service) => editing?.id === s.id ? (
     <span className="flex items-center gap-1.5 min-w-0">
       <input value={editing.name} onChange={(e) => setEditing({ id: s.id, name: e.target.value })} autoFocus
@@ -144,9 +148,15 @@ export function AutoServices() {
               <div>
                 <p className="text-xs text-gray-500">Came in</p>
                 <p className="text-2xl font-bold text-white tabular-nums">
-                  {(venue as { people_seen?: number } | undefined)?.people_seen ?? "–"}
+                  {(venue as unknown as { people_seen_shown?: number; people_seen?: number } | null | undefined)?.people_seen_shown
+                    ?? (venue as unknown as { people_seen?: number } | null | undefined)?.people_seen ?? "–"}
                 </p>
-                <p className="text-xs text-gray-500">different people</p>
+                {/* Held at the seats when Kyro has counted more different
+                    people than the room holds, and said so rather than
+                    silently. See people_seen_shown in worker/venue.js. */}
+                <p className="text-xs text-gray-500">
+                  {over ? `held at the seats · counted ${over.counted.toLocaleString()}` : "different people"}
+                </p>
               </div>
               <div>
                 <p className="text-xs text-gray-500">Seats</p>

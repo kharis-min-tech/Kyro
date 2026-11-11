@@ -253,8 +253,32 @@ function chairsChangeHands({ freeForReports, alike }) {
      /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
   ok("the figure is never quietly capped at the seat count",
      !/people_seen: Math\.min/.test(worker));
+  /**
+   * And the figure on the screen is held at the seats.
+   *
+   * "change this to 114, because i dont know how you got this number, i dont
+   * think you listen, i said the max is 114 in this room, so it must be
+   * inaccurate for you to put this number."
+   *
+   * Her call, and the right one: a seat count entered by the person who
+   * knows the building beats a measurement by something that has just been
+   * shown to double-count. What is held is the display. The measurement, the
+   * register, the people table and the downloads are untouched, and the card
+   * prints what was measured beside what it is showing — so this can never
+   * become a number nobody can check.
+   */
+  ok("the figure on the screen is held at the seat count",
+     /people_seen_shown: cap > 0 && \(this\.register\?\.size \|\| 0\) > cap\s*\n\s*\? cap/.test(worker));
+  ok("but the measurement itself is not touched",
+     /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
   const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
-  ok("and the card says so where the number is", /More people counted than the room holds/.test(card));
+  ok("and the card says so where the number is", /Held at \{overSeats\.seats\.toLocaleString\(\)\}, the number of seats in this room/.test(card));
+  ok("printing what was measured beside what it shows",
+     /Kyro counted \$\{summary\.totalArrived\.toLocaleString\(\)\}/.test(card));
+  ok("only ever against the register, never a tally of crossings",
+     /const held = overSeats && usingRegister && summary\.totalArrived > overSeats\.seats \? overSeats\.seats : null;/.test(card));
+  const svc = fs.readFileSync(new URL("../dashboard/src/components/ui/AutoServices.tsx", import.meta.url), "utf8");
+  ok("the service card is held to the same figure", /people_seen_shown/.test(svc));
   const page = fs.readFileSync(new URL("../dashboard/src/app/attendance/page.tsx", import.meta.url), "utf8");
   ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
 }

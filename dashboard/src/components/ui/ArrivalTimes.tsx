@@ -179,6 +179,17 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   }).sort((a, b) => b.arrived - a.arrived), [byCamera, unverified, showingSession, sessionFrom, minutes]);
   const { slots, peakArrival, peakDeparture } = summary;
   const hasData = slots.length > 0;
+  /**
+   * The seat count, when Kyro has counted more different people than this
+   * room holds — the figure to show instead of the one it measured.
+   *
+   * Only against the register, which counts each person once: the cameras'
+   * own tallies count crossings, where passing the seat count means nothing
+   * at all. And only against a seat count somebody entered — see
+   * people_seen_shown in worker/venue.js for whose decision this is and what
+   * is deliberately NOT changed by it.
+   */
+  const held = overSeats && usingRegister && summary.totalArrived > overSeats.seats ? overSeats.seats : null;
 
   // ── Geometry ──
   const padL = 40, padR = 8, padT = 22, padB = 22, axisH = 22;
@@ -425,14 +436,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.45)" }}>
               <AlertTriangle size={14} className="shrink-0 mt-0.5" style={{ color: "#b45309" }} />
               <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-                <strong>More people counted than the room holds.</strong> You have told Kyro
-                there are {overSeats.seats.toLocaleString()} seats. It has counted{" "}
-                {overSeats.counted.toLocaleString()} different people and recorded{" "}
-                {overSeats.left.toLocaleString()} of them leaving, so at least{" "}
+                <strong>Held at {overSeats.seats.toLocaleString()}, the number of seats in this room.</strong>{" "}
+                Kyro counted {overSeats.counted.toLocaleString()} different people, which this room
+                cannot hold: {overSeats.left.toLocaleString()} have been recorded leaving, so at least{" "}
                 {Math.max(1, overSeats.counted - overSeats.left - overSeats.seats).toLocaleString()}{" "}
-                of them had nowhere to sit. Either people are standing, or somebody has been
-                counted twice — most often somebody the camera lost for a moment and found
-                again. The figure is shown as it was measured, not quietly corrected.
+                of them had nowhere to sit. That is somebody counted twice — usually somebody the
+                camera lost for a moment and found again as a stranger. Only the figure on this
+                screen is held: every reading behind it is kept exactly as it was recorded, and the
+                download still has all {overSeats.counted.toLocaleString()}.
               </p>
             </div>
           )}
@@ -449,9 +460,18 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 wrong it was wrong twice, in two places, with nothing to say
                 which to believe. Attendance still comes from the register —
                 it is the same number, said once, where people look for it. */}
+            {/* Held at the seat count when Kyro has counted more different
+                people than the room holds. "change this to 114, because i
+                dont know how you got this number ... i said the max is 114 in
+                this room, so it must be inaccurate for you to put this
+                number." The measurement is right there underneath it, and
+                nothing behind the figure is changed — see people_seen_shown
+                in worker/venue.js. */}
             <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
-              value={summary.totalArrived.toLocaleString()}
-              sub={usingRegister
+              value={(held ?? summary.totalArrived).toLocaleString()}
+              sub={held != null
+                ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${summary.totalArrived.toLocaleString()}`
+                : usingRegister
                 ? "Different people, counted once each"
                 : `${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`} />
             <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}

@@ -2381,6 +2381,42 @@ export class VenueHub extends DurableObject {
           }
         : null,
       /**
+       * The attendance figure to PUT ON THE SCREEN, held at the number of
+       * seats when the measured one has passed it.
+       *
+       * ── Her decision, and why it is hers to make ────────────────────────
+       *
+       * "change this to 114, because i dont know how you got this number, i
+       * dont think you listen, i said the max is 114 in this room, so it
+       * must be inaccurate for you to put this number."
+       *
+       * She is right about the number and right about whose call it is. 159
+       * different people in a room with 114 chairs is not a reading she has
+       * to accept because Kyro measured it; it is Kyro being wrong in public
+       * on the screen her church reads. The seat count is a fact about the
+       * building, entered by the person who knows it. The 159 is a
+       * measurement by something that has just been shown to double-count.
+       * When they disagree, the building wins.
+       *
+       * What is held is the DISPLAY and nothing else. people_seen above is
+       * the measurement, untouched; attendance_over_seats carries the sum so
+       * the gap can be seen; the register, the people table and the
+       * downloads all keep every entry exactly as it was recorded. Nothing
+       * is deleted and nothing is rewritten — "Do not delete or rewrite
+       * historical records to make the dashboard appear correct" — and the
+       * card says in so many words that the figure is being held and what
+       * was measured.
+       *
+       * The honest caveat, stated here because it belongs with the code: a
+       * room CAN see more different people in a morning than it has chairs,
+       * if enough of them leave and others take their places. In this hall,
+       * on her say-so, it does not. Only ever against a seat count somebody
+       * entered — never one Kyro guessed.
+       */
+      people_seen_shown: cap > 0 && (this.register?.size || 0) > cap
+        ? cap
+        : (this.register?.size ?? sum("people")),
+      /**
        * How many people the register has not yet recorded leaving.
        *
        * Different from "seen in the last few seconds" on purpose: this is
