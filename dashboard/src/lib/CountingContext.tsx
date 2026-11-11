@@ -135,6 +135,15 @@ export interface CamView {
    *  for cameras can tell which of them are already being counted. */
   deviceId: string;
   label: string; count: number; people: Person[]; rawPeople: Person[];
+  /**
+   * Everybody this camera is FOLLOWING, with its own number for each.
+   *
+   * Not the same as `people`, which is every detection in the last frame.
+   * These are the ones confirmed and counted, and the number is the one the
+   * website keys who-is-who on — so a preview drawn from these shows exactly
+   * what the figure beside it is made of.
+   */
+  tracked: { track: number; box: [number, number, number, number] }[];
   countedAt: number; secondsPerCount: number; error: string | null; streaming: boolean;
 }
 
@@ -242,9 +251,36 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
 
+  /**
+   * Where this camera's track numbers should carry on from.
+   *
+   * The website keys who-is-who on "camera#track" and keeps that link for
+   * five minutes. A fresh tracker that starts at 1 — after a reload, a
+   * reconnect, a tab reopened — hands the first person it sees a number that
+   * is still remembered as somebody else, and they inherit that identity.
+   *
+   * Each tracker is given a block of its own, and the next block is written
+   * down before it is used, so even a reload that never gets to save still
+   * cannot hand out a number the last one did.
+   */
+  const nextTrackBase = (key: string): number => {
+    const k = `kyro_track_base_${key}`;
+    try {
+      const base = Math.max(1, Number(localStorage.getItem(k)) || 1);
+      localStorage.setItem(k, String(base + 10_000));
+      return base;
+    } catch { return 1; }
+  };
+
   const refreshViews = useCallback(() => {
     setViews([...cams.current.values()].map((c) => ({
       key: c.key, deviceId: c.deviceId, label: c.label, count: c.count, people: c.people, rawPeople: c.rawPeople,
+      // Everybody this camera is actually FOLLOWING, with its own number for
+      // them. The preview used to draw the raw detections and label them by
+      // their position in the list, which renumbered every frame and is not
+      // an identity at all. These are the people being counted, and the
+      // number is the one the website keys who-is-who on.
+      tracked: c.tracker.seenNow().map((x) => ({ track: x.track, box: x.box })),
       countedAt: c.countedAt, secondsPerCount: c.secondsPerCount, error: c.error, streaming: !!c.stream,
     })));
   }, []);
@@ -263,7 +299,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
           steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
-          needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(), faces: null, facesAt: 0,
+          needsTiles: true, sinceTileCheck: 0, isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
           watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
           crops: new Map(),
         };

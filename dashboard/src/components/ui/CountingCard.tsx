@@ -121,11 +121,13 @@ export function CountingCard() {
         {on && live.length > 0 && (
           <div className="flex flex-col gap-2">
             {live.map((v) => (
-              <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} count={v.count} />
+              <CameraPreview key={`p-${v.key}`} stream={streamFor(v.key)} people={v.people} tracked={v.tracked} count={v.count} />
             ))}
             <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
-              A green box is someone being counted. If the number looks too high, look at where the extra boxes are — a
-              poster or photo of people, a face on a screen, or the camera seeing this very screen all get counted.
+              A green box is someone being counted, and the number on it is this camera&apos;s own number for them —
+              it stays with them while they are in view, and the next person gets a new one. If the count looks too
+              high, look at where the extra boxes are: a poster or photo of people, a face on a screen, or the camera
+              seeing this very screen all get counted.
             </p>
           </div>
         )}

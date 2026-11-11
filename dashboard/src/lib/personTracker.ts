@@ -409,7 +409,29 @@ export class PersonTracker {
   private events: DoorEvent[] = [];
   /** People seen earlier in this service. Emptied when it ends. */
   private known: Known[] = [];
-  private nextId = 1;
+  /**
+   * This camera's own id for each person it is following.
+   *
+   * ── Why it does not start at 1 ─────────────────────────────────────────
+   *
+   * The website keys who-is-who on "camera#track" and keeps that link for
+   * five minutes. A fresh tracker — a reload, a camera reconnect, a tab
+   * reopened — used to start numbering at 1 again, so the first person it
+   * saw became "cam#1" and inherited whoever "cam#1" had been before the
+   * reload. A number that is reused inside the window it is remembered in is
+   * not an identity, it is a collision waiting to happen.
+   *
+   * So each tracker starts where the last one left off, carried in this
+   * device's own storage. Nothing depends on the numbers being small.
+   */
+  private nextId: number;
+
+  constructor(startId = 1) {
+    this.nextId = Math.max(1, Math.floor(startId) || 1);
+  }
+
+  /** The next id this tracker will hand out, for remembering where it got to. */
+  get nextTrackId(): number { return this.nextId; }
   entries = 0;
   exits = 0;
   /**
