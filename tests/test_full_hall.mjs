@@ -305,6 +305,42 @@ function chairsChangeHands({ freeForReports, alike }) {
      /const held = overSeats && usingRegister && summary\.totalArrived > overSeats\.seats \? overSeats\.seats : null;/.test(card));
   const svc = fs.readFileSync(new URL("../dashboard/src/components/ui/AutoServices.tsx", import.meta.url), "utf8");
   ok("the service card is held to the same figure", /people_seen_shown/.test(svc));
+
+  /**
+   * Both figures, or neither.
+   *
+   * "how is there 114 in when 274 is out, dosent make sense."
+   *
+   * The arrivals were held at the seat count and the departures left as
+   * measured, so the card read 114 in and 273 out. Two figures contradicting
+   * each other are worse than one figure that is wrong: the reader now has
+   * to work out which of them to disbelieve.
+   *
+   * What is kept true is the quantity a church actually uses — how many are
+   * still in the building — because being seen in the last five minutes is a
+   * direct observation rather than a tally of everyone ever.
+   */
+  ok("the departures are held with the arrivals",
+     /const heldLeft = held != null/.test(card));
+  ok("by whatever keeps 'still here' true",
+     /Math\.max\(0, held - Math\.max\(0, summary\.totalArrived - summary\.totalLeft\)\)/.test(card));
+  ok("and the tile says it is held, and what it still means",
+     /Held with the figure beside it/.test(card) && /still here`/.test(card));
+  // The arithmetic itself, on the numbers she was looking at and the edges
+  // around them.
+  const pair = (arrived, left, seats) => {
+    const h = arrived > seats ? seats : null;
+    const hl = h != null ? Math.max(0, h - Math.max(0, arrived - left)) : null;
+    return [h ?? arrived, hl ?? left];
+  };
+  ok("114 in and 93 out, not 114 in and 273 out",
+     JSON.stringify(pair(294, 273, 114)) === JSON.stringify([114, 93]), JSON.stringify(pair(294, 273, 114)));
+  ok("under the seat count nothing is held at all",
+     JSON.stringify(pair(90, 60, 114)) === JSON.stringify([90, 60]));
+  ok("and it never goes below nobody",
+     pair(294, 0, 114)[1] === 0, JSON.stringify(pair(294, 0, 114)));
+  ok("with the people still in the building kept exactly right",
+     pair(300, 299, 114)[0] - pair(300, 299, 114)[1] === 1);
   const page = fs.readFileSync(new URL("../dashboard/src/app/attendance/page.tsx", import.meta.url), "utf8");
   ok("fed from the live figures, today only", /overSeats=\{edge && isToday/.test(page));
 

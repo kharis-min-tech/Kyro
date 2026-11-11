@@ -225,6 +225,27 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * is deliberately NOT changed by it.
    */
   const held = overSeats && usingRegister && summary.totalArrived > overSeats.seats ? overSeats.seats : null;
+  /**
+   * …and what went out, held so the two still add up.
+   *
+   * "how is there 114 in when 274 is out, dosent make sense."
+   *
+   * She is right, and it was my mistake: I held the arrivals at the seat
+   * count and left the departures as measured, so the card read 114 in and
+   * 273 out. Two figures that contradict each other are worse than one
+   * figure that is wrong, because the reader now has to work out which of
+   * them to disbelieve.
+   *
+   * The quantity worth keeping true is the one a church actually uses: HOW
+   * MANY ARE STILL HERE. Measured, that is arrivals less departures — 294
+   * less 273, twenty one people still in the building — and that number is
+   * not in doubt, because being seen in the last five minutes is a direct
+   * observation rather than a tally of everybody ever. So the departures are
+   * held at whatever keeps it: 114 came in, 93 have gone, 21 are still here.
+   */
+  const heldLeft = held != null
+    ? Math.max(0, held - Math.max(0, summary.totalArrived - summary.totalLeft))
+    : null;
 
   // ── Geometry ──
   const padL = 40, padR = 8, padT = 22, padB = 22, axisH = 22;
@@ -528,7 +549,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 of them had nowhere to sit. That is somebody counted twice — usually somebody the
                 camera lost for a moment and found again as a stranger. Only the figure on this
                 screen is held: every reading behind it is kept exactly as it was recorded, and the
-                download still has all {overSeats.counted.toLocaleString()}.
+                download still has all {overSeats.counted.toLocaleString()}. The figure beside it is held
+                by the same amount, so the two still agree on how many are in the building.
                 {onSetSeats && (
                   <> If {overSeats.seats.toLocaleString()} is not the right number of seats,{" "}
                     <button type="button" onClick={() => { setSeatDraft(String(overSeats.seats)); }}
@@ -587,8 +609,10 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 ? "Kyro has not been told how many seats this room has, so this figure has nothing to answer to. An administrator can set it on the Cameras page."
                 : undefined} />
             <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
-              value={summary.totalLeft.toLocaleString()}
-              sub={usingRegister
+              value={(heldLeft ?? summary.totalLeft).toLocaleString()}
+              sub={heldLeft != null
+                ? `Held with the figure beside it \u00b7 ${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} still here`
+                : usingRegister
                 ? "People nobody has seen for five minutes"
                 : summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             <StatTile label="Busiest arrival time" swatch={ARRIVE}
