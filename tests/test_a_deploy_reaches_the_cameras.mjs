@@ -101,8 +101,46 @@ const deploy = read("scripts/deploy-and-verify.sh");
    */
   ok("it explains why the first one has to wait",
      /can only/.test(deploy) && /already running a version that contains it/.test(deploy));
-  ok("and names what is really keeping the server awake",
-     /CLOSE EVERY KYRO TAB/.test(deploy) && /polls every few seconds/.test(deploy));
+  /**
+   * It no longer GUESSES at what is keeping the server awake — it asks and
+   * prints the answer. "my tab is not open … i dont know what your seeing"
+   * was a fair reply to a message that blamed the browser tab five times
+   * running without ever having looked.
+   */
+  ok("and names what is really keeping the server awake, from what it measures",
+     /Something is keeping it awake\./.test(deploy)
+     && /how many live/.test(deploy)
+     && /it is not only this/.test(deploy));
+}
+
+// ── And when it does not arrive, it says WHY ────────────────────────────────
+//
+// "my tab is not open, deploy it because my tab is closed, i dont know what
+// your seeing."
+//
+// A fair thing to say to a program that will not tell you. This server only
+// picks up new code when it is evicted, and it is only evicted when nothing
+// has spoken to it for a few seconds — and for five deploys running, all
+// anybody could do was guess at what was holding it open: a browser tab, the
+// counting computer, a phone, somebody else's laptop.
+//
+// Neither fact is a secret. How many live connections it holds and how long
+// since anything spoke to it say nothing about anybody in the building.
+{
+  const venue = read("worker/venue.js");
+  ok("the server counts the live connections holding it open", /this\.ctx\.getWebSockets\(\)\.length/.test(venue));
+  ok("and says how long since anything spoke to it", /idle_s: Math\.round\(\(Date\.now\(\) - \(this\.lastSpokenTo \?\? 0\)\) \/ 1000\)/.test(venue));
+  ok("which is recorded on every request it takes",
+     /this\.lastSpokenTo = Date\.now\(\);/.test(venue));
+  ok("it survives not being able to ask", /catch \{ sockets = -1; \}/.test(venue));
+  const index = read("worker/index.js");
+  ok("the version also says what the deployed pages EXPECT",
+     /expects: VENUE_CODE/.test(index));
+  ok("and only reports what is holding it when it is actually behind",
+     /if \(body && body\.venue !== VENUE_CODE\) \{/.test(index));
+  ok("the deploy prints it while it waits", /"holding":\{"sockets"/.test(deploy));
+  ok("and stops blaming the browser tab alone",
+     /the computer doing the counting holds a connection/.test(deploy));
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A deploy reaches the cameras.");

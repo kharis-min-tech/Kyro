@@ -649,6 +649,9 @@ export class VenueHub extends DurableObject {
   async layoutWithSeats(camera_id, l) { return l ? { ...l, seats: await this.seatsOf(camera_id, l.id) } : null; }
 
   async fetch(request) {
+    // When anything last spoke to this server — see /internal/version. It is
+    // the number that answers "why has the new code not arrived".
+    this.lastSpokenTo = Date.now();
     const url = new URL(request.url);
     const p = url.pathname;
     const role = request.headers.get("X-Kyro-Role") || "";   // set by index.js after checking the session
@@ -661,7 +664,36 @@ export class VenueHub extends DurableObject {
       // link to the cameras is still answering with last week's code. That is
       // exactly what happened to "Start fresh": the button was new, the server
       // it called was not, and all anyone saw was "Not found".
-      if (p === "/internal/version" && request.headers.get("X-Kyro-Internal") === "1") return json({ venue: VENUE_CODE });
+      if (p === "/internal/version" && request.headers.get("X-Kyro-Internal") === "1") {
+        /**
+         * …and WHAT IS KEEPING IT AWAKE.
+         *
+         * This server only picks up newly deployed code when it is evicted,
+         * and it is only evicted when nothing has spoken to it for a few
+         * seconds. Five deploys in a row failed to reach it, and all anybody
+         * could do was guess at what was holding it open — a browser tab, a
+         * camera computer, a phone, somebody else's laptop. "my tab is not
+         * open, i dont know what your seeing" is a fair thing to say to a
+         * program that will not tell you.
+         *
+         * So it says. How many live connections it is holding and when it
+         * was last spoken to are the two facts that answer it, and neither
+         * is a secret: no names, no counts of people, nothing about anybody
+         * in the building.
+         */
+        let sockets = 0;
+        try { sockets = this.ctx.getWebSockets().length; } catch { sockets = -1; }
+        return json({
+          venue: VENUE_CODE,
+          /** Open live connections — a counting browser, a camera computer,
+           *  a page watching a camera. Each one wakes this server whenever
+           *  it says anything. */
+          sockets,
+          /** Seconds since anything last spoke to it. It needs a few in a
+           *  row with nobody talking before it can pick up new code. */
+          idle_s: Math.round((Date.now() - (this.lastSpokenTo ?? 0)) / 1000),
+        });
+      }
       /**
        * Let go, so the new code can take over.
        *

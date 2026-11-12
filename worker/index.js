@@ -103,11 +103,19 @@ export default {
       // that is actually answering. The deploy script checks it.
       if (url.pathname === "/api/version") {
         let venue = null;
+        /** What is keeping the live-cameras server awake, when it is behind. */
+        let holding = null;
         if (env.VENUE) {
           try {
             const hub = env.VENUE.get(env.VENUE.idFromName("venue"));
             const res = await hub.fetch("https://hub/internal/version", { headers: { "X-Kyro-Internal": "1" } });
-            venue = res.ok ? (await res.json()).venue : "old";   // 404 = still running older code
+            const body = res.ok ? await res.json() : null;
+            venue = body ? body.venue : "old";                   // 404 = still running older code
+            // What is holding it open, when it is behind. Guessing at this
+            // cost five deploys — see /internal/version in worker/venue.js.
+            if (body && body.venue !== VENUE_CODE) {
+              holding = { sockets: body.sockets ?? null, idle_s: body.idle_s ?? null };
+            }
             /**
              * …and if it is running older code, tell it to let go.
              *
@@ -139,7 +147,12 @@ export default {
             }
           } catch { venue = "unreachable"; }
         }
-        return json({ worker: WORKER_CODE, venue });
+        // `expects` is what the deployed worker was BUILT with. If it
+        // matches `venue`, the server is current; if it differs, the pages
+        // and the counting are running different code — and until now
+        // nothing said which was which, so a deploy that had plainly
+        // succeeded was indistinguishable from one that had not.
+        return json({ worker: WORKER_CODE, venue, expects: VENUE_CODE, ...(holding ? { holding } : {}) });
       }
 
       // Live cameras: the camera computer at church (device token) and the

@@ -131,7 +131,10 @@ for attempt in 1 2 3; do
         echo "✓ Live and verified"
         exit 0
       fi
-      echo "   live cameras still on: ${live:-unknown} — leaving it alone for another 30s"
+      # …and WHAT is holding it open, which five failed deploys could only
+      # guess at. See /internal/version in worker/venue.js.
+      held=$(curl -s "$SITE/api/version" | sed -n 's/.*"holding":{"sockets":\([-0-9]*\),"idle_s":\([0-9]*\)}.*/\1 connection(s) open, last spoken to \2s ago/p')
+      echo "   live cameras still on: ${live:-unknown} — ${held:-leaving it alone} for another 30s"
     done
     echo "✗ The pages are live, but the live-cameras server is STILL running older code."
     echo "  Anything new it has to answer (new buttons, new figures) will say \"Not found\"."
@@ -141,10 +144,11 @@ for attempt in 1 2 3; do
     echo "  obey once it is already running a version that contains it. This deploy is"
     echo "  the one that puts it there; from the next one on, it restarts by itself."
     echo ""
-    echo "  To get past it this time: CLOSE EVERY KYRO TAB, and stop counting if it is"
-    echo "  running, for about a minute. An open page polls every few seconds, which is"
-    echo "  enough to keep the server awake and on the old code indefinitely. Then run"
-    echo "  this again."
+    echo "  Something is keeping it awake. The lines above say how many live"
+    echo "  connections it is holding and how long since anything spoke to it — it"
+    echo "  needs a few seconds in a row with nobody talking, and it is not only this"
+    echo "  browser: the computer doing the counting holds a connection, and so does"
+    echo "  any phone or laptop with Kyro open. Close them, wait a minute, run again."
     echo "  Do NOT say it is fixed yet."
     exit 1
   fi
