@@ -127,7 +127,34 @@ const settle = (tr, boxes, t, faces, times = 4) => {
   // The attendance figure is the SIZE OF THE REGISTER — not a counter kept
   // beside it, which is how two numbers for one thing start disagreeing. Each
   // camera's own tally is still published for comparison, never added up.
-  ok("attendance is the register itself", /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
+  /**
+   * ── The doorway answers this now ────────────────────────────────────────
+   *
+   * "because the room camera cannot see the whole room, the door camera
+   * basically needs to do the counting too to be honest."
+   *
+   * Attendance came from the register, which is fed by the ROOM cameras — a
+   * doorway is not allowed to put anybody in it. In a wide hall a camera
+   * sees its own corner, so the register was answering "how many different
+   * people have been in that corner" under the name attendance, for a
+   * building where most of the congregation is never in shot.
+   *
+   * A doorway is the one camera every person passes, close and face-on, and
+   * it keeps its own count of DIFFERENT people — it remembers the ones it
+   * has counted, so the usher holding the door is one person. That is an
+   * attendance figure measured where attendance can be measured.
+   *
+   * The register's figure is kept beside it under its own name, never added
+   * to it: everybody the door sees also walks into a room.
+   */
+  ok("attendance is the doorway's count when a doorway is counting",
+     /const attendance = doorPeople > 0 \? doorPeople : roomPeople;/.test(worker)
+     && /people_seen: attendance,/.test(worker));
+  ok("two doorways take the fullest view, never the sum",
+     /const doorPeople = doors\.reduce\(\(n, r\) => Math\.max\(n, r\.people \|\| 0\), 0\);/.test(worker));
+  ok("and the rooms' own figure is kept beside it, never added to it",
+     /people_seen_in_rooms: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
+  ok("the page is told which of the two it is reading", /attendance_from: attendanceFrom,/.test(worker));
   ok("and the page is told which it is", /people_from_register: !!this\.register\?\.size,/.test(worker));
   ok("each camera's own tally is kept for comparison", /people_seen_by_camera: sum\("people"\),/.test(worker));
   ok("a doorway's own register is offered, not added", /people_seen_at_door: sumDoors\("people"\),/.test(worker));

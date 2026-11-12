@@ -412,6 +412,24 @@ export class VenueHub extends DurableObject {
       ctx.storage.sql.exec(
         "CREATE TABLE IF NOT EXISTS history (ts INTEGER NOT NULL, camera_id TEXT NOT NULL, current INTEGER, entries INTEGER, exits INTEGER, capacity INTEGER)",
       );
+      /**
+       * How many DIFFERENT people each camera had seen at that moment.
+       *
+       * Added later, so the table has to be altered rather than created with
+       * it — and a table that already has the column must not throw, which
+       * is why this is wrapped. Its own exec call: a second argument to exec
+       * is a BIND PARAMETER, not another statement, and writing two
+       * statements that way once stopped the whole live-cameras server from
+       * starting at all.
+       *
+       * It is here because a DOORWAY's count of different people is the
+       * attendance figure in a building where no camera sees the whole hall
+       * — "the door camera basically needs to do the counting" — and until
+       * now nothing wrote it down, so the live card and the history page
+       * were about to answer the same question with two different numbers.
+       */
+      try { ctx.storage.sql.exec("ALTER TABLE history ADD COLUMN people INTEGER"); }
+      catch { /* already there */ }
       /*
        * Face codes, for the length of ONE service.
        *
@@ -1153,8 +1171,8 @@ export class VenueHub extends DurableObject {
         const l = live[camera_id];
         // Columns named explicitly: the table gained deleted_at, and an unnamed
         // INSERT then fails — which would stop every camera being recorded.
-        this.ctx.storage.sql.exec("INSERT INTO history (ts, camera_id, current, entries, exits, capacity) VALUES (?, ?, ?, ?, ?, ?)",
-          now, camera_id, l.current, l.entries, l.exits, cams[camera_id].zone_capacity || 0);
+        this.ctx.storage.sql.exec("INSERT INTO history (ts, camera_id, current, entries, exits, capacity, people) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          now, camera_id, l.current, l.entries, l.exits, cams[camera_id].zone_capacity || 0, l.people || 0);
       }
     }
 
@@ -2344,6 +2362,42 @@ export class VenueHub extends DurableObject {
     // Only capacities somebody actually entered are added up. A guessed one
     // would make "space left" and "how full" for the whole building rest on
     // what a camera thought it could see — see syncCapacity.
+    /**
+     * Attendance: the doorway's answer when there is one, the rooms' when
+     * there isn't.
+     *
+     * ── Why the doorway has to be allowed to answer this ──────────────────
+     *
+     * "because the room camera cannot see the whole room, the door camera
+     * basically needs to do the counting too to be honest."
+     *
+     * She is right, and this had it backwards. Attendance came from the
+     * register — which is fed by the ROOM cameras, because a doorway is not
+     * allowed to put anybody in it. In a wide hall a camera sees its own
+     * corner, so the register was answering "how many different people have
+     * been in that corner", under the name "attendance", for a building
+     * where most of the congregation is never in shot.
+     *
+     * A doorway is the one camera that every person in the building passes,
+     * one or two at a time, close and face-on. It keeps its own count of
+     * DIFFERENT people — it remembers the ones it has already counted, so
+     * the usher holding the door is counted once, and somebody stepping out
+     * for a phone call is not a second person. That is an attendance
+     * figure, measured where attendance can actually be measured.
+     *
+     * So: the doorway answers when a doorway is counting. The rooms' figure
+     * is kept beside it under its own name, never added to it — everybody
+     * the door sees also walks into a room, and adding them would count the
+     * congregation twice.
+     *
+     * Two doorways take the fullest view rather than the sum, the same rule
+     * two cameras on one room already follow: a church with a front and a
+     * side door has one congregation, not two.
+     */
+    const doorPeople = doors.reduce((n, r) => Math.max(n, r.people || 0), 0);
+    const roomPeople = this.register?.size ?? sum("people");
+    const attendance = doorPeople > 0 ? doorPeople : roomPeople;
+    const attendanceFrom = doorPeople > 0 ? "door" : this.register ? "rooms" : "cameras";
     const cap = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
     /**
      * The seats in the building, for checking the attendance figure against.
@@ -2513,7 +2567,16 @@ export class VenueHub extends DurableObject {
        * Not a counter — the size of the register itself, so it cannot drift
        * away from the people it is made of.
        */
-      people_seen: this.register?.size ?? sum("people"),
+      people_seen: attendance,
+      /**
+       * Where that figure came from, and what the other answer was.
+       *
+       * Never just the number. These two disagreeing is the single most
+       * useful thing Kyro can show about its own counting, and burying it
+       * was how an impossible figure went unchallenged for a whole evening.
+       */
+      attendance_from: attendanceFrom,
+      people_seen_in_rooms: this.register?.size ?? sum("people"),
       /** Whether that came from the register or from the cameras' own tallies. */
       people_from_register: !!this.register?.size,
       /**
@@ -2601,12 +2664,22 @@ export class VenueHub extends DurableObject {
        * from a picture, which would be one guess accusing another. See
        * capacity_from and seatsHere.
        */
-      attendance_over_seats: seatsHere > 0 && (this.register?.size || 0) > seatsHere
+      attendance_over_seats: seatsHere > 0 && attendance > seatsHere
         ? {
             seats: seatsHere,
-            counted: this.register.size,
-            /** Recorded as having left — every visit the register has closed. */
-            left: Math.max(0, this.register.size - (this.register.inBuilding?.() ?? 0)),
+            counted: attendance,
+            /**
+             * Recorded as having left.
+             *
+             * Taken from the SAME figure that is being held, not from the
+             * register when the doorway answered — two numbers from two
+             * different counts cannot be subtracted from each other, and
+             * doing it is how the card came to say 114 in and 273 out.
+             */
+            left: attendanceFrom === "door"
+              // Everyone the door counted in, less everyone still inside it.
+              ? Math.max(0, attendance - Math.max(0, doorNet ?? 0))
+              : Math.max(0, attendance - (this.register?.inBuilding?.() ?? 0)),
           }
         : null,
       /**
@@ -2642,9 +2715,7 @@ export class VenueHub extends DurableObject {
        * on her say-so, it does not. Only ever against a seat count somebody
        * entered — never one Kyro guessed.
        */
-      people_seen_shown: seatsHere > 0 && (this.register?.size || 0) > seatsHere
-        ? seatsHere
-        : (this.register?.size ?? sum("people")),
+      people_seen_shown: seatsHere > 0 && attendance > seatsHere ? seatsHere : attendance,
       /**
        * How many people the register has not yet recorded leaving.
        *
@@ -2984,8 +3055,8 @@ export class VenueHub extends DurableObject {
     const camera = url.searchParams.get("camera");
     const since = Date.now() - days * 86400_000;
     const rows = camera
-      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
-      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits FROM history WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts", since).toArray();
+      ? this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits, people FROM history WHERE deleted_at IS NULL AND camera_id = ? AND ts >= ? ORDER BY ts", camera, since).toArray()
+      : this.ctx.storage.sql.exec("SELECT camera_id, ts, current, capacity, entries, exits, people FROM history WHERE deleted_at IS NULL AND ts >= ? ORDER BY ts", since).toArray();
     // History is saved once a minute; add each camera's count right now so today is up to date.
     const live = await this.get("live", {});
     const cams = await this.get("cameras", {});
@@ -3010,6 +3081,9 @@ export class VenueHub extends DurableObject {
     const hasDoors = doorIds.size > 0 && (!camera || doorIds.has(camera));
     const doorRun = new Map();   // camera → running arrivals and departures today
     let doorNet = 0;             // people in the building by the door's count
+    /** The doorway's own count of different people — the attendance figure
+     *  in a building where no camera sees the whole hall. See below. */
+    let doorPeople = 0;
     // Every camera's running arrivals and departures, for the day's total.
     const dayRun = new Map();
     let cameIn = 0;
@@ -3057,6 +3131,20 @@ export class VenueHub extends DurableObject {
         for (const run of doorRun.values()) net += run.in - run.out;
         doorNet = Math.max(0, net);
       }
+      /**
+       * The doorway's own count of DIFFERENT people that day.
+       *
+       * Not the same as its crossings: a doorway camera remembers the people
+       * it has already counted, so the usher holding the door is one person
+       * and somebody stepping out for a phone call is not a second. In a
+       * building where no camera sees the whole hall this is the attendance
+       * figure — "the door camera basically needs to do the counting" — and
+       * it is what the live card now shows, so the history has to agree.
+       *
+       * The fullest view, never the sum: a church with a front door and a
+       * side door has one congregation.
+       */
+      if (doorIds.has(r.camera_id)) doorPeople = Math.max(doorPeople, r.people || 0);
       // How many people came in that day — which is what a church means by
       // attendance. "Most at once" is a different number and a much smaller
       // one: a camera sees its own corner of a hall, so on an afternoon with
@@ -3080,10 +3168,14 @@ export class VenueHub extends DurableObject {
         }
       }
       const cur = byDay.get(d);
-      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts, door: doorNet, came_in: cameIn });
+      if (!cur || total > cur.peak) byDay.set(d, { peak: total, capacity: cap, at: r.ts, door: doorNet, came_in: cameIn, door_people: doorPeople });
       else {
         if (doorNet > (cur.door || 0)) cur.door = doorNet;
         if (cameIn > (cur.came_in || 0)) cur.came_in = cameIn;
+        // The doorway's count of different people only ever climbs, and the
+        // row that happened to hold the busiest MOMENT is not the row that
+        // holds the most people counted all day.
+        if (doorPeople > (cur.door_people || 0)) cur.door_people = doorPeople;
       }
     }
     // ── The register of people ────────────────────────────────────────────
@@ -3107,7 +3199,7 @@ export class VenueHub extends DurableObject {
       const v = byDay.get(d);
       return (byRegister.get(d)?.people ?? 0) > 0 || (v && (v.peak > 0 || v.came_in > 0));
     }).sort().map((d) => {
-      const v = byDay.get(d) ?? { peak: 0, capacity: 0, at: 0, door: 0, came_in: 0 };
+      const v = byDay.get(d) ?? { peak: 0, capacity: 0, at: 0, door: 0, came_in: 0, door_people: 0 };
       const reg = byRegister.get(d) ?? null;
       // A day's attendance is how many different people were there.
       //
@@ -3115,7 +3207,21 @@ export class VenueHub extends DurableObject {
       // person once. Then how many the cameras counted walking in, and only
       // then the most seen at once — a floor, never the answer, because no
       // camera sees a whole hall.
-      const measured = reg ? reg.people : v.came_in > 0 ? v.came_in : v.peak;
+      /**
+       * A day's attendance: the doorway's count of different people first.
+       *
+       * It used to be the register's, which is fed by the ROOM cameras —
+       * and in a wide hall a camera sees its own corner, so that answered
+       * "how many different people were in that corner" under the name
+       * attendance. The doorway is the one camera everybody passes.
+       *
+       * Then the register, then crossings, then the most seen at once — a
+       * floor, never the answer.
+       */
+      const measured = v.door_people > 0 ? v.door_people
+        : reg ? reg.people
+        : v.came_in > 0 ? v.came_in
+        : v.peak;
       /**
        * …held at what the building can hold.
        *
@@ -3141,7 +3247,7 @@ export class VenueHub extends DurableObject {
         /** The seats it is held at, so a page can say so. */
         attendance_held_at: attendance === measured ? null : ceiling,
         /** Where that figure came from, so a page never has to guess. */
-        attendance_from: reg ? "register" : v.came_in > 0 ? "entries" : "seen_at_once",
+        attendance_from: v.door_people > 0 ? "door" : reg ? "register" : v.came_in > 0 ? "entries" : "seen_at_once",
         /** Different people, counted once each. null before Kyro kept this. */
         people: reg ? reg.people : null,
         /** The most the cameras saw at one moment. A different question. */

@@ -246,9 +246,18 @@ function chairsChangeHands({ freeForReports, alike }) {
 {
   const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
   ok("attendance above the seat count is reported",
-     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
-  ok("with how many have left, so the sum can be checked",
-     /left: Math\.max\(0, this\.register\.size - \(this\.register\.inBuilding\?\.\(\) \?\? 0\)\)/.test(worker));
+     /attendance_over_seats: seatsHere > 0 && attendance > seatsHere/.test(worker));
+  /**
+   * …against the figure actually being SHOWN, whichever count it came from.
+   *
+   * The doorway answers attendance now, so checking the register against the
+   * seats would check a number nobody is looking at — and the departures
+   * have to come from the same count as the arrivals, or the card says 114
+   * in and 273 out again.
+   */
+  ok("with how many have left, taken from the same count as came in",
+     /\? Math\.max\(0, attendance - Math\.max\(0, doorNet \?\? 0\)\)/.test(worker)
+     && /: Math\.max\(0, attendance - \(this\.register\?\.inBuilding\?\.\(\) \?\? 0\)\)/.test(worker));
   ok("built from capacities somebody entered, never ones Kyro guessed",
      /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
   ok("the figure is never quietly capped at the seat count",
@@ -268,7 +277,7 @@ function chairsChangeHands({ freeForReports, alike }) {
    * become a number nobody can check.
    */
   ok("the figure on the screen is held at the seat count",
-     /people_seen_shown: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere\s*\n\s*\? seatsHere/.test(worker));
+     /people_seen_shown: seatsHere > 0 && attendance > seatsHere \? seatsHere : attendance,/.test(worker));
   /**
    * And the seats are a fact about the HALL, not about a camera.
    *
@@ -284,7 +293,7 @@ function chairsChangeHands({ freeForReports, alike }) {
   ok("the seats fall back to what the church has stated about the building",
      /const entered = \[\.\.\.byRoom\.values\(\)\]\.reduce\(\(n, v\) => n \+ v, 0\);\s*\n\s*return entered > 0 \? entered : SEATS_IN_THE_HALL;/.test(worker));
   ok("and the hold is checked against that, not against a camera's capacity",
-     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
+     /attendance_over_seats: seatsHere > 0 && attendance > seatsHere/.test(worker));
   // But NOT "spaces left" or "how full": a building with no camera on a room
   // genuinely cannot say how full it is, and must not pretend to.
   ok("while how-full still needs a camera actually watching a room",
@@ -296,7 +305,8 @@ function chairsChangeHands({ freeForReports, alike }) {
      /set its location to the indoor /.test(worker));
   ok("cleared the moment one is", /\} else if \(anyRoom\) \{\s*\n\s*await this\.working\("Cameras"\);/.test(worker));
   ok("but the measurement itself is not touched",
-     /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
+     /people_seen_in_rooms: this\.register\?\.size \?\? sum\("people"\),/.test(worker)
+     && /counted: attendance,/.test(worker));
   const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
   ok("and the card says so where the number is", /Held at \{overSeats\.seats\.toLocaleString\(\)\}, the number of seats in this room/.test(card));
   ok("printing what was measured beside what it shows",
@@ -484,7 +494,7 @@ function chairsChangeHands({ freeForReports, alike }) {
      /overridden by\s*\n \* anybody who sets a seat count on the Cameras page, for good\./.test(worker));
   // The whole point: once it is in, the hold has something to hold against.
   ok("so the hold finally has a number to answer to",
-     /attendance_over_seats: seatsHere > 0 && \(this\.register\?\.size \|\| 0\) > seatsHere/.test(worker));
+     /attendance_over_seats: seatsHere > 0 && attendance > seatsHere/.test(worker));
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A hall of 114 chairs does not hold 300 people.");

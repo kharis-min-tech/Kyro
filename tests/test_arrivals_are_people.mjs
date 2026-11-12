@@ -186,12 +186,34 @@ const at = (h, m = 0) => day + h * HOUR + m * 60_000;
 
 // 10. Attendance is different people, and says so.
 {
-  ok("the day's attendance is the register first",
-     /const measured = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(src)
+  /**
+   * ── The doorway answers this now ────────────────────────────────────────
+   *
+   * "because the room camera cannot see the whole room, the door camera
+   * basically needs to do the counting too to be honest."
+   *
+   * Attendance came from the register, which is fed by the ROOM cameras — a
+   * doorway is not allowed to put anybody in it. In a wide hall a camera
+   * sees its own corner, so the register was answering "how many different
+   * people have been in that corner" under the name attendance, for a
+   * building where most of the congregation is never in shot.
+   *
+   * A doorway is the one camera every person passes, close and face-on, and
+   * it keeps its own count of DIFFERENT people — it remembers the ones it
+   * has counted, so the usher holding the door is one person. That is an
+   * attendance figure measured where attendance can be measured.
+   *
+   * The register's figure is kept beside it under its own name, never added
+   * to it: everybody the door sees also walks into a room.
+   */
+  ok("the day's attendance is the doorway's count of different people first",
+     /const measured = v\.door_people > 0 \? v\.door_people/.test(src)
+     && /: reg \? reg\.people/.test(src)
      // …and then held at what the room can hold, which is a separate
      // question and has its own file. See test_full_hall.mjs.
      && /const attendance = seats > 0 \? Math\.min\(measured, ceiling\) : measured;/.test(src));
-  ok("every day says where its figure came from", /attendance_from: reg \? "register"/.test(src));
+  ok("every day says where its figure came from",
+     /attendance_from: v\.door_people > 0 \? "door" : reg \? "register"/.test(src));
   ok("and the summary says so too", /attendance_from_register: history\.some/.test(src));
   ok("the hourly chart uses the register when it has one",
      /if \(useRegister\) \{/.test(src) && /movement_from_register: useRegister,/.test(src));

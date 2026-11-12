@@ -194,7 +194,8 @@ function herEvening({ trips, cams = ["cam1"], oneRoom = true, stay = 5 }) {
   ok("the tile is gone from the arrivals card", !/Different people, this service/.test(card));
   ok("and nothing is still being passed to it", !/peopleSeen/.test(card));
   ok("but attendance still comes from the register",
-     /people_seen: this\.register\?\.size \?\? sum\("people"\),/.test(worker));
+     /people_seen_in_rooms: this\.register\?\.size \?\? sum\("people"\),/.test(worker)
+     && /const attendance = doorPeople > 0 \? doorPeople : roomPeople;/.test(worker));
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
   ok("and the page no longer sends it", !/peopleSeen=/.test(page));
 }

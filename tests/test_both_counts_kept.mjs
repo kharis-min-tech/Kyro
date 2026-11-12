@@ -88,8 +88,29 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
      /seen_at_once: v\.peak,/.test(worker));
   // Attendance is different people first — the register counts each person
   // once — and the cameras' own tally only for days recorded before it.
-  ok("and a day's attendance is different people, then how many came in",
-     /const measured = reg \? reg\.people : v\.came_in > 0 \? v\.came_in : v\.peak;/.test(worker)
+  /**
+   * ── The doorway answers this now ────────────────────────────────────────
+   *
+   * "because the room camera cannot see the whole room, the door camera
+   * basically needs to do the counting too to be honest."
+   *
+   * Attendance came from the register, which is fed by the ROOM cameras — a
+   * doorway is not allowed to put anybody in it. In a wide hall a camera
+   * sees its own corner, so the register was answering "how many different
+   * people have been in that corner" under the name attendance, for a
+   * building where most of the congregation is never in shot.
+   *
+   * A doorway is the one camera every person passes, close and face-on, and
+   * it keeps its own count of DIFFERENT people — it remembers the ones it
+   * has counted, so the usher holding the door is one person. That is an
+   * attendance figure measured where attendance can be measured.
+   *
+   * The register's figure is kept beside it under its own name, never added
+   * to it: everybody the door sees also walks into a room.
+   */
+  ok("and a day's attendance is the door's different people, then the rooms'",
+     /const measured = v\.door_people > 0 \? v\.door_people/.test(worker)
+     && /: reg \? reg\.people/.test(worker)
      // …and then held at what the room can hold, which is a separate
      // question and has its own file. See test_full_hall.mjs.
      && /const attendance = seats > 0 \? Math\.min\(measured, ceiling\) : measured;/.test(worker));
