@@ -38,6 +38,15 @@ const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests
 
 const MAX_SEATS = 900;            // per camera: a stored value is capped at 128 KB
 const SAFE_VALUE_BYTES = 110_000; // comfortably inside that 128 KB
+/**
+ * Shorter than this in view, on average, and a camera is on a doorway.
+ *
+ * Generous on purpose. A congregation sits for an hour; people pass a door
+ * in seconds. Anything in between — a foyer where people stand and talk, a
+ * creche — is left alone rather than second-guessed, because being wrong
+ * about this the other way would tell somebody to stop counting their room.
+ */
+const DOORWAY_LIFE_S = 25;
 const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
 const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
 const SERVICE_END_PEOPLE = 3;     // fewer than this …
@@ -1104,6 +1113,10 @@ export class VenueHub extends DurableObject {
         black: !!c.black, frozen: !!c.frozen, no_picture: !!c.no_picture,
         counted_at: num(c.counted_at, 0, Date.now() + 60_000) || now,
         error_reason: c.error ? clean(c.error, 120) : null, fps: Number(c.fps) || 0,
+        // The middle time a person stays in this camera's view, in seconds.
+        // How a camera set as a room but pointed at a door is spotted — see
+        // DOORWAY_LIFE_S.
+        life_s: num(c.life_s, 0, 100000) || null,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
       };
       if (Array.isArray(c.questions) && c.questions.length) newQuestions.push(...c.questions.slice(0, 10).map((q) => cleanQuestion(q, camera_id)).filter(Boolean));
@@ -1217,6 +1230,36 @@ export class VenueHub extends DurableObject {
        * which is the only reason this is here. Said once, cleared the moment
        * a camera is pointed at a room.
        */
+      /**
+       * A camera set as a room that is really pointed at a door.
+       *
+       * ── Why this cannot be left to a setting ────────────────────────────
+       *
+       * A doorway camera and a room camera want opposite treatment, and
+       * which one a camera is, is a tick-box somebody has to get right. Get
+       * it wrong this way round and nothing says so: the camera is open,
+       * healthy, sending a perfect picture — and putting a NEW PERSON in the
+       * register for everybody who walks past it, because that is what a
+       * room camera is for. One person crossing a doorway appears,
+       * disappears and reappears; as a "room" they are three people, and by
+       * the end of a morning a hall of 114 chairs has 300 people in it.
+       *
+       * The camera itself can tell. People are in a doorway's view for a few
+       * seconds and in a hall's for an hour — see typicalLifeS. So Kyro
+       * measures it and says so, with the one tick-box that fixes it, rather
+       * than waiting for somebody to suspect the setting.
+       */
+      for (const c of Object.values(cams)) {
+        if (!c || c.hidden || c.pending) continue;
+        if (c.location === "entrance" || c.location === "queue") continue;
+        const life = live[c.camera_id]?.life_s;
+        if (!(life > 0) || life > DOORWAY_LIFE_S) { await this.working(`${c.name || c.camera_id} is watching a room`); continue; }
+        await this.wrong(`${c.name || c.camera_id} is watching a room`,
+          `People are only in ${c.name || c.camera_id}'s view for about ${Math.round(life)} seconds, which is a doorway, not a room.`,
+          "Set as a room, it puts a NEW person in the register for everybody who walks past — and one person crossing a doorway "
+          + "appears, disappears and reappears, so they are counted several times. On the Cameras page, open this camera with the "
+          + "pencil and set its location to the entrance. It will then count people in and out and leave the register alone.");
+      }
       const anyRoom = Object.values(cams).some(
         (c) => c && !c.hidden && !c.pending && c.location !== "entrance" && c.location !== "queue");
       if (!anyRoom && Object.values(cams).some((c) => c && !c.hidden && !c.pending)) {

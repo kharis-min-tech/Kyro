@@ -83,7 +83,29 @@ const FACES_EVERY_MS = 4_000;
  */
 const CROP_EVERY_MS = 8_000;
 /** How many of those are kept per camera, oldest dropped first. */
-const MOST_CROPS = 60;
+/**
+ * How many people's pictures are kept, per camera.
+ *
+ * ── Why sixty was the wrong number ──────────────────────────────────────────
+ *
+ * "you gave me questions like 'is this the same person' without even showing
+ * me a picture of the two look alikes."
+ *
+ * A same-person question compares somebody in view NOW with somebody seen
+ * earlier — and the earlier one is, by definition, the one who has gone. This
+ * cache kept sixty, oldest evicted first. In a hall of a hundred and ten,
+ * everybody in shot fills it within one pass, so the person who walked away
+ * was always the first thing thrown out. The half of the question Kyro wanted
+ * judged was deleted before it could be asked.
+ *
+ * Kept smaller each and more of them, for the same memory: a hundred and
+ * fifty pictures at a hundred and sixty pixels across is about what sixty at
+ * two hundred and forty was, and a hundred and sixty pixels is plenty to
+ * recognise somebody by — which is the only thing these are for.
+ */
+const MOST_CROPS = 150;
+/** How wide a kept picture is. See MOST_CROPS. */
+const CROP_WIDTH = 160;
 const DOOR_FACES_EVERY_MS = 1_200;
 /**
  * And at most this many people each time.
@@ -840,11 +862,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         for (const x of seen) {
           const had = c.crops.get(x.track);
           if (had && now - had.at < CROP_EVERY_MS) continue;
-          const crop = cropOf(c.grabCanvas, x.box as [number, number, number, number]);
+          const crop = cropOf(c.grabCanvas, x.box as [number, number, number, number], CROP_WIDTH);
           if (crop) c.crops.set(x.track, { at: now, crop });
         }
         // Oldest first, so the people most recently in shot are the ones
-        // kept — and a morning's worth of tracks never piles up.
+        // kept — and a morning's worth of tracks never piles up. The people
+        // Kyro has actually asked for are not in here to be lost: a wanted
+        // picture is sent on the same tick it is asked for, below.
         if (c.crops.size > MOST_CROPS) {
           const old = [...c.crops.entries()].sort((a, b) => a[1].at - b[1].at);
           for (const [k] of old.slice(0, c.crops.size - MOST_CROPS)) c.crops.delete(k);
@@ -899,6 +923,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         entries: c.tracker.entries, exits: c.tracker.exits,
         // Different people, counted once each — see PersonTracker.people.
         people_seen: c.tracker.people,
+        // How long people stay in this camera's view, in seconds. A doorway
+        // sees somebody for a few seconds and a hall for an hour, so this is
+        // how the website can tell a camera that is SET as a room but is
+        // really pointed at a door — which invents a new person for everyone
+        // who walks past it. See typicalLifeS in personTracker.ts.
+        life_s: c.tracker.typicalLifeS || undefined,
         // Which of this camera's seats are taken. A seat id and a person id
         // are different things: somebody who sits in five chairs during a
         // service is five seats and one person in the attendance register.

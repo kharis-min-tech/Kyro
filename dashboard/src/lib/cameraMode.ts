@@ -316,6 +316,9 @@ export interface CameraReport {
   entries: number; exits: number;
   /** How many DIFFERENT people this camera has seen this service. */
   people_seen?: number;
+  /** The middle time a person stays in this camera's view, in seconds — how
+   *  a doorway is told from a room. See typicalLifeS in personTracker.ts. */
+  life_s?: number;
   /** Everyone it is following: this camera's own id for them, an appearance
    *  reading, and a face code while face matching is on. Never a picture. */
   seen?: { t: number; l: number[] | null; f: string | null; s?: string | null; q?: number }[];

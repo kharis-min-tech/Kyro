@@ -173,8 +173,28 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
      /const kept = c\.crops\.get\(want\.track\);/.test(ctx)
      && /sendPersonPicture\(want\.id, want\.side, kept\.crop\)/.test(ctx));
   ok("drawn rather than encoded, so keeping them costs almost nothing",
-     /const CROP_EVERY_MS = 8_000;/.test(ctx) && /const MOST_CROPS = 60;/.test(ctx)
+     /const CROP_EVERY_MS = 8_000;/.test(ctx)
      && /crop\.toBlob\(r, "image\/jpeg", 0\.72\)/.test(cam));
+  /**
+   * Sixty was the wrong number, and it was the whole bug.
+   *
+   * A same-person question compares somebody in view NOW with somebody seen
+   * earlier — and the earlier one is, by definition, the one who has gone.
+   * The cache kept sixty, oldest evicted first, so in a hall of a hundred
+   * and ten everybody in shot filled it within one pass and the person who
+   * walked away was always the first thing thrown out. The half of the
+   * question Kyro wanted judged was deleted before it could be asked:
+   * "without even showing me a picture of the two look alikes".
+   *
+   * More of them, smaller, for the same memory.
+   */
+  const most = Number(/const MOST_CROPS = (\d+);/.exec(ctx)?.[1]);
+  const width = Number(/const CROP_WIDTH = (\d+);/.exec(ctx)?.[1]);
+  ok("enough pictures are kept for a hall, not just a room", most >= 120, `${most}`);
+  ok("at a size that still costs about what sixty used to",
+     width > 0 && most * width * width * 1.33 * 4 < 25e6, `${most} x ${width}px`);
+  ok("and a kept picture is made at that size", /cropOf\(c\.grabCanvas, x\.box as \[number, number, number, number\], CROP_WIDTH\)/.test(ctx));
+  ok("still big enough to recognise somebody by", width >= 140, `${width}px`);
   ok("and a morning's worth of them never piles up",
      /for \(const \[k\] of old\.slice\(0, c\.crops\.size - MOST_CROPS\)\) c\.crops\.delete\(k\);/.test(ctx));
   // A routine report carries numbers and nothing else. A crop only ever

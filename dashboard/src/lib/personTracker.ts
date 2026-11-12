@@ -214,6 +214,9 @@ interface Track {
   score: number;               // rises when seen, falls when missed
   missing: number;
   lastSeen: number;            // when they were last actually seen
+  /** When they were FIRST seen, so how long they stayed can be measured —
+   *  which is what tells a doorway from a room. See typicalLifeS. */
+  firstSeen: number;
   counted: boolean;            // confirmed to be a person, so part of "in the room now"
   /**
    * Counted as having ARRIVED in this session's tally.
@@ -645,7 +648,7 @@ export class PersonTracker {
         this.countPerson(t);
         return;
       }
-      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, counted: false, arrived: false, tallied: false, stillSince: now, stillBox: b,
+      this.tracks.push({ id: this.nextId++, box: b, firstBox: b, score: 1, missing: 0, lastSeen: now, firstSeen: now, counted: false, arrived: false, tallied: false, stillSince: now, stillBox: b,
         uniqued: false, ...this.recall(faces?.[bi] ?? null, myLook, now), face: faces?.[bi] ?? null, look: looks?.[bi] ?? null });
     });
     this.tracks = this.tracks.filter((t) => {
@@ -676,17 +679,51 @@ export class PersonTracker {
           t.tallied = true;
         }
         if (gone < DOOR_GRACE_MS) return true;
+        this.noteLife(t, now);
         this.remember(t);            // let the track go, keep the person
         return false;
       }
 
       if (gone < GRACE_MS) return true;
       if (t.arrived) this.exits++;   // only people this camera watched arrive can leave
+      this.noteLife(t, now);
       this.remember(t);
       return false;
     });
 
     return this.tracks.filter((t) => t.counted && t.missing === 0).length;
+  }
+
+  /**
+   * How long people stay in this camera's view.
+   *
+   * ── What this is for ────────────────────────────────────────────────────
+   *
+   * A camera on a DOORWAY and a camera on a ROOM want opposite treatment: a
+   * doorway counts people through and must never put anybody in the
+   * register, because one person crossing it appears, disappears and
+   * reappears. Which it is, is a setting — and a doorway left set as a room
+   * quietly invents a new person for everybody who walks past it, all
+   * morning, with nothing on any screen to say so.
+   *
+   * Nobody should have to know that. The camera can say which it is: people
+   * are in a doorway's view for a few seconds and in a hall's for an hour.
+   * So the time each track lasts is kept, and the website reads the middle
+   * one — the median, not the mean, so one person standing by the door for
+   * twenty minutes does not make a doorway look like a room.
+   */
+  private lives: number[] = [];
+  private noteLife(t: Track, now: number): void {
+    if (!t.counted) return;                     // never convinced it was a person
+    this.lives.push(Math.max(0, now - t.firstSeen));
+    if (this.lives.length > 200) this.lives.shift();
+  }
+  /** The middle time a person stays in view, in seconds. 0 until there is
+   *  enough to say anything — see noteLife. */
+  get typicalLifeS(): number {
+    if (this.lives.length < 8) return 0;
+    const sorted = [...this.lives].sort((a, b) => a - b);
+    return Math.round(sorted[Math.floor(sorted.length / 2)] / 100) / 10;
   }
 
   /**
