@@ -60,6 +60,45 @@ const cut = (name, until) => {
 const body = cut("saveFaces(service, now) {", "async theBuilding()");
 ok("the three face methods were found", /saveFaces/.test(body) && /loadFaces/.test(body) && /wipeFaces/.test(body));
 
+/**
+ * …and the one that puts them BACK is actually called.
+ *
+ * ── The bug this test exists for ────────────────────────────────────────────
+ *
+ * "do not delete any facial recognition right away, otherwise you will forget
+ * their face and re count."
+ *
+ * Face codes are deliberately kept out of the register's snapshot: they live
+ * in their own table so they can be deleted on their own the moment a service
+ * ends. So restore() hands every person an EMPTY list of faces, and something
+ * has to put them back.
+ *
+ * loadFaces did exactly that, correctly, with tests — and was never called
+ * from anywhere in the running code. Not once. The comment in identity.js
+ * said "the worker puts them back here after restoring — see loadFaces", and
+ * the worker did not.
+ *
+ * So every restart mid-service — which happens on every deploy, and happened
+ * repeatedly during a service — kept the congregation and forgot their faces,
+ * leaving everybody to be matched on the colour of their coat in a hall where
+ * fifty coats are navy. The data was in the table the whole time, unread.
+ *
+ * Testing a method in isolation proves it works. It does not prove anybody
+ * uses it. This checks the call site.
+ */
+{
+  const src = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  const calls = [...src.matchAll(/this\.loadFaces\(/g)].length;
+  ok("loadFaces is called by the running code, not only by tests", calls >= 1, `${calls} call sites`);
+  const after = src.slice(src.indexOf("this.register.restore(saved);"));
+  ok("and called right after the register is restored",
+     after.indexOf("this.loadFaces(service, Date.now())") >= 0
+     && after.indexOf("this.loadFaces(service, Date.now())") < after.indexOf("startService"),
+     "it has to happen between restoring the people and anything using them");
+  ok("only while face matching is switched on",
+     /if \(await this\.facesAllowed\(\)\) this\.loadFaces\(service, Date\.now\(\)\);/.test(src));
+}
+
 const FACE_MAX_AGE_MS = Number((src.match(/const FACE_MAX_AGE_MS = ([^;]+);/) || [])[1]
   ?.replace(/[^0-9*]/g, "").split("*").reduce((a, b) => a * Number(b), 1)) || 12 * 3600_000;
 ok("faces expire in hours, not days", FACE_MAX_AGE_MS <= 24 * 3600_000, `${FACE_MAX_AGE_MS / 3600_000} h`);

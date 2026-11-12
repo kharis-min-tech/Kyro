@@ -1306,6 +1306,22 @@ export class VenueHub extends DurableObject {
     }
     if (changed) await this.ctx.storage.put("cameras", cams);
     await this.ctx.storage.put("live", live);
+    /**
+     * "This room is filling up" / "This room is full", to people's phones.
+     *
+     * ── Why this line is new ──────────────────────────────────────────────
+     *
+     * It was written, commented, guarded against buzzing everybody's phone
+     * every thirty seconds, and never called from anywhere. The alerts have
+     * never once gone out. Found the same way the faces were: by asking
+     * which methods nothing in the running code refers to.
+     *
+     * Here, because this is the moment the live figures have just been
+     * written and `cams` and `live` are both in hand and both current.
+     * Anything it fails on is its own business — a phone alert that cannot
+     * be sent must never cost a report that can.
+     */
+    try { await this.capacityAlerts(cams, live); } catch { /* an alert is not worth a report */ }
     // The last camera anywhere has been switched off, so the session is over.
     //
     // "When I end my session or camera, this should all be refreshed too."
@@ -1527,8 +1543,38 @@ export class VenueHub extends DurableObject {
         lookSame: (await this.get("look_same", null))?.value ?? LOOK_SAME,
       });
       const saved = await this.get("register", null);
-      if (saved && saved.service === service) this.register.restore(saved);
-      else this.register.startService(service);
+      if (saved && saved.service === service) {
+        this.register.restore(saved);
+        /**
+         * …and their FACES, which the snapshot deliberately does not hold.
+         *
+         * ── The bug this line is ──────────────────────────────────────────
+         *
+         * "do not delete any facial recognition right away, otherwise you
+         * will forget their face and re count."
+         *
+         * She is describing something that was happening on every single
+         * restart. Face codes are kept out of the register's snapshot on
+         * purpose — they live in their own table so they can be deleted on
+         * their own the moment a service ends — and restore() therefore
+         * gives every person an empty list of faces. A method existed to put
+         * them back. It was never called. Anywhere. The comment in
+         * worker/identity.js even says "the worker puts them back here after
+         * restoring — see loadFaces", and the worker did not.
+         *
+         * So the live-cameras server restarts mid-service — which it does on
+         * every deploy, and did repeatedly during a service yesterday — and
+         * the whole congregation's faces are forgotten while the people
+         * themselves are kept. Everybody is then matched on the colour of
+         * their coat alone, in a hall where fifty coats are navy, and the
+         * register climbs. The face data was sitting in the table the whole
+         * time, unread.
+         *
+         * Only while face matching is switched on: with it off there is
+         * nothing in the table to read, and nothing may be read back.
+         */
+        if (await this.facesAllowed()) this.loadFaces(service, Date.now());
+      } else this.register.startService(service);
     }
     // A different service — or none — means a different congregation. The
     // register is destroyed, faces and all, exactly as the face data is.
