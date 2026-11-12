@@ -53,7 +53,52 @@ export default function LayoutEditorPage() {
     try { remembered = localStorage.getItem(LAST_CAMERA_KEY); } catch { /* fine without it */ }
     const keep = remembered && cameras.find((c) => c.camera_id === remembered);
     if (keep) { setCameraId(keep.camera_id); return; }
-    if (edge) setCameraId(cameras[0].camera_id);
+    if (!edge) return;
+    /**
+     * Never land on a doorway, and never on "whichever happened to be first".
+     *
+     * ── Why it kept moving ─────────────────────────────────────────────────
+     *
+     * "the seat editor changes constantly."
+     *
+     * Two faults, and both of them are here.
+     *
+     * It fell back to cameras[0] — whichever the list happened to put first.
+     * That list is fetched again every ten seconds, and a camera dropping out
+     * of one reply and back into the next is enough to make this run again
+     * and land somewhere else. Nothing was remembered, because only a choice
+     * made BY HAND was written down, so it could drift for ever.
+     *
+     * And cameras[0] can be the doorway. A doorway has no seats — that is
+     * what makes it a doorway — so the Seat Editor would open on a camera
+     * with nothing to draw, which is what she was looking at.
+     *
+     * So: a room camera, chosen the same way every time, and written down
+     * like any other choice. An automatic choice that is not remembered is
+     * a choice that gets made again, differently, ten seconds later.
+     */
+    const rooms = cameras.filter((c) => c.location !== "entrance" && c.location !== "queue");
+    const pick = [...(rooms.length ? rooms : cameras)]
+      .sort((a2, b2) => a2.camera_id.localeCompare(b2.camera_id))[0];
+    if (!pick) return;
+    setCameraId(pick.camera_id);
+    /**
+     * Written down only when there was nothing remembered at all.
+     *
+     * A remembered camera missing from THIS reply is usually a camera
+     * missing for a second, not a camera that has gone. Overwriting the
+     * remembered choice here would turn one wobbly poll into a permanent
+     * move — and since the fallback prefers a room, a church with only a
+     * doorway plugged in at that moment would have the doorway written down
+     * as the seating camera for good.
+     *
+     * So the fallback shows something sensible and says nothing. When the
+     * remembered camera comes back, the line above picks it up again; when
+     * it has genuinely gone, choosing one by hand writes that down.
+     */
+    if (!remembered) {
+      try { localStorage.setItem(LAST_CAMERA_KEY, pick.camera_id); } catch { /* fine without it */ }
+    }
   }, [edge, cameras, cameraId]);
 
   /** The camera being edited, when it is one that has no seats to draw. */
