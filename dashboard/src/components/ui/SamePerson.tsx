@@ -110,7 +110,7 @@ function Side({ id, side, label }: { id: string; side: "a" | "b"; label: string 
 
 export function SamePerson() {
   const [asks, setAsks] = useState<Ask[]>([]);
-  const [learn, setLearn] = useState<Learning | null>(null);
+
   const [busy, setBusy] = useState<string | null>(null);
   const [said, setSaid] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -119,7 +119,9 @@ export function SamePerson() {
     edgeFetch<Ask[]>("/api/live/questions")
       .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question" || q.review_type === "is_this_a_person")))
       .catch(() => {});
-    edgeFetch<Learning>("/api/live/learning").then(setLearn).catch(() => {});
+    // The learning figures are no longer read out here — see the note by the
+    // card's footer — so they are not fetched either. "How the counting is
+    // doing" shows them for whoever wants them.
   }, []);
   useEffect(() => {
     load();
@@ -151,9 +153,23 @@ export function SamePerson() {
     setBusy(null);
   }, [load]);
 
-  // Nothing to ask and nothing learned yet: say nothing at all. A panel
-  // explaining that it has nothing to show is still a panel.
-  if (!asks.length && !(learn && learn.answered > 0)) return null;
+  /**
+   * Nothing to ask: say nothing at all.
+   *
+   * "remove this, i dont know why its there."
+   *
+   * This used to stay on screen with nothing to answer, explaining that it
+   * had nothing to answer and then reciting what it had learned from the one
+   * answer it had ever had. A panel whose whole content is "there is nothing
+   * here" is a panel somebody has to read, decide is irrelevant, and scroll
+   * past, every time they open the page — and the figures Kyro exists to
+   * show are further down because of it.
+   *
+   * It now appears only when there is something to decide, which is the only
+   * reason it ever had to exist. See the note on the learning block below
+   * for the half of it that has gone for good.
+   */
+  if (!asks.length) return null;
 
   return (
     <div className="rounded-2xl overflow-hidden" style={{ background: "var(--bg-card)", border: `1px solid ${asks.length ? "rgba(99,102,241,0.45)" : BORDER}` }}>
@@ -162,13 +178,26 @@ export function SamePerson() {
           <HelpCircle size={15} style={{ color: "#818cf8" }} /> Kyro needs a second opinion
         </p>
         <p style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3, lineHeight: 1.5 }}>
-          {asks.length
-            ? <>{asks.length === 1 ? "One thing" : `${asks.length} things`} Kyro isn&apos;t sure about. It has made its
-                best guess so the count keeps going — and your answer <strong>changes the figures straight away</strong>,
-                including today&apos;s totals. Nothing is left piled on top.</>
-            : <>Nothing to check right now. Kyro asks when it has to guess.</>}
+          {asks.length === 1 ? "One thing" : `${asks.length} things`} Kyro isn&apos;t sure about. It has made its
+          best guess so the count keeps going — and your answer <strong>changes the figures straight away</strong>,
+          including today&apos;s totals. Nothing is left piled on top.
         </p>
       </div>
+
+      {/**
+        * What happens to the two pictures, said where the two pictures are.
+        *
+        * This used to sit in a block of statistics at the foot of the card,
+        * printed whether or not anybody was being shown a photograph of
+        * their congregation — which was both the wrong place for it and
+        * part of what made that block worth removing. It belongs here: one
+        * line, on screen only while there is actually a picture of somebody
+        * on it.
+        */}
+      <p className="px-5 pt-2" style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.5 }}>
+        Both pictures are deleted the moment you answer. What is kept is how alike the two looked and what you
+        said — no photograph, no face code, no name.
+      </p>
 
       {said && (
         <p className="px-5 py-2" style={{ fontSize: 12, color: "#4ade80", borderBottom: `1px solid ${BORDER}` }}>{said}</p>
@@ -242,36 +271,18 @@ export function SamePerson() {
         </div>
       ))}
 
-      {/* What the answers have added up to. Said precisely, because the
-          honest version is narrower than "the AI learns": nothing retrains
-          the model that finds people or reads faces. What answers CAN set,
-          and set properly, is the line between "same person" and "two
-          people" in this building, in this light, with these coats. */}
-      {learn && learn.answered > 0 && (
-        <div className="px-5 py-3 flex flex-col gap-1">
-          <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-            What your answers have taught it
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-            You&apos;ve answered <strong>{learn.answered}</strong>. Kyro had already got{" "}
-            <strong>{learn.agreed}</strong> of them right by itself.
-          </p>
-          <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
-            It calls two people the same when they look <strong>{Math.round(learn.using * 100)}%</strong> alike —
-            {learn.using_from === "your answers" ? " a line set by your answers" : " the line measured on standard photographs"}.
-            {learn.suggested !== null && learn.examples >= learn.enough
-              ? <> Your answers point at <strong>{Math.round(learn.suggested * 100)}%</strong>, and Kyro is moving towards
-                  it a step at a time.</>
-              : <> After <strong>{learn.enough}</strong> answers Kyro starts moving that line to fit this building
-                  ({learn.examples} so far).</>}
-          </p>
-          <p style={{ fontSize: 11, color: "var(--text-faint)", lineHeight: 1.5 }}>
-            Both pictures are deleted the moment you answer. What is kept is how alike the two looked and what you
-            said — no photograph, no face code, no name. That is all it takes to set the line, and it is all that
-            is kept.
-          </p>
-        </div>
-      )}
+      {/**
+        * What the answers had taught it used to be printed here, every time,
+        * whether or not there was anything to answer.
+        *
+        * "remove this, i dont know why its there." It was a paragraph about
+        * percentage lines and how many answers were still needed before Kyro
+        * would move one — true, and of no use to anybody running a service.
+        * The learning it described still happens; it is simply no longer
+        * read out. What the line currently is, and what the answers have
+        * moved it to, is on "How the counting is doing" for whoever wants
+        * it.
+        */}
     </div>
   );
 }

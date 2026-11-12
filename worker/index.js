@@ -118,6 +118,15 @@ export default {
              * the only way through was to ask somebody to stop counting
              * mid-service.
              *
+             * It can only work once the live-cameras server is ALREADY
+             * running a version that contains the handler — the handler
+             * lives inside the thing being restarted. So the deploy that
+             * first introduces it still has to wait for an idle moment, and
+             * every deploy after that restarts in seconds. That is worth
+             * knowing rather than discovering: the script says so when it
+             * gives up, and names the real cause of the wait, which is an
+             * open Kyro tab polling every few seconds.
+             *
              * Asked for only when it is genuinely behind THIS deploy's code,
              * so a request from anybody else is a no-op the moment it is
              * current. The object writes down everything that only lives in

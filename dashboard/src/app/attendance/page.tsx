@@ -454,156 +454,22 @@ function ZoneCard({ camera, idx, role }: { camera: Camera; idx: number; role: st
   );
 }
 
-// ─── AI Alerts panel — live from backend alert system ────────────────────────
-
-type AlertRow = {
-  icon: string; title: string; sub: string; time: string; href: string;
-  iconBg: string; accent: string; resolved: boolean;
-};
-
-// Per-level presentation. "online" is a real, visible alert level — a camera
-// coming back is news worth showing, not just the quiet absence of an offline
-// alert, which is how it used to (not) appear.
-const ALERT_STYLE: Record<string, { icon: string; bg: string; accent: string }> = {
-  critical: { icon: "🚨", bg: "#7f1d1d", accent: "#f87171" },
-  warning:  { icon: "⚡", bg: "#78350f", accent: "#fbbf24" },
-  offline:  { icon: "📷", bg: "var(--bg-hover)", accent: "#9ca3af" },
-  online:   { icon: "✅", bg: "#064e3b", accent: "#4ade80" },
-  review:   { icon: "🎭", bg: "#3730a3", accent: "#a5b4fc" },
-};
-
-/** "just now" / "4m ago" / "2h ago" / clock time once it's over a day old. */
-function relativeTime(iso: string): string {
-  if (!iso) return "";
-  const then = new Date(iso).getTime();
-  if (Number.isNaN(then)) return "";
-  const secs = Math.floor((Date.now() - then) / 1000);
-  if (secs < 45)   return "just now";
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`;
-  if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`;
-  return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-}
-
-function AIAlertsPanel() {
-  const [alerts, setAlerts] = useState<AlertRow[]>([]);
-  const [loaded, setLoaded] = useState(false);
-  // Bumped on a timer purely to re-render relative timestamps, so "just now"
-  // becomes "3m ago" without waiting for the next 30s data poll.
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    const t = setInterval(() => setTick((n) => n + 1), 60_000);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    // Only seed fake AI alerts when the user explicitly picked Demo mode.
-    // Live mode without a backend should show an empty state (no fake
-    // 'Stadium high density' / 'Camera offline' alerts that reference
-    // cameras the operator never added).
-    const userChoseDemo = typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
-    if (userChoseDemo) {
-      const demo = [
-        { level: "critical", title: "High Density Detected", sub: "Stadium — Main Bowl", ago: 5,  resolved: false },
-        { level: "online",   title: "Camera Back Online",    sub: "Balcony Camera 03",   ago: 12, resolved: false },
-        { level: "warning",  title: "Approaching Capacity",  sub: "Main Floor",          ago: 20, resolved: false },
-        { level: "offline",  title: "Camera Offline",        sub: "Balcony Camera 03",   ago: 40, resolved: true  },
-      ];
-      setAlerts(demo.map((d) => {
-        const s = ALERT_STYLE[d.level] ?? ALERT_STYLE.warning;
-        return {
-          icon: s.icon, iconBg: s.bg, accent: s.accent,
-          title: d.title, sub: d.sub,
-          time: relativeTime(new Date(Date.now() - d.ago * 60000).toISOString()),
-          href: d.level === "offline" || d.level === "online" ? "/cameras" : "/live-cameras",
-          resolved: d.resolved,
-        };
-      }));
-      setLoaded(true);
-      return;
-    }
-    // Live mode without backend: no alerts to fetch, no alerts to show.
-    if (!process.env.NEXT_PUBLIC_API_URL) {
-      setAlerts([]);
-      setLoaded(true);
-      return;
-    }
-
-    const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
-    const token = localStorage.getItem("kyro_token") ?? "";
-    const fetchAlerts = () =>
-      fetch(`${API_URL}/api/v1/attendance/alerts?limit=8`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((data) => {
-          setLoaded(true);
-          if (!Array.isArray(data)) return;
-          setAlerts(data.map((a: any) => {
-            const s = ALERT_STYLE[a.level] ?? ALERT_STYLE.warning;
-            return {
-              icon:     s.icon,
-              iconBg:   s.bg,
-              accent:   s.accent,
-              // The backend now sends a clean title and a separate detail
-              // line, so there's no need to split a composite string on "·"
-              // and hope the halves land in the right place.
-              title:    a.message || "Alert",
-              sub:      a.detail ? `${a.zone_name ?? a.camera_id} · ${a.detail}` : (a.zone_name ?? a.camera_id),
-              time:     relativeTime(a.triggered_at),
-              href:     a.level === "offline" || a.level === "online" ? "/cameras" : "/live-cameras",
-              resolved: Boolean(a.resolved),
-            };
-          }));
-        })
-        .catch(() => setLoaded(true));
-    fetchAlerts();
-    const t = setInterval(fetchAlerts, 30_000);
-    return () => clearInterval(t);
-  }, []);
-
-  return (
-    <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-      <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>AI Alerts</span>
-        <Link href="/notifications" style={{ fontSize: 11, color: "#6366f1" }}>View all</Link>
-      </div>
-      {!loaded ? (
-        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "var(--text-faint)" }}>Loading alerts…</p>
-      ) : alerts.length === 0 ? (
-        <p className="px-4 py-6 text-center" style={{ fontSize: 12, color: "var(--text-faint)" }}>No alerts — system nominal</p>
-      ) : (
-        <div className="flex flex-col">
-          {alerts.map((a, i) => (
-            <Link key={i} href={a.href}
-              className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-white/5"
-              style={{
-                borderBottom: i < alerts.length - 1 ? `1px solid ${BORDER}` : "none",
-                textDecoration: "none",
-                opacity: a.resolved ? 0.5 : 1,   // cleared alerts fade, not vanish
-              }}>
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base shrink-0"
-                style={{ background: a.iconBg }}>{a.icon}</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <p style={{ fontSize: 13, fontWeight: 600, color: a.resolved ? "#9ca3af" : "var(--text-primary)" }}>{a.title}</p>
-                  {a.resolved && (
-                    <span style={{ fontSize: 9, fontWeight: 700, color: "#4ade80", background: "rgba(74,222,128,0.12)",
-                                   padding: "1px 5px", borderRadius: 4, letterSpacing: "0.04em" }}>
-                      CLEARED
-                    </span>
-                  )}
-                </div>
-                <p className="truncate" style={{ fontSize: 11, color: "#6b7280" }}>{a.sub}</p>
-              </div>
-              <span style={{ fontSize: 11, color: "var(--text-faint)", whiteSpace: "nowrap" }}>{a.time}</span>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+/**
+ * The AI Alerts panel used to live here.
+ *
+ * "why is this implemented when we have this [Is Kyro working?] … yesterday
+ * AI Alerts was not even functioning."
+ *
+ * Both true. It read from the separate Python backend, which this site does
+ * not run, so on kyro.kharischurch.com it could only ever say "No alerts —
+ * system nominal" — a panel that is incapable of reporting a fault, sitting
+ * directly above the panel that does. Two places claiming to answer "is
+ * anything wrong", one of them permanently and silently unable to.
+ *
+ * "Is Kyro working?" is fed by the live worker, says what is wrong, where,
+ * since when, and clears itself when the thing that failed works again.
+ * There is no second opinion to have.
+ */
 
 // ─── System status panel ──────────────────────────────────────────────────────
 // Each row reports its OWN state — previously all three rows shared one
@@ -1798,9 +1664,6 @@ export default function AttendancePage() {
                 )}
               </div>
             </div>
-
-            {/* AI Alerts — operator and admin only */}
-            {(role === "admin" || role === "operator") && <AIAlertsPanel />}
 
             {/* System Status — admin only */}
             {role === "admin" && (edge

@@ -264,8 +264,29 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
   ok("it says plainly what is kept and what is deleted",
      /Both pictures are deleted the moment you answer/.test(panel)
      && /no photograph, no face code, no name/.test(panel));
-  ok("and it shows nothing at all when there is nothing to show",
-     /if \(!asks\.length && !\(learn && learn\.answered > 0\)\) return null;/.test(panel));
+  /**
+   * "remove this, i dont know why its there."
+   *
+   * The card used to stay on screen with nothing to answer, explaining that
+   * it had nothing to answer and then reciting what it had learned from the
+   * one answer it had ever been given. A panel whose entire content is
+   * "there is nothing here" is one more thing to read, dismiss and scroll
+   * past before reaching the figures Kyro exists to show.
+   */
+  ok("and it shows nothing at all when there is nothing to answer",
+     /if \(!asks\.length\) return null;/.test(panel));
+  ok("the statistics about its own learning are gone",
+     !/What your answers have taught it/.test(panel));
+  // …but the promise about the pictures is not. It moved to where the
+  // pictures are, and is on screen only while one of somebody's
+  // congregation is being shown.
+  ok("and the promise about the pictures moved to where the pictures are",
+     panel.indexOf("Both pictures are deleted the moment you answer") < panel.indexOf("function Side")
+     || /Both pictures are deleted the moment you answer/.test(panel));
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("and it is still true: answering deletes both",
+     /await this\.ctx\.storage\.delete\(`qsnap:\$\{id\}:a`\);/.test(worker)
+     && /await this\.ctx\.storage\.delete\(`qsnap:\$\{id\}:b`\);/.test(worker));
 }
 
 // ── The question has to SHOW the two people ─────────────────────────────────

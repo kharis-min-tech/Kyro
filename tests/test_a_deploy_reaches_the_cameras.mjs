@@ -74,8 +74,19 @@ const deploy = read("scripts/deploy-and-verify.sh");
      /if \[ "\$live" = "\$STAMP" \]; then/.test(deploy));
   ok("and still fails loudly if it never arrives",
      /STILL running older code/.test(deploy) && /exit 1/.test(deploy));
-  ok("telling you the one thing left to try",
-     /Stop counting for a minute and start again\./.test(deploy));
+  /**
+   * …and it is honest about the one deploy this cannot help.
+   *
+   * The handler that takes the restart lives inside the thing being
+   * restarted, so the deploy that first introduces it still has to wait for
+   * an idle moment. Measured the hard way: the pages went live, the server
+   * stayed on yesterday's code, and the script reported a failure that was
+   * really a bootstrap.
+   */
+  ok("it explains why the first one has to wait",
+     /can only/.test(deploy) && /already running a version that contains it/.test(deploy));
+  ok("and names what is really keeping the server awake",
+     /CLOSE EVERY KYRO TAB/.test(deploy) && /polls every few seconds/.test(deploy));
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A deploy reaches the cameras.");

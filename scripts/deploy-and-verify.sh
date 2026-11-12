@@ -123,7 +123,16 @@ for attempt in 1 2 3; do
     done
     echo "✗ The pages are live, but the live-cameras server is STILL running older code."
     echo "  Anything new it has to answer (new buttons, new figures) will say \"Not found\"."
-    echo "  It was asked to restart and hasn't. Stop counting for a minute and start again."
+    echo ""
+    echo "  It was asked to let go and didn't — which is expected ONCE. The code that"
+    echo "  takes that request lives in the live-cameras server itself, so it can only"
+    echo "  obey once it is already running a version that contains it. This deploy is"
+    echo "  the one that puts it there; from the next one on, it restarts by itself."
+    echo ""
+    echo "  To get past it this time: CLOSE EVERY KYRO TAB, and stop counting if it is"
+    echo "  running, for about a minute. An open page polls every few seconds, which is"
+    echo "  enough to keep the server awake and on the old code indefinitely. Then run"
+    echo "  this again."
     echo "  Do NOT say it is fixed yet."
     exit 1
   fi
