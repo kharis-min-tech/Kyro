@@ -30,7 +30,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   path.join(root, "dashboard/src/lib/personTracker.ts"),
   "--outDir", tmp, "--module", "es2022", "--target", "es2022",
 ], { stdio: "inherit" });
-const { PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 const box = (left, top, w, h) => [left, top, left + w, top + h];
 const see = (tr, boxes, t, looks, faces) => tr.update(boxes.map((b) => ({ box: b })), t, faces, looks);
@@ -50,7 +65,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
     const x = 50 + i * 90;
     see(guess, [box(x, 100, 60, 160)], (t += 400), [coat(0.3 + i * 0.01, 0.33, 0.2)]);
     see(guess, [box(x + 2, 101, 60, 158)], (t += 400), [coat(0.3 + i * 0.01, 0.33, 0.2)]);
-    see(guess, [], (t += 16000));
+    see(guess, [], (t += GONE_LONG_ENOUGH));
   }
   ok("left to guess, a crush counts nobody out", guess.exits === 0, `exits ${guess.exits}`);
 
@@ -61,7 +76,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
     const x = 50 + i * 90;
     see(told, [box(x, 100, 60, 160)], (t += 400), [coat(0.3 + i * 0.01, 0.33, 0.2)]);
     see(told, [box(x + 2, 101, 60, 158)], (t += 400), [coat(0.3 + i * 0.01, 0.33, 0.2)]);
-    see(told, [], (t += 16000));
+    see(told, [], (t += GONE_LONG_ENOUGH));
   }
   ok("told they are leaving, all six are counted out", told.exits === 6, `exits ${told.exits}`);
   ok("and none as arriving", told.entries === 0, `entries ${told.entries}`);
@@ -76,7 +91,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
     const x = 50 + i * 90;
     see(tr, [box(x, 100, 60, 160)], (t += 400), [coat(0.3 + i * 0.02, 0.33, 0.2)]);
     see(tr, [box(x + 2, 101, 60, 158)], (t += 400), [coat(0.3 + i * 0.02, 0.33, 0.2)]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   ok("told they are arriving, they are counted in", tr.entries === 3 && tr.exits === 0,
      `in ${tr.entries} out ${tr.exits}`);
@@ -92,7 +107,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
   for (let trip = 0; trip < 4; trip++) {
     see(tr, [box(100, 100, 60, 160)], (t += 2000), [usher], [face(1)]);
     see(tr, [box(102, 101, 60, 158)], (t += 400), [usher], [face(1)]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   ok("the usher is counted out once, not four times", tr.exits === 1, `exits ${tr.exits}`);
 }
@@ -109,7 +124,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
   for (let trip = 0; trip < 3; trip++) {
     see(tr, [box(100, 100, 60, 160)], (t += 20000), [usher]);
     see(tr, [box(102, 101, 60, 158)], (t += 400), [usher]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   ok("with no face to go on, a returning person is a new person", tr.exits === 3, `exits ${tr.exits}`);
 }
@@ -122,7 +137,7 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
   let t = 0;
   see(tr, [box(100, 120, 48, 124)], (t += 400), [coat(0.5, 0.25, 0.4)]);
   see(tr, [box(100, 60, 70, 200)], (t += 400), [coat(0.5, 0.25, 0.4)]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("somebody was counted in first", tr.entries === 1);
   tr.watchesDoorway("closer", "out");
   ok("turning it on keeps the arrivals", tr.entries === 1, `entries ${tr.entries}`);

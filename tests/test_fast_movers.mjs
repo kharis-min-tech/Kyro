@@ -35,7 +35,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   "--outDir", tmp, "--module", "es2022", "--target", "es2022",
 ], { stdio: "inherit" });
 const { countOrder } = await import(path.join(tmp, "countOrder.js"));
-const { PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 const cam = (key, isDoor = false) => ({ key, isDoor });
 const keys = (list) => list.map((c) => c.key).join(" ");
@@ -87,7 +102,7 @@ const keys = (list) => list.map((c) => c.key).join(" ");
   const seenOnce = new PersonTracker();
   seenOnce.watchesDoorway("closer");
   seenOnce.update([{ box: box(100, 60, 70, 200) }], 1000);
-  seenOnce.update([], 1000 + 16000);
+  seenOnce.update([], 1000 + GONE_LONG_ENOUGH);
   ok("seen once, there is nothing to say which way they went",
      seenOnce.entries === 0 && seenOnce.exits === 0,
      `in ${seenOnce.entries} out ${seenOnce.exits}`);
@@ -96,7 +111,7 @@ const keys = (list) => list.map((c) => c.key).join(" ");
   seenTwice.watchesDoorway("closer");
   seenTwice.update([{ box: box(100, 60, 70, 200) }], 1000);
   seenTwice.update([{ box: box(100, 120, 48, 124) }], 1400);   // 400 ms later, further away
-  seenTwice.update([], 1400 + 16000);
+  seenTwice.update([], 1400 + GONE_LONG_ENOUGH);
   ok("seen twice, they are counted going out", seenTwice.exits === 1, `exits ${seenTwice.exits}`);
 }
 
@@ -107,7 +122,7 @@ const keys = (list) => list.map((c) => c.key).join(" ");
   tr.watchesDoorway("closer");
   tr.update([{ box: box(100, 120, 48, 124) }], 1000);
   tr.update([{ box: box(100, 60, 70, 200) }], 1400);           // coming towards the camera
-  tr.update([], 1400 + 16000);
+  tr.update([], 1400 + GONE_LONG_ENOUGH);
   ok("walking in is counted in", tr.entries === 1 && tr.exits === 0,
      `in ${tr.entries} out ${tr.exits}`);
 }

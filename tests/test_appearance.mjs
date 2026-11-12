@@ -36,7 +36,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   path.join(root, "dashboard/src/lib/personTracker.ts"),
   "--outDir", tmp, "--module", "es2022", "--target", "es2022",
 ], { stdio: "inherit" });
-const { alikeLook, PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { alikeLook, PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 /** Someone in a given pair of colours. Shares of red and green, then brightness. */
 const look = (top, bottom, shape = 2.5, height = 0.5) => ({ top, bottom, shape, height });
@@ -99,13 +114,13 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   let t = 0;
   see(tr, [box(100, 60, 70, 200)], (t += 400), [me]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [me]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("they are counted out", tr.exits === 1 && tr.entries === 0, `in ${tr.entries} out ${tr.exits}`);
 
   // Back into view, walking towards the camera again: an arrival.
   see(tr, [box(100, 120, 48, 124)], (t += 4000), [me]);
   see(tr, [box(100, 60, 70, 200)], (t += 400), [me]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("coming back in is counted in, not as a second departure",
      tr.entries === 1 && tr.exits === 1, `in ${tr.entries} out ${tr.exits}`);
 }
@@ -127,7 +142,7 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   const far  = [box(20, 120, 48, 124), box(200, 120, 48, 124), box(380, 120, 48, 124), box(560, 120, 48, 124)];
   see(tr, wide, (t += 400), coats);
   see(tr, far, (t += 400), coats);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("four people in similar coats are four departures, not one",
      tr.exits === 4, `exits ${tr.exits}`);
 }
@@ -151,7 +166,7 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   for (const trip of [inward, outward, inward, outward, inward]) {
     see(tr, [trip[0]], (t += 3000), [usher], [theirFace]);
     see(tr, [trip[1]], (t += 400), [usher], [theirFace]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   ok("the usher is counted in once, not three times", tr.entries === 1, `in ${tr.entries}`);
   ok("and out once, not twice", tr.exits === 1, `out ${tr.exits}`);
@@ -160,14 +175,14 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   // once. Remembering them for three minutes only moved the problem.
   see(tr, [box(100, 60, 70, 200)], (t += 1_800_000), [usher], [theirFace]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("and still once half an hour into the service", tr.exits === 1, `out ${tr.exits}`);
 
   // The service ends. Everybody is forgotten, and the next one starts clean.
   tr.forgetPeople();
   see(tr, [box(100, 60, 70, 200)], (t += 5000), [usher], [theirFace]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("after the service ends they are somebody new again", tr.exits === 2, `out ${tr.exits}`);
 }
 
@@ -181,7 +196,7 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   for (const who of people) {
     see(tr, [box(100, 120, 48, 124)], (t += 2000), [who]);
     see(tr, [box(100, 60, 70, 200)], (t += 400), [who]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   ok("three different people coming in are three arrivals", tr.entries === 3, `in ${tr.entries}`);
 }

@@ -73,7 +73,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   path.join(root, "dashboard/src/lib/personTracker.ts"),
   "--outDir", tmp, "--module", "esnext", "--target", "es2022", "--moduleResolution", "bundler", "--skipLibCheck",
 ], { stdio: "pipe" });
-const { PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 // ── A model of the whole pipeline ──────────────────────────────────────────
 //
@@ -208,7 +223,7 @@ function stillRoom({ minutes = 10, cameras = ["cam1"], missEvery = 0, missFor = 
   ok("3b. and what was not counted written down with it",
      c.audit.some((a) => a.not_counted && a.not_counted.in === 2));
   // And it carries on counting real crossings from there.
-  c.take("door", 5, 1, 5, 16000);
+  c.take("door", 5, 1, 5, GONE_LONG_ENOUGH);
   ok("3b. then counts on from the restart", c.counters.door.in === 15, `${c.counters.door.in}`);
 }
 
@@ -293,7 +308,10 @@ function stillRoom({ minutes = 10, cameras = ["cam1"], missEvery = 0, missFor = 
       const h = from + (to - from) * k;
       tr.update([{ box: [600 - h / 2, 400 - h, 600 + h / 2, 400], score: 0.85 }], (t += 400));
     }
-    for (let i = 0; i < 45; i++) tr.update([], (t += 1000));     // out of view
+    // Out of view long enough for the doorway to decide — five minutes now,
+    // because somebody who steps just inside and stands talking is not an
+    // arrival until they stay. See DOOR_DECIDE_MS.
+    for (let i = 0; i < 400; i++) tr.update([], (t += 1000));
   };
   walk(60, 200);                                   // towards the camera: in
   ok("10. one person walking in is exactly one arrival", tr.entries === 1, `${tr.entries}`);

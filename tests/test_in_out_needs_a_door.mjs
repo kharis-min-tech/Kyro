@@ -89,7 +89,9 @@ const see = (tr, boxes, at) => tr.update(boxes.map((b) => ({ box: b, score: 0.8 
 
   // Now they both leave. GRACE_MS is 45 s — somebody behind a pillar for half
   // a minute has not left — so wait past it.
-  for (let i = 0; i < 60; i++) see(tr, [], (t += 1000));
+  // Long enough for the doorway to have written down which way they went —
+  // five minutes now, not fifteen seconds. See DOOR_DECIDE_MS.
+  for (let i = 0; i < 400; i++) see(tr, [], (t += 1000));
   ok("and nobody is counted as leaving either", tr.exits === 0, `out ${tr.exits}`);
   ok("so departures can never run ahead of arrivals", tr.exits <= tr.entries,
      `${tr.entries} in, ${tr.exits} out`);
@@ -107,7 +109,7 @@ const see = (tr, boxes, at) => tr.update(boxes.map((b) => ({ box: b, score: 0.8 
       const h = from + (to - from) * (i / steps);
       tr.update([{ box: [600 - h / 2, 400 - h, 600 + h / 2, 400], score: 0.85 }], (t += 400), 1280, 720);
     }
-    for (let i = 0; i < 50; i++) tr.update([], (t += 1000), 1280, 720);
+    for (let i = 0; i < 400; i++) tr.update([], (t += 1000), 1280, 720);
   };
   walk(60, 200);
   ok("somebody walking in at a doorway IS an arrival", tr.entries === 1, `in ${tr.entries}`);

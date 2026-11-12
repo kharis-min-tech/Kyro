@@ -27,7 +27,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   path.join(root, "dashboard/src/lib/personTracker.ts"),
   "--outDir", tmp, "--module", "es2022", "--target", "es2022",
 ], { stdio: "inherit" });
-const { PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 const box = (left, top, w, h) => [left, top, left + w, top + h];
 const see = (tr, boxes, t, looks, faces) => tr.update(boxes.map((b) => ({ box: b })), t, faces, looks);
@@ -42,10 +57,10 @@ const NAVY = [0.26, 0.31, 0.18], GREY = [0.33, 0.33, 0.45], RED = [0.55, 0.22, 0
   let t = 0;
   see(tr, [box(100, 120, 48, 124)], (t += 400), [look(RED, GREY)]);
   see(tr, [box(100, 60, 70, 200)], (t += 400), [look(RED, GREY)]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   see(tr, [box(100, 60, 70, 200)], (t += 400), [look(NAVY, GREY, 2.4, 0.55)]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [look(NAVY, GREY, 2.4, 0.55)]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   const events = tr.drainEvents();
   ok("both decisions are written down", events.length === 2, JSON.stringify(events));
   ok("the first is an arrival", events[0].kind === "in", events[0]?.kind);
@@ -65,7 +80,7 @@ const NAVY = [0.26, 0.31, 0.18], GREY = [0.33, 0.33, 0.45], RED = [0.55, 0.22, 0
   for (let trip = 0; trip < 3; trip++) {
     see(tr, [box(100, 120, 48, 124)], (t += 3000), [usher], [theirFace]);
     see(tr, [box(100, 60, 70, 200)], (t += 400), [usher], [theirFace]);
-    see(tr, [], (t += 16000));
+    see(tr, [], (t += GONE_LONG_ENOUGH));
   }
   const events = tr.drainEvents();
   ok("the usher is counted in once", events.filter((e) => e.kind === "in").length === 1,
@@ -83,7 +98,7 @@ const NAVY = [0.26, 0.31, 0.18], GREY = [0.33, 0.33, 0.45], RED = [0.55, 0.22, 0
   let t = 0;
   see(tr, [box(100, 100, 50, 150)], (t += 400), [look(NAVY, GREY)]);
   see(tr, [box(101, 101, 50, 149)], (t += 400), [look(NAVY, GREY)]);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   const events = tr.drainEvents();
   ok("going nowhere is recorded as unclear", events.length === 1 && events[0].kind === "unclear",
      JSON.stringify(events));

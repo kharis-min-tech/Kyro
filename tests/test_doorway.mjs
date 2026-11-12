@@ -30,7 +30,22 @@ execFileSync(path.join(root, "dashboard/node_modules/.bin/tsc"), [
   path.join(root, "dashboard/src/lib/personTracker.ts"),
   "--outDir", tmp, "--module", "es2022", "--target", "es2022",
 ], { stdio: "inherit" });
-const { wentIn, PersonTracker } = await import(path.join(tmp, "personTracker.js"));
+const { wentIn, PersonTracker, DOOR_DECIDE_MS } = await import(path.join(tmp, "personTracker.js"));
+
+/**
+ * Long enough that a doorway has written down which way somebody went.
+ *
+ * It used to be a bare 16000 in every one of these files — one second past a
+ * fifteen-second wait, repeated until the wait could not be changed without
+ * seven test files calling it a bug. The church asked for longer: "it
+ * shouldnt wait 15 seconds after someone has left, it should wait 5-10
+ * minutes", because somebody who steps just inside the door and stands
+ * talking is not an arrival until they stay.
+ *
+ * It follows the real number now, wherever that goes next.
+ */
+const GONE_LONG_ENOUGH = DOOR_DECIDE_MS + 1000;
+
 
 /** A person's box: [left, top, right, bottom]. Taller = closer to the camera. */
 const box = (left, top, w, h) => [left, top, left + w, top + h];
@@ -134,7 +149,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 60, 70, 200)], (t += 300));
   ok("nobody is counted while they are still in the doorway", tr.entries === 0 && tr.exits === 0);
 
-  see(tr, [], (t += 16000));       // they have gone through, and the grace is up
+  see(tr, [], (t += GONE_LONG_ENOUGH));       // they have gone through, and the grace is up
   ok("walking in counts as one arrival", tr.entries === 1, `entries ${tr.entries}`);
   ok("and not as a departure", tr.exits === 0);
 }
@@ -148,7 +163,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 100, 60, 160)], (t += 300));
   see(tr, [box(100, 120, 50, 130)], (t += 300));
   see(tr, [box(100, 140, 40, 100)], (t += 300));
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("walking out counts as a departure", tr.exits === 1, `exits ${tr.exits}`);
   ok("and not as an arrival", tr.entries === 0, `entries ${tr.entries} — the old way said 1`);
 }
@@ -160,7 +175,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   tr.watchesDoorway("closer");
   let t = 0;
   for (let i = 0; i < 4; i++) see(tr, [box(100, 100, 60, 150)], (t += 300));
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("hovering in the doorway counts as nothing", tr.entries === 0 && tr.exits === 0);
 }
 
@@ -175,8 +190,8 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [], (t += 3000));
   ok("three seconds later they are still being given a chance", tr.entries === 0);
 
-  see(tr, [], (t += 13000));
-  ok("sixteen seconds after they went, they are counted", tr.entries === 1);
+  see(tr, [], (t += GONE_LONG_ENOUGH - 3000));
+  ok("once the doorway has waited them out, they are counted", tr.entries === 1);
 }
 
 // 10. One person, counted once — the thing the grace period is for.
@@ -193,7 +208,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   ok("nothing is counted while they might still come back", tr.exits === 0);
   see(tr, [box(100, 125, 48, 125)], (t += 300));  // back, near where they were, soon
   see(tr, [box(100, 140, 40, 100)], (t += 300));  // and carrying on out
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("they are counted once, not twice", tr.exits === 1, `exits ${tr.exits}`);
   ok("and not as an arrival on the way back", tr.entries === 0, `entries ${tr.entries}`);
 }
@@ -210,9 +225,9 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
     see(tr, [box(left, 130, 45, 115)], (t += 300));
   };
   walkOut(100);
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   walkOut(600);                 // a different person, elsewhere in the doorway
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("two people leaving are two departures", tr.exits === 2, `exits ${tr.exits}`);
 }
 
@@ -228,7 +243,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   see(tr, [box(100, 120, 50, 130)], (t += 300));
   see(tr, [box(100, 100, 60, 160)], (t += 300));
   see(tr, [box(100, 60, 70, 200)], (t += 300));
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   const had = tr.entries;
   tr.watchesDoorway("away");
   ok("it had counted something first", had >= 1);
@@ -252,7 +267,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   walkOut();
   see(tr, [], (t += 40000));    // gone 40 seconds — longer than a place is believable
   walkOut();                    // the next person, through the same doorway
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("the next person through the same door is a second departure", tr.exits === 2, `exits ${tr.exits}`);
 }
 
@@ -275,7 +290,7 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
   // Back where they were, at the same size: recognised, not a new person.
   see(tr, [box(100, 128, 46, 118)], (t += 300));
   see(tr, [box(100, 140, 40, 100)], (t += 300));
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("stepping back and going again is one departure, not two", tr.exits === 1, `exits ${tr.exits}`);
   ok("nor an arrival", tr.entries === 0, `entries ${tr.entries}`);
 }
@@ -303,10 +318,10 @@ const see = (tracker, boxes, t) => tracker.update(boxes.map((b) => ({ box: b }))
     see(tr, [box(100, 130, 45, 115)], (t += 300));
   };
   walkOut();
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("counted out promptly", tr.exits === 1, `exits ${tr.exits}`);
   walkOut();
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("a second trip out of the door is a second departure", tr.exits === 2, `exits ${tr.exits}`);
 }
 
@@ -322,7 +337,7 @@ fs.rmSync(tmp, { recursive: true, force: true });
   // Seen exactly twice, walking away from the camera (getting smaller).
   see(tr, [box(100, 60, 70, 200)], (t += 400));
   see(tr, [box(100, 120, 48, 124)], (t += 400));
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("two sightings at a doorway are enough to count someone", tr.exits === 1, `exits ${tr.exits}`);
   ok("and in the right direction", tr.entries === 0, `entries ${tr.entries}`);
 }
@@ -352,9 +367,60 @@ fs.rmSync(tmp, { recursive: true, force: true });
   let t = 0;
   see(tr, [box(100, 100, 50, 150)], (t += 400));
   see(tr, [box(101, 101, 50, 149)], (t += 400));      // same place, same size
-  see(tr, [], (t += 16000));
+  see(tr, [], (t += GONE_LONG_ENOUGH));
   ok("a flicker that travels nowhere counts for nothing",
      tr.entries === 0 && tr.exits === 0, `in ${tr.entries} out ${tr.exits}`);
+}
+
+// ── Remembered for the whole service, not for minutes ──────────────────────
+//
+// "it shouldnt remember who has been counted for 5 minutes, it should
+// remember for hourssss, i said up until the service sessions ends and thats
+// like 4-5 hours."
+//
+// It already does, and the five minutes she was told about was my description
+// rather than the behaviour: five minutes is how long the live TRACK is kept,
+// after which the person moves into the remembered list — which has no clock
+// on it at all and is emptied only when the service changes. This pins that
+// down so a tidy-up can never quietly put a timer on it.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  for (let i = 0; i <= 6; i++) {
+    const h = 60 + (200 - 60) * (i / 6);
+    see(tr, [box(600 - h / 4, 400 - h, h / 2, h)], (t += 400));
+  }
+  for (let i = 0; i < 400; i++) see(tr, [], (t += 1000));
+  const after = tr.entries;
+  ok("somebody walks in and is counted once", after === 1, `${after}`);
+  // Four hours of nothing at all — a long service, with the camera running.
+  for (let i = 0; i < 4 * 60; i++) see(tr, [], (t += 60_000));
+  ok("four hours later, nobody has been counted again", tr.entries === after, `${tr.entries}`);
+
+  const src = fs.readFileSync(path.join(root, "dashboard/src/lib/personTracker.ts"), "utf8");
+  ok("the remembered list has no clock on it, only a size",
+     /const MOST_REMEMBERED = \d+;/.test(src)
+     && !/known.*filter.*now - .*\.at/.test(src));
+  /**
+   * Every place the memory is emptied is an EVENT, never a clock.
+   *
+   * There are four, and each one is somebody doing something: the service
+   * changing, a fresh start being pressed, a new day, or the camera being
+   * repurposed from a room to a doorway. That is the property worth pinning
+   * — not how many there are, but that not one of them is "and after a
+   * while, forget".
+   */
+  const clears = [...src.matchAll(/this\.known = \[\];/g)];
+  ok("the memory is emptied in a handful of places", clears.length === 4, `${clears.length}`);
+  for (const c of clears) {
+    const around = src.slice(Math.max(0, c.index - 400), c.index);
+    ok("…and that one is an event, not a clock",
+       !/now - |Date\.now\(\) -|_MS\b/.test(around.split("\n").slice(-6).join("\n")),
+       around.split("\n").slice(-3).join("\n"));
+  }
+  ok("ending the service is one of them",
+     /forgetPeople\(\): void \{[\s\S]{0,60}this\.known = \[\];/.test(src));
 }
 
 console.log(fails
