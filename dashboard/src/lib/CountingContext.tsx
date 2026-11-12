@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import {
   loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
-  sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, type Engine, type CameraReport, type Zone, type WantedPicture,
+  sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, holdFocus, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
@@ -213,6 +213,8 @@ interface Cam {
    * and never the same thing twice. See `people` in worker/venue.js.
    */
   whoIs: Record<number, number>;
+  /** Whether this camera's focus could be held still — see holdFocus. */
+  focus?: "locked" | "already steady" | "cannot";
   tracker: PersonTracker;      // follows people between counts → arrived / left
   faces: string[] | null;      // face codes to send, when face matching is on
   facesAt: number;
@@ -434,7 +436,13 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // Every size, largest first — not one try at 1920x1080. A second
           // camera sharing a USB socket has no room for 1080p and the browser
           // simply refuses; 720p opens straight away. See openCameraAnySize.
+          // A webcam refocuses whenever the picture changes, and a hall's
+          // picture changes constantly — so it hunts, and every frame spent
+          // hunting is a blurred frame with fewer people in it. Let it find
+          // the room, then hold it there. Never waited on: counting starts
+          // now, and the focus settles behind it. See holdFocus.
           c.stream = await openCameraAnySize(d.deviceId);
+          holdFocus(c.stream).then((how) => { c.focus = how; }).catch(() => {});
           c.error = null;
           c.tries = 0;
           c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c!.stream = null; c!.error = "Unplugged"; refreshViews(); });
@@ -523,6 +531,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
             try {
               c.stream?.getTracks().forEach((t) => t.stop());
               c.stream = await openCamera(c.deviceId, c.tries);
+            holdFocus(c.stream).then((how) => { c.focus = how; }).catch(() => {});
+              holdFocus(c.stream).then((how) => { c.focus = how; }).catch(() => {});
               c.stream.getVideoTracks()[0]?.addEventListener("ended", () => { c.stream = null; c.error = "Unplugged"; refreshViews(); });
               if (c.video) { c.video.srcObject = c.stream; c.video.play().catch(() => {}); }
               c.error = null;
@@ -538,6 +548,23 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // Is this picture any use at all? A connected camera sending black, or
         // the same frame over and over, counts zero people and looks perfectly
         // healthy doing it.
+        /**
+         * A picture that has gone soft, said out loud.
+         *
+         * "HD Pro Webcam C920 — always loses focus." A camera hunting for
+         * focus hands over blurred frames, and a blurred frame is one with
+         * fewer people in it as far as the AI is concerned. It is not a
+         * failure anybody can see from the numbers: the camera is live, the
+         * count is simply lower than the room. Kyro tries to hold the focus
+         * still when the camera allows it (see holdFocus) — and when it does
+         * not, this is the half that notices.
+         */
+        if (c.watch.soft && !c.watch.black && !c.watch.frozen) {
+          say(c.label, "The picture has gone soft — the camera is hunting for focus, and blurred people are not counted.",
+            c.focus === "locked"
+              ? "Kyro has already asked it to hold focus. If it keeps happening, the lens may need cleaning, or the camera may be too close to what it is watching."
+              : "This camera won't let Kyro hold its focus still. Turn autofocus off in the camera's own software if it has any, or move it so nothing passes close to the lens.");
+        }
         if (c.watch.saw(px) && (c.watch.black || c.watch.frozen)) {
           say(c.label, c.watch.black
             ? "The picture is black. Kyro is asking the camera for a smaller picture — check the lens cap and the lighting too."

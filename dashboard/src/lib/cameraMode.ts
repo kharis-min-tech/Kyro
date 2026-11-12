@@ -197,6 +197,60 @@ export function openCamera(deviceId: string, step = 0): Promise<MediaStream> {
   });
 }
 
+/** How long to let a camera's own autofocus settle before locking it. */
+const FOCUS_SETTLE_MS = 3_000;
+
+/**
+ * Stop the camera hunting for focus, once it has found it.
+ *
+ * ── Why a webcam keeps going blurry ────────────────────────────────────────
+ *
+ * "HD Pro Webcam C920 — always loses focus."
+ *
+ * A webcam is built for a face at arm's length on a video call, so it refocuses
+ * whenever the picture changes. Point it at a hall and the picture changes
+ * constantly: somebody walks past the lens, a door opens, light moves. Each
+ * time, it hunts — and every frame it spends hunting is a blurred frame, which
+ * to the counting AI is a frame with fewer people in it. People are not missed
+ * because Kyro decided they were not people; they are missed because they were
+ * never in focus.
+ *
+ * The room does not move. A camera watching a fixed hall from a fixed tripod
+ * needs to focus once and then never again, which is exactly what a camera
+ * built for video calls will not do by itself.
+ *
+ * So: let its own autofocus settle on the scene for a few seconds, then lock
+ * it there. Deliberately not locked immediately — locked at the instant of
+ * opening, it would freeze on whatever the lens happened to be guessing,
+ * possibly somebody's hand, and stay blurry for the whole service.
+ *
+ * Everything here is best-effort. Cameras differ wildly in what they will
+ * admit to being able to do, several browsers support none of it, and a
+ * camera that cannot lock its focus must still count people. Nothing below
+ * may throw into the caller.
+ */
+export async function holdFocus(stream: MediaStream): Promise<"locked" | "already steady" | "cannot"> {
+  try {
+    const track = stream.getVideoTracks()[0];
+    if (!track || typeof track.getCapabilities !== "function") return "cannot";
+    const caps = track.getCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
+    const modes = caps.focusMode ?? [];
+    // Nothing to stop: a camera with a fixed lens cannot lose focus.
+    if (!modes.length) return "cannot";
+    if (!modes.includes("manual")) return modes.includes("continuous") ? "cannot" : "already steady";
+    // Let it look at the room first.
+    await new Promise((r) => setTimeout(r, FOCUS_SETTLE_MS));
+    const now = track.getSettings() as MediaTrackSettings & { focusDistance?: number };
+    const hold: Record<string, unknown> = { focusMode: "manual" };
+    // Hold it at whatever distance it just settled on, when it will say.
+    if (typeof now.focusDistance === "number") hold.focusDistance = now.focusDistance;
+    await track.applyConstraints({ advanced: [hold] } as MediaTrackConstraints);
+    return "locked";
+  } catch {
+    return "cannot";
+  }
+}
+
 /**
  * What to ask a camera for, in order, until it actually sends a picture.
  *
