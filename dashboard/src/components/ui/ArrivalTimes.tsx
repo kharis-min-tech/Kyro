@@ -628,7 +628,25 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               * movement, and only then the floor. Crossings never appear
               * here at all.
               */}
-            <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
+            {/**
+              * …and SINCE WHEN.
+              *
+              * "how did the number go all the way down to 84-60, it was
+              * literally 1 hundred and something before."
+              *
+              * Because it is this SESSION, and the session had started
+              * again. Stopping the last camera ends a session — which is
+              * what the church asked for, in those words — so the next run
+              * counts from zero. Nothing was lost and nothing went
+              * backwards: the heading was answering a different question
+              * from the one it had answered five minutes earlier, and said
+              * nothing about the change.
+              *
+              * A figure labelled "this session" that will not say when the
+              * session began is a figure nobody can check. The whole day is
+              * still one click away, as it always was.
+              */}
+            <StatTile label={`${showingSession && sessionFrom ? `Came in, since ${fmtTime(sessionFrom)}` : showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={(held ?? attendanceShown ?? summary.totalArrived).toLocaleString()}
               sub={held != null
                 ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(attendance ?? summary.totalArrived).toLocaleString()}`
@@ -660,7 +678,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               note={!onSetSeats && !seats && usingRegister
                 ? "Kyro has not been told how many seats this room has, so this figure has nothing to answer to. An administrator can set it on the Cameras page."
                 : undefined} />
-            <StatTile label={`${showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
+            <StatTile label={`${showingSession && sessionFrom ? `Went out, since ${fmtTime(sessionFrom)}` : showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={(heldLeft ?? summary.totalLeft).toLocaleString()}
               sub={heldLeft != null
                 ? `Held with the figure beside it \u00b7 ${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} still here`
