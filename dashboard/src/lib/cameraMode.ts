@@ -445,7 +445,13 @@ export async function sendReport(
 ): Promise<{ disabled: string[]; zones: Record<string, Zone[]>; countConfidence?: number; faceMatching: boolean; doorways: Record<string, Inward>; countFrom: number; service: string | null; doorMode: "in" | "out" | null; seenTwice: number ; wantPictures: WantedPicture[];
   /** Per camera key, this camera's own track number → the person's number in
    *  the register. See `people` in worker/venue.js. */
-  people: Record<string, Record<number, number>> }> {
+  people: Record<string, Record<number, number>>;
+  /**
+   * Per camera key, the doorway's record of who it has already counted —
+   * handed back when a browser has just started again and forgotten.
+   * See door_known in worker/venue.js.
+   */
+  remembered: Record<string, { l: number[] | null; f: string | null; i: number; o: number; u: number; at: number }[]> }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -489,6 +495,8 @@ export async function sendReport(
      * loses them, and is not an identity. See `people` in worker/venue.js.
      */
     people: body.people && typeof body.people === "object" ? body.people : {},
+    // Who this doorway had already counted before its browser restarted.
+    remembered: body.remembered && typeof body.remembered === "object" ? body.remembered : {},
     // People Kyro wants a human to look at. See sendPersonPicture.
     wantPictures: (Array.isArray(body.want_pictures) ? body.want_pictures : [])
       .filter((w: unknown): w is WantedPicture => {

@@ -47,6 +47,13 @@ const SAFE_VALUE_BYTES = 110_000; // comfortably inside that 128 KB
  * about this the other way would tell somebody to stop counting their room.
  */
 const DOORWAY_LIFE_S = 25;
+/**
+ * The most people a doorway's own record is kept for.
+ *
+ * The same ceiling the browser keeps, so everything handed back fits where
+ * it is going. Eight hundred is more than any one door sees in a morning.
+ */
+const MOST_DOOR_REMEMBERED = 800;
 const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
 const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
 const SERVICE_END_PEOPLE = 3;     // fewer than this …
@@ -156,7 +163,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-cbcbc1d883a6";
+export const VENUE_CODE = "venue-4c398ed21f37";
 /**
  * How many seats the main hall has, as the church has stated.
  *
@@ -1081,6 +1088,9 @@ export class VenueHub extends DurableObject {
     /** Counters that started again, and what was deliberately not counted
      *  because of it. Written to the audit trail below. */
     const countReset = [];
+    /** Cameras whose browser has just started again, so they have forgotten
+     *  who they already counted and need it back. See door_known. */
+    const handBackRemembered = new Set();
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
@@ -1185,6 +1195,16 @@ export class VenueHub extends DurableObject {
           camera_id, at: now, reason: first ? "first report from this camera" : "its counter started again",
           not_counted: { in: rIn, out: rOut, people: rPeople },
         });
+        /**
+         * …and this is the moment to hand the doorway its memory back.
+         *
+         * A counter that has started again is a browser that has started
+         * again — a reload, a reopened tab, a camera reconnecting — which is
+         * precisely when it has forgotten who it had already counted. It is
+         * the only moment worth sending a morning's worth of people over the
+         * wire, and the only moment it is any use.
+         */
+        handBackRemembered.add(camera_id);
       }
       seen.lastIn = rIn; seen.lastOut = rOut; seen.lastPeople = rPeople;
       counters[camera_id] = seen;
@@ -1205,6 +1225,44 @@ export class VenueHub extends DurableObject {
         life_s: num(c.life_s, 0, 100000) || null,
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
       };
+      /**
+       * The doorway's record of who it has already counted, kept here.
+       *
+       * ── Why it cannot live in the browser ────────────────────────────────
+       *
+       * "if it reloads, does it mean face recognition will not know the
+       * previous?" … "yes fix it, keep the list on the website."
+       *
+       * The faces themselves were always here. This list was not: it is the
+       * DOOR's own record of who it has counted, and it was rebuilt from
+       * nothing on every page load. So the usher who is in and out all
+       * morning was counted again after every reload — and today was a day
+       * of reloads, which is a day of inflation that looks exactly like a
+       * busy door.
+       *
+       * Only what the camera has newly learned arrives each time, so this is
+       * a handful of people rather than the morning. It belongs to the
+       * service, like the faces, and goes when the service does.
+       */
+      if (service && Array.isArray(c.remembered) && c.remembered.length) {
+        const key = `door_known:${camera_id}`;
+        const had = (await this.get(key, null)) ?? { service, people: [] };
+        // A different service is a different congregation; nothing carries.
+        const list = had.service === service ? had.people : [];
+        for (const k of c.remembered.slice(0, 25)) {
+          if (!k || typeof k !== "object") continue;
+          list.push({
+            l: Array.isArray(k.l) && k.l.length === 8 ? k.l.map(Number) : null,
+            // A face only ever travels, or is kept, while face matching is on.
+            f: faceOk && typeof k.f === "string" ? k.f : null,
+            i: k.i ? 1 : 0, o: k.o ? 1 : 0, u: k.u ? 1 : 0,
+            at: num(k.at, 0, Date.now() + 60_000) || now,
+          });
+        }
+        // The same ceiling the browser keeps, so what comes back always fits.
+        if (list.length > MOST_DOOR_REMEMBERED) list.splice(0, list.length - MOST_DOOR_REMEMBERED);
+        await this.ctx.storage.put(key, { service, people: list });
+      }
       if (Array.isArray(c.questions) && c.questions.length) newQuestions.push(...c.questions.slice(0, 10).map((q) => cleanQuestion(q, camera_id)).filter(Boolean));
       if (Array.isArray(c.faces) && faceOn) {
         this.faceCodes.set(camera_id, { at: now - Math.min(30, Number(c.faces_age_s) || 0) * 1000, codes: c.faces.slice(0, 250).map(unpackFace).filter(Boolean) });
@@ -1479,6 +1537,28 @@ export class VenueHub extends DurableObject {
       // Crops of particular people Kyro wants a human to look at. Only ever
       // for this computer's own cameras, and only while the question is
       // waiting — see ASK_PICTURE_WAIT_MS.
+      /**
+       * The doorway's record of who it has already counted, handed back to a
+       * browser that has just started again. See door_known.
+       *
+       * Sent only at that moment, and only for the cameras that restarted:
+       * it is a morning's worth of people, and there is no point sending it
+       * to a browser that already has it.
+       */
+      remembered: await (async () => {
+        const out = {};
+        for (const camera_id of handBackRemembered) {
+          if (!camera_id.startsWith(`${device.id}:`)) continue;
+          const had = await this.get(`door_known:${camera_id}`, null);
+          if (!had || had.service !== service || !had.people?.length) continue;
+          out[camera_id.slice(device.id.length + 1)] = faceOk
+            ? had.people
+            // Face matching switched off since: the coats may come back, the
+            // faces may not.
+            : had.people.map((k) => ({ ...k, f: null }));
+        }
+        return out;
+      })(),
       want_pictures: wantPictures.filter((w) => w.camera_id.startsWith(`${device.id}:`))
         .map((w) => ({ id: w.id, side: w.side, key: w.camera_id.slice(device.id.length + 1), track: w.track })),
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,

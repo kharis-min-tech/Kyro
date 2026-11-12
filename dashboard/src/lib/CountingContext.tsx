@@ -153,6 +153,31 @@ const FAST_ENOUGH_S = 1.2;
 /** How often the seats Kyro has found are sent to the website. They don't move. */
 const SEATS_EVERY_MS = 60_000;
 
+/**
+ * …and back again, for a face code the website is handing back.
+ *
+ * Only ever used on what this browser itself sent, when the website returns
+ * a doorway's record after a reload — see door_known in worker/venue.js.
+ */
+function unpackFace(s: string): Float32Array | null {
+  try {
+    const bin = atob(s);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    const view = new DataView(bytes.buffer);
+    const out = new Float32Array(bytes.length / 2);
+    for (let i = 0; i < out.length; i++) {
+      // float16 → float32
+      const h = view.getUint16(i * 2, true);
+      const sign = h & 0x8000 ? -1 : 1, exp = (h >> 10) & 0x1f, mant = h & 0x3ff;
+      out[i] = exp === 0 ? sign * mant * 2 ** -24
+        : exp === 31 ? (mant ? NaN : sign * Infinity)
+        : sign * (1 + mant / 1024) * 2 ** (exp - 15);
+    }
+    return out.length ? out : null;
+  } catch { return null; }
+}
+
 /** A face code in the form the website expects: 128 half-size numbers, base64. */
 function packFace(v: Float32Array): string {
   const buf = new ArrayBuffer(v.length * 2), view = new DataView(buf);
@@ -221,6 +246,9 @@ interface Cam {
   whoIs: Record<number, number>;
   /** Whether this camera's focus could be held still — see holdFocus. */
   focus?: "locked" | "already steady" | "cannot";
+  /** Whether the website has already handed this camera back what it had
+   *  counted before the browser restarted. See door_known. */
+  gotRemembered?: boolean;
   /** How many times Kyro has asked it to focus again, and when last. */
   refocused?: number;
   refocusedAt?: number;
@@ -1049,6 +1077,27 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // STILL_ENOUGH_MS in personTracker.ts.
           q: x.stillFor >= STILL_ENOUGH_MS ? Math.round(x.stillFor / 1000) : undefined,
         })),
+        /**
+         * People this doorway has newly learned, to be kept on the website.
+         *
+         * "if it reloads, does it mean face recognition will not know the
+         * previous?" — the faces are safe, but THIS list was not: the door's
+         * own record of who it has already counted was built fresh on every
+         * page load, so the usher in and out all morning was counted again
+         * after each one.
+         *
+         * Only what is new since the last report, so it is a handful of
+         * people rather than the morning, and only from a doorway, which is
+         * the only camera that keeps one. A face travels as numbers, the
+         * same as everywhere else here, and only while face matching is on.
+         */
+        ...(c.isDoor ? { remembered: c.tracker.takeNewlyRemembered().slice(0, 25).map((k) => ({
+          l: k.look ? [k.look.top[0], k.look.top[1], k.look.top[2],
+                       k.look.bottom[0], k.look.bottom[1], k.look.bottom[2],
+                       k.look.shape, k.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
+          f: faceOnRef.current && k.face ? packFace(k.face) : null,
+          i: k.countedIn ? 1 : 0, o: k.countedOut ? 1 : 0, u: k.uniqued ? 1 : 0, at: k.at,
+        })) } : {}),
         // Every decision this camera made at the door since the last report,
         // so the website can show what was counted and what wasn't.
         events: c.tracker.drainEvents(),
@@ -1093,7 +1142,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           "Close other tabs and programs on this computer, or count on fewer cameras from it.");
       }
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people, remembered } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);
         // Merged rather than replaced: the website keeps asking until the
         // pictures arrive, and one that is already on its way must not be
@@ -1106,6 +1155,33 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // Who each sighting turned out to be. Kept per camera so the picture
         // can show the number Kyro counts somebody as — see whoIs on Cam.
         for (const c of cams.current.values()) c.whoIs = people[c.key] ?? {};
+        /**
+         * The doorway's record of who it had already counted, back from the
+         * website after this browser restarted.
+         *
+         * "if it reloads, does it mean face recognition will not know the
+         * previous?" The faces were always safe; this was not, and it is why
+         * the usher who is in and out all morning was counted again after
+         * every reload.
+         *
+         * Only ever arrives at a restart — the website sends it at that one
+         * moment — so there is nothing to guard against here beyond not
+         * putting the same list in twice.
+         */
+        for (const c of cams.current.values()) {
+          const back = remembered[c.key];
+          if (!back?.length || c.gotRemembered) continue;
+          c.gotRemembered = true;
+          c.tracker.restoreRemembered(back.map((k) => ({
+            look: k.l && k.l.length === 8
+              ? { top: [k.l[0], k.l[1], k.l[2]] as [number, number, number],
+                  bottom: [k.l[3], k.l[4], k.l[5]] as [number, number, number],
+                  shape: k.l[6], height: k.l[7] }
+              : null,
+            face: k.f ? unpackFace(k.f) : null,
+            countedIn: !!k.i, countedOut: !!k.o, uniqued: !!k.u, at: Number(k.at) || Date.now(),
+          })));
+        }
         problems.current = [];
         // A different service, or none: forget everybody seen in the last one.
         // People are remembered only for as long as one service runs — see

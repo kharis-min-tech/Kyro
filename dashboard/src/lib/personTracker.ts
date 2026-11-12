@@ -248,6 +248,9 @@ interface Track {
   /** When they were FIRST seen, so how long they stayed can be measured —
    *  which is what tells a doorway from a room. See typicalLifeS. */
   firstSeen: number;
+  /** Already handed to the website as somebody who has been counted, so a
+   *  reload does not lose them. Once each. See takeNewlyRemembered. */
+  kept?: boolean;
   counted: boolean;            // confirmed to be a person, so part of "in the room now"
   /**
    * Counted as having ARRIVED in this session's tally.
@@ -412,7 +415,7 @@ const STILL_WITHIN = 0.02;
 export const STILL_ENOUGH_MS = 4 * 60_000;
 
 /** Somebody who has walked out of view, and what they were counted as. */
-interface Known {
+export interface Known {
   look: Look | null;
   face: Float32Array | null;
   countedIn: boolean;
@@ -708,6 +711,25 @@ export class PersonTracker {
             this.note(now, "unclear");
           }
           t.tallied = true;
+          /**
+           * …and kept straight away, not when the track is finally let go.
+           *
+           * The record of who has been counted used to be written only at
+           * the moment a track was dropped, which at a doorway is ten
+           * minutes after somebody walks away. Anybody who crossed in those
+           * ten minutes had never been handed to the website — so a reload
+           * lost them, which is exactly the hole this was meant to close.
+           *
+           * Counted is the moment they are worth keeping. Once each: the
+           * drop still adds them to this tracker's own list, it just does
+           * not send them twice.
+           */
+          if (!t.kept && (t.countedIn || t.countedOut || t.uniqued) && (t.look || t.face)) {
+            t.kept = true;
+            this.freshlyKnown.push({ look: t.look, face: t.face, countedIn: t.countedIn,
+              countedOut: t.countedOut, uniqued: t.uniqued, at: t.lastSeen });
+            if (this.freshlyKnown.length > MOST_REMEMBERED) this.freshlyKnown.shift();
+          }
         }
         if (gone < DOOR_GRACE_MS) return true;
         this.noteLife(t, now);
@@ -818,13 +840,52 @@ export class PersonTracker {
    * Keep what this person looked like, and what they have been counted as,
    * after their track is let go. See MOST_REMEMBERED.
    */
+  /**
+   * People remembered since this was last asked, for keeping somewhere that
+   * survives a reload.
+   *
+   * ── Why this has to leave the browser ──────────────────────────────────
+   *
+   * "if it reloads, does it mean face recognition will not know the
+   * previous?"
+   *
+   * The faces themselves are safe — they live on the website. This list does
+   * not: it is the DOOR's own record of who it has already counted, and it
+   * was built fresh every time the page loaded. So the usher who has been in
+   * and out all morning was counted again after every reload, and a morning
+   * of reloads is a morning of inflation that looks exactly like a busy
+   * door.
+   *
+   * Drained rather than read, so each person travels once.
+   */
+  private freshlyKnown: Known[] = [];
+  takeNewlyRemembered(): Known[] {
+    const out = this.freshlyKnown;
+    this.freshlyKnown = [];
+    return out;
+  }
+  /** Put back what was kept, after a reload. Added to whatever this tracker
+   *  has already learned since it started, never replacing it. */
+  restoreRemembered(list: Known[]): void {
+    for (const k of list) this.known.push(k);
+    if (this.known.length > MOST_REMEMBERED) this.known.splice(0, this.known.length - MOST_REMEMBERED);
+  }
+
   private remember(t: Track): void {
     if (!t.look && !t.face) return;                    // nothing to recognise them by
     // Worth remembering if they were counted at a door, or counted as one of
     // the different people seen — otherwise there is nothing to protect.
     if (!t.countedIn && !t.countedOut && !t.uniqued) return;
-    this.known.push({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut,
-      uniqued: t.uniqued, at: t.lastSeen });
+    const k: Known = { look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut,
+      uniqued: t.uniqued, at: t.lastSeen };
+    this.known.push(k);
+    // …and queued to be kept somewhere a reload cannot reach, unless it was
+    // already sent the moment they were counted. See takeNewlyRemembered.
+    if (!t.kept) {
+      t.kept = true;
+      this.freshlyKnown.push(k);
+      if (this.freshlyKnown.length > MOST_REMEMBERED) this.freshlyKnown.shift();
+    }
     if (this.known.length > MOST_REMEMBERED) this.known.splice(0, this.known.length - MOST_REMEMBERED);
   }
 
