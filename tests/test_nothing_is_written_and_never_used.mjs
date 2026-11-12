@@ -162,5 +162,40 @@ const CALLED_BY_THE_RUNTIME = new Set([
   ok("and so is Find cameras", /<FindCameras$/m.test(cameras) || /<FindCameras /.test(cameras));
 }
 
+// ── A threshold nothing applies is a setting that does nothing ─────────────
+//
+// The third shape of the same bug. A method nothing calls, a panel nothing
+// renders, and a number nothing reads: all of them look like working code,
+// all of them pass review, and none of them does anything. The first two cost
+// a congregation's faces on every restart and a room-full alert that never
+// once went out.
+{
+  const dirs = [path.join(root, "worker"), path.join(root, "dashboard/src")];
+  const walk = (d, out = []) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { if (e.name !== "node_modules") walk(f, out); }
+      else if (/\.(ts|tsx|js)$/.test(e.name) && !/\.d\.ts$/.test(e.name)) out.push(f);
+    }
+    return out;
+  };
+  const files = dirs.flatMap((d) => walk(d));
+  const code = Object.fromEntries(files.map((f) => [f, fs.readFileSync(f, "utf8")]));
+  // Tests count as a use: a threshold may be exported purely so a test can
+  // check the value it is set to, which is a real use and a good one.
+  const everywhere = Object.values(code).join("\n")
+    + fs.readdirSync(path.join(root, "tests")).filter((f) => f.endsWith(".mjs"))
+        .map((f) => fs.readFileSync(path.join(root, "tests", f), "utf8")).join("\n");
+  const dead = [];
+  for (const f of files) {
+    for (const [, name] of code[f].matchAll(/^(?:export )?const ([A-Z][A-Z0-9_]{3,})\s*=/gm)) {
+      if ([...everywhere.matchAll(new RegExp("\\b" + name + "\\b", "g"))].length <= 1) {
+        dead.push(`${f.replace(root + "/", "")} → ${name}`);
+      }
+    }
+  }
+  ok("every threshold and limit is applied somewhere", dead.length === 0, dead.join("\n   "));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. Nothing is written and left unused.");
 process.exit(fails ? 1 : 0);

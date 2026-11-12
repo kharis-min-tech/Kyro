@@ -82,7 +82,9 @@ const PAGE_COLOURS: Record<string, { bg: string; text: string }> = {
 };
 
 // ─── Demo storage ─────────────────────────────────────────────────────────────
-const DEMO_USERS_KEY = "kyro_demo_users";
+// (A single fixed key used to live here. It was replaced by usersKey() below,
+// which separates Live mode's user list from Demo mode's, and was left behind
+// unused — found by sweeping for values that are defined and never applied.)
 
 // Mode-scoped storage: Live mode's user list is separate from Demo mode's.
 function usersKey(): string {
