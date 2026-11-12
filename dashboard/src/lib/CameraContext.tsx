@@ -169,11 +169,17 @@ export function CameraProvider({ children }: { children: ReactNode }) {
   // Hydrate on client mount — avoids SSR/client mismatch
   useEffect(() => { refresh(); }, [refresh]);
 
-  // Edge Live: poll so a newly plugged-in camera appears without a reload.
+  // Edge Live: poll so a newly plugged-in camera appears without a reload —
+  // but not while the tab is hidden. Every one of these is a request to the
+  // live-cameras server, and that server can only pick up newly deployed code
+  // when it is left alone for a few seconds. See the venue poll on the
+  // attendance page for what a forgotten background tab cost.
   useEffect(() => {
     if (!isEdgeLive()) return;
-    const id = setInterval(() => { refresh(); }, 10_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => { if (!document.hidden) refresh(); }, 10_000);
+    const onShow = () => { if (!document.hidden) refresh(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onShow); };
   }, [refresh]);
 
   const updateCamera = useCallback(async (cameraId: string, fields: Partial<Camera>) => {

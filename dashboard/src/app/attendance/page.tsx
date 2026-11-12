@@ -255,6 +255,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
     if (inDemoMode() || isEdgeLive()) return;
     let cancelled = false;
     async function poll() {
+      if (typeof document !== "undefined" && document.hidden) return;   // see the venue poll
       try {
         const s = await camerasApi.status(camera.camera_id);
         if (!cancelled) setHealth(s);
@@ -680,6 +681,28 @@ export default function AttendancePage() {
     // Edge Live polls even with no cameras, so System Status can say so honestly.
     if (!edge && (inDemoMode() || cameras.length === 0)) return;
     const poll = async () => {
+      /**
+       * Not while nobody is looking.
+       *
+       * ── What this cost ──────────────────────────────────────────────────
+       *
+       * This asked the live-cameras server for the figures every two
+       * seconds, for as long as the page existed, whether or not the tab was
+       * in front of anybody.
+       *
+       * That server is evicted a few seconds after its last request, and
+       * being evicted is the ONLY way it picks up newly deployed code. So a
+       * single Kyro tab left open in the background — which is what anybody
+       * watching a service has — guaranteed it could never fall idle, and no
+       * deploy could reach it. Four deploys in a row landed on the pages and
+       * never on the counting, and the honest answer each time was that a
+       * forgotten tab was holding the door open.
+       *
+       * A hidden tab is showing figures nobody is reading. It catches up the
+       * moment it is looked at again — see the visibilitychange listener
+       * below — so nothing is lost by being quiet.
+       */
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
         const vt = edge ? await edgeVenueApi.venue() : await camerasApi.venueTotal();
         setVenueTotal(vt);
@@ -704,7 +727,11 @@ export default function AttendancePage() {
     };
     poll();
     const t = setInterval(poll, edge ? 2_000 : 5_000);
-    return () => clearInterval(t);
+    // Straight away when somebody looks at the tab again, so a page that has
+    // been quiet is never a page showing stale figures.
+    const onShow = () => { if (!document.hidden) poll(); };
+    document.addEventListener("visibilitychange", onShow);
+    return () => { clearInterval(t); document.removeEventListener("visibilitychange", onShow); };
   }, [cameras.length, edge]);
 
   // Demo-mode: sum all camera streams
