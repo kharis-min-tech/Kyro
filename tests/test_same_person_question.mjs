@@ -248,5 +248,38 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
      /if \(!asks\.length && !\(learn && learn\.answered > 0\)\) return null;/.test(panel));
 }
 
+// ── The question has to SHOW the two people ─────────────────────────────────
+//
+// "you gave me questions like 'is this the same person' without even showing
+// me a picture of the two 'look alikes', you didnt make sense."
+//
+// She is right, and this is where it went wrong. A same-person question has
+// TWO pictures, stored under a key each, because the question is whether two
+// sightings are one person. The review panel asked for the OLD single-picture
+// key that these questions never write, got nothing, and rendered `null`: no
+// picture, no explanation, just the question and two buttons.
+{
+  const panel = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ReviewPanel.tsx"), "utf8");
+  ok("the panel asks for a side", /snapshot\$\{side \? `\?side=\$\{side\}` : ""\}/.test(panel));
+  ok("and shows both of them for a same-person question",
+     /side="a" label="this one"/.test(panel) && /side="b" label="and this one"/.test(panel));
+  ok("a missing picture says so instead of drawing nothing",
+     /No picture of \$\{label\}/.test(panel) && !/if \(!src\) return null;/.test(panel));
+  const types = fs.readFileSync(path.join(root, "dashboard/src/types/index.ts"), "utf8");
+  ok("and the question's own type is one the code admits can happen",
+     /"same_person_question" \| "is_this_a_person"/.test(types));
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("the question is still never asked until both pictures are in",
+     /q\.review_type !== "same_person_question" \|\| \(q\.pictures \?\? 0\) >= 2/.test(worker));
+  // And when a question is dropped, both of its pictures go with it. This
+  // deleted only the old single-picture key, so every two-sided question ever
+  // dropped left two crops of congregants in storage for good.
+  ok("both pictures are deleted when a question is dropped",
+     /await this\.ctx\.storage\.delete\(`qsnap:\$\{q\.review_id\}:a`\);/.test(worker)
+     && /await this\.ctx\.storage\.delete\(`qsnap:\$\{q\.review_id\}:b`\);/.test(worker));
+  ok("and the camera the second picture comes from is carried, so two computers can answer one question",
+     /other_camera: a\.other_camera \?\? null/.test(worker));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Kyro asks, and the answer moves the figure.");
 process.exit(fails ? 1 : 0);

@@ -179,7 +179,28 @@ function DemoSnapshot({ review }: { review: ReviewRequest }) {
   );
 }
 
-function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: string }) {
+/**
+ * The picture, or pictures, the question is about.
+ *
+ * ── Why `side` exists here ──────────────────────────────────────────────────
+ *
+ * "you gave me questions like 'is this the same person' without even showing
+ * me a picture of the two 'look alikes', you didnt make sense."
+ *
+ * She is right, and this is where it went wrong. A same-person question has
+ * TWO pictures, stored under their own keys — one for each of the two
+ * sightings being compared, which is the entire question. This panel asked
+ * for the OLD single-picture key that those questions never write, got
+ * nothing back, and rendered `null`: no picture, no explanation, just the
+ * question and two buttons. Being asked whether two people you cannot see
+ * are the same person is not a question anybody can answer.
+ */
+function LiveSnapshot({ cameraId, reviewId, side, label }: {
+  cameraId: string; reviewId: string;
+  /** "a" / "b" for a question comparing two sightings; omitted for the rest. */
+  side?: "a" | "b";
+  label?: string;
+}) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -188,7 +209,10 @@ function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: stri
     try {
       const live = isEdgeLive();
       const token = live ? edgeToken() ?? "" : typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
-      const res = await fetch(live ? `/api/live/questions/${encodeURIComponent(reviewId)}/snapshot` : `${API_URL}/api/v1/review/${cameraId}/snapshot/${reviewId}`, {
+      const url = live
+        ? `/api/live/questions/${encodeURIComponent(reviewId)}/snapshot${side ? `?side=${side}` : ""}`
+        : `${API_URL}/api/v1/review/${cameraId}/snapshot/${reviewId}`;
+      const res = await fetch(url, {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
       });
       if (res.ok && res.status !== 204) {
@@ -198,7 +222,7 @@ function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: stri
       }
     } catch {}
     finally { setLoading(false); }
-  }, [cameraId, reviewId]);
+  }, [cameraId, reviewId, side]);
 
   useEffect(() => {
     fetchSnap();
@@ -211,14 +235,27 @@ function LiveSnapshot({ cameraId, reviewId }: { cameraId: string; reviewId: stri
       <span className="text-xs" style={{ color: "var(--text-faint)" }}>Loading snapshot…</span>
     </div>
   );
-  if (!src) return null;
+  // An absent picture used to render nothing at all, which looks exactly like
+  // a question that never had one — and left her judging two people she could
+  // not see. Say it instead.
+  if (!src) return (
+    <div className="w-full h-24 rounded-lg flex items-center justify-center px-2 text-center"
+      style={{ background: "var(--bg-inset)", border: "1px solid var(--border-strong)" }}>
+      <span className="text-xs" style={{ color: "var(--text-faint)" }}>
+        {label ? `No picture of ${label}` : "No picture of this one"} — the camera had already lost sight of them
+      </span>
+    </div>
+  );
   return (
-    <ZoomableImage
-      src={src}
-      alt="Kyro flagged area"
-      maxHeight={160}
-      badge={<><Eye size={9} /> Live</>}
-    />
+    <div className="flex flex-col gap-1 min-w-0 flex-1">
+      {label && <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{label}</span>}
+      <ZoomableImage
+        src={src}
+        alt={label ? `Kyro flagged ${label}` : "Kyro flagged area"}
+        maxHeight={160}
+        badge={<><Eye size={9} /> Live</>}
+      />
+    </div>
   );
 }
 
@@ -347,7 +384,19 @@ function ReviewCard({
         </button>
       </div>
       <div className="px-4 pb-2">
-        {inDemoMode() && !isEdgeLive() ? <DemoSnapshot review={review} /> : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
+        {inDemoMode() && !isEdgeLive()
+          ? <DemoSnapshot review={review} />
+          : review.review_type === "same_person_question"
+          /* Two sightings, two pictures, side by side — because the question
+             is whether they are the same person, and one picture cannot ask
+             it. See the note on LiveSnapshot. */
+          ? (
+            <div className="flex gap-2 items-start">
+              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="a" label="this one" />
+              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="b" label="and this one" />
+            </div>
+          )
+          : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
       </div>
       <div className="px-4 pb-3 flex flex-col gap-1.5">
         {review.options.map((opt) => (

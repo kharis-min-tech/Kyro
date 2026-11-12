@@ -54,7 +54,15 @@ export interface ReviewRequest {
   type: "review_request";
   review_id: string;
   camera_id: string;
-  review_type: "stage_question" | "front_rush_question" | "absence_question" | "zone_proposal" | "altar_call_question";
+  /**
+   * The kinds of question Kyro asks. The last two come from the register of
+   * people and carry PICTURES — two for a same-person question, one for "is
+   * this a person?" — and they were missing from this list, so anything
+   * reading it believed they could not happen and the panel drew no picture
+   * at all. See LiveSnapshot in ReviewPanel.tsx.
+   */
+  review_type: "stage_question" | "front_rush_question" | "absence_question" | "zone_proposal" | "altar_call_question"
+    | "same_person_question" | "is_this_a_person";
   /** Which role should see this question — "admin" for spatial, "operator" for people */
   target_role: "admin" | "operator";
   question: string;

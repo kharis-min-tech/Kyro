@@ -3269,7 +3269,16 @@ export class VenueHub extends DurableObject {
     // Keep the newest 60 (unanswered ones expire after QUESTION_TTL_MS anyway).
     const sorted = Object.values(qs).sort((a, b) => b.created_at - a.created_at);
     const keep = sorted.slice(0, 60);
-    for (const q of sorted.slice(60)) await this.ctx.storage.delete(`qsnap:${q.review_id}`);
+    // Both of a same-person question's pictures go with it. This deleted
+    // only the old single-picture key, so every two-sided question ever
+    // dropped left two pictures of people behind in storage for good —
+    // which is a leak, and worse than a leak: they are crops of
+    // congregants, kept past the question that justified them.
+    for (const q of sorted.slice(60)) {
+      await this.ctx.storage.delete(`qsnap:${q.review_id}`);
+      await this.ctx.storage.delete(`qsnap:${q.review_id}:a`);
+      await this.ctx.storage.delete(`qsnap:${q.review_id}:b`);
+    }
     await this.ctx.storage.put("questions", Object.fromEntries(keep.map((q) => [q.review_id, q])));
   }
 
@@ -3338,7 +3347,18 @@ export class VenueHub extends DurableObject {
           where: clean(cam?.zone_name || cam?.name || "", 60),
           other_where: clean(otherCam?.zone_name || otherCam?.name || "", 60),
           /** What to correct if the answer disagrees. Never shown. */
-          ask: { pair: a.pair, guess: a.guess, camera: a.camera, track: a.track, person: a.person, made: a.made ?? null },
+          /**
+           * What to correct if the answer disagrees. Never shown.
+           *
+           * other_camera is carried because the second picture may come from
+           * a DIFFERENT camera — that is half the point of the question —
+           * and the check that decides whether a computer may send that
+           * picture reads it. Without it, that check fell back to the
+           * question's own camera, so two computers each watching one side
+           * of a doorway could never complete a question between them.
+           */
+          ask: { pair: a.pair, guess: a.guess, camera: a.camera, track: a.track, person: a.person,
+                 other_camera: a.other_camera ?? null, made: a.made ?? null },
           track_id: a.track, position: [0, 0], bbox_hint: null,
           confidence: a.score ?? 0, best_guess: a.guess === "same" ? "Same person" : "Different people",
           options: ["Same person", "Different people", "Not sure"],

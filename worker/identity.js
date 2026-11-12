@@ -319,6 +319,15 @@ export const STILL_WATCHING_MS = 60_000;
 export const VISITS_KEPT = 24;
 /** A sighting that stopped coming before it earned a place in the register. */
 export const WAITING_STALE_MS = 60_000;
+/**
+ * The most sightings ever kept waiting to be accounted for.
+ *
+ * A ceiling rather than a target: they are tidied by age first, and this
+ * only decides what happens on a morning busy enough that age alone does not
+ * get the list down. Each entry holds face codes, so an unbounded list is
+ * megabytes of a congregation's faces held past any use for them.
+ */
+export const MOST_WAITING = 800;
 /** Faces kept per identity, so one bad reading can't define anybody. */
 export const SAMPLES = 5;
 /**
@@ -873,9 +882,77 @@ export class IdentityRegistry {
       }
     }
 
-    // Nobody fits. Either this is somebody new, or this camera is not allowed
-    // to decide that — see createsIdentities.
-    if (!this.createsIdentities(cameraId)) return null;
+    /**
+     * Nobody fits: somebody new — if this camera is allowed to say so.
+     *
+     * ── The doorway may enrol somebody, but only on a FACE ────────────────
+     *
+     * "when someone comes in, take a picture of their face and clothes so
+     * that you scan and remember what they look like so you dont over
+     * count."
+     *
+     * She has put her finger on a design mistake. The doorway is the one
+     * place in a church where a camera gets a good look at a face: people
+     * walk straight at it, close, one or two at a time, in the light of the
+     * entrance. The hall is the opposite — the back of a hundred heads, too
+     * far away to read, in whatever light the room has.
+     *
+     * And a doorway was forbidden from putting anybody in the register at
+     * all. So everybody was enrolled in the ROOM instead, on the colour of
+     * their coat, which is the weakest evidence there is and is at its
+     * weakest in a crowd where fifty coats are navy. That is where the
+     * duplicates came from: 114 chairs, 300 people counted.
+     *
+     * The rule it was protecting against is real — a doorway sees the same
+     * person appear, disappear and reappear as they cross it, and inventing
+     * somebody on each of those is how a morning becomes a thousand people.
+     * But that argument is about APPEARANCE, not about faces. A face that
+     * has been compared against every person Kyro knows and matched none of
+     * them is somebody new, wherever it is standing.
+     *
+     * So: a doorway may enrol, and only ever on a face it has actually read.
+     * No face, no entry — it goes on being a camera that counts people
+     * through a door and leaves the register alone.
+     */
+    /**
+     * ── Why the doorway still may NOT enrol, even on a face ───────────────
+     *
+     * This was tried, because the reasoning above is sound: the doorway is
+     * the one place a camera gets a good look at a face, and the hall is the
+     * back of a hundred heads. Letting a doorway enrol anybody it could
+     * actually SEE looked like the answer to "scan their face when they come
+     * in so you don't over count".
+     *
+     * Measured on the 120-person service, it was much worse: 47 people split
+     * in two and 48 merged into somebody else, against none of either.
+     *
+     * The reason is worth writing down, because it is not obvious. Enrolling
+     * at the door only pays if the ROOM can then recognise the entry it
+     * made — and the room reads a face perhaps once in four looks, from
+     * behind, at range. So the same person arrives in the hall, fails to
+     * match their own day-old-looking door entry on coat colour alone, and
+     * is written down a second time; later a face read in the room matches
+     * the door entry after all, and now two entries are fighting over one
+     * human being.
+     *
+     * A face is only worth enrolling on where a face can be checked again.
+     * Until the hall can read faces, the door's faces are better spent
+     * CONFIRMING people than creating them.
+     *
+     * ── But it does REMEMBER what it saw ──────────────────────────────────
+     *
+     * Which is what this line used to prevent, and that was the real loss.
+     * A doorway sighting returned here and went no further, so it never
+     * reached the waiting list below — the one place a sighting's evidence
+     * is kept for whichever camera finally accounts for the person. The
+     * face read a step from the lens, in the light of the entrance, was
+     * measured and thrown away in the same breath, every time, all morning.
+     * The hall then enrolled everybody on the colour of their coat, because
+     * a coat was all it had ever been given.
+     *
+     * So the doorway now writes down what it saw and still enrols nobody.
+     */
+    const mayEnrol = this.createsIdentities(cameraId);
 
     /**
      * …but somebody was standing in exactly this spot a moment ago.
@@ -889,7 +966,7 @@ export class IdentityRegistry {
      * it is somebody already in the register who was lost for a moment. Made
      * to wait, they would be written down as new all over again.
      */
-    if (o.box) {
+    if (mayEnrol && o.box) {
       const spots = [];
       for (const p of this.people.values()) {
         if (claimed.has(p.id)) continue;
@@ -991,8 +1068,70 @@ export class IdentityRegistry {
          * lost into one another.
          */
         let best = null, bestScore = 0, second = 0;
-        for (const [k, v] of this.waiting) {
+        /** Whether `best` was found by face rather than by appearance. The
+         *  two are judged by different thresholds, so this must be a fact
+         *  about THIS search, never a counter that has been true since the
+         *  first time it ever happened. */
+        let byFace = false;
+        /**
+         * A FACE first, when this sighting has one.
+         *
+         * "when someone comes in, take a picture of their face and clothes
+         * so that you scan and remember what they look like so you dont over
+         * count."
+         *
+         * The doorway is where a face can actually be read — people walk
+         * straight at it, close, in the light of the entrance — and the hall
+         * is the back of a hundred heads. Those door reads were being thrown
+         * away: this carry-over matched a stopped sighting to a new one on
+         * the COLOUR OF THEIR COAT alone, which is the one reading that
+         * differs most between two cameras looking at one person from two
+         * angles in two different lights. So the face scanned at the door
+         * rarely reached the entry the hall eventually made, and the hall
+         * went on recognising people by their coats.
+         *
+         * A face code is a measurement of a face. Across cameras it is the
+         * ONLY reading that holds up, which makes it the right thing to join
+         * two sightings with — and joining them is all this does: the entry
+         * is still made by the camera allowed to make it, and it now
+         * inherits the face as well as the coat.
+         */
+        if (faceReads.length) {
+          for (const [k, v] of this.waiting) {
+            if (k === wkey || !v.faceCodes.length) continue;
+            if (now - v.last > TRACK_LINK_MS) continue;
+            if (now - v.last < CO_SEEN_MS) continue;       // still being seen: somebody else
+            let score = 0;
+            for (const f of faceReads) score = Math.max(score, bestAgainst(v.faceCodes, f, dot));
+            if (score > bestScore) { second = bestScore; bestScore = score; best = k; }
+            else if (score > second) second = score;
+          }
+          // The same two tests a face has to pass anywhere else here: clearly
+          // this person, and clearly not the next-best one.
+          if (!(best && bestScore >= FACE_SAME && bestScore - second >= FACE_MARGIN)) {
+            best = null; bestScore = 0; second = 0;
+          } else {
+            byFace = true;
+            this.stats.carriedByFace = (this.stats.carriedByFace || 0) + 1;
+          }
+        }
+        for (const [k, v] of best ? [] : this.waiting) {
           if (k === wkey || !v.looks.length) continue;
+          /**
+           * On THIS camera only.
+           *
+           * This carry-over exists for one thing: the detector lost somebody
+           * and the camera gave them a new number, so the evidence gathered
+           * under the old one is theirs. That is a statement about one
+           * camera. Let it reach across cameras and it becomes "somebody
+           * somewhere else was wearing a coat this colour", which at an
+           * entrance is most of a congregation — measured, it merged 42 of
+           * 120 people into one another.
+           *
+           * A FACE crosses cameras, and does so above, because a face code
+           * holds up between two views of one person and a coat does not.
+           */
+          if (k.slice(0, k.lastIndexOf("#")) !== cameraId) continue;
           // A longer reach than WAITING_STALE_MS, which is about tidying the
           // list rather than about who somebody is: a person who keeps
           // vanishing for a minute at a time is exactly the case this
@@ -1003,7 +1142,7 @@ export class IdentityRegistry {
           if (score > bestScore) { second = bestScore; bestScore = score; best = k; }
           else if (score > second) second = score;
         }
-        if (best && bestScore >= this.lookSame && bestScore - second >= LOOK_MARGIN) {
+        if (best && (byFace || (bestScore >= this.lookSame && bestScore - second >= LOOK_MARGIN))) {
           const v = this.waiting.get(best);
           w.first = Math.min(w.first, v.first);
           w.seen += v.seen;
@@ -1023,8 +1162,31 @@ export class IdentityRegistry {
       // is never thrown away while it is still evidence about somebody.
       if (this.waiting.size > 500) {
         for (const [k, v] of this.waiting) if (now - v.last > TRACK_LINK_MS) this.waiting.delete(k);
+        /**
+         * …and a hard ceiling, because age alone is no longer enough.
+         *
+         * This tidied by age only, which was safe while a doorway never
+         * reached the waiting list: a room makes tracks slowly. A doorway
+         * makes them as fast as people walk through it, and now writes down
+         * what it sees — so on a busy morning five hundred sightings can all
+         * be younger than the age limit at once, nothing is tidied, and a
+         * list holding face codes grows for as long as the service lasts.
+         *
+         * The oldest go first. Losing one costs the chance of carrying a
+         * sighting's evidence across to the person it belonged to; letting
+         * the list grow without limit costs the register itself.
+         */
+        if (this.waiting.size > MOST_WAITING) {
+          const oldest = [...this.waiting.entries()].sort((a, b) => a[1].last - b[1].last);
+          for (const [k] of oldest.slice(0, this.waiting.size - MOST_WAITING)) this.waiting.delete(k);
+          this.stats.waitingTrimmed = (this.stats.waitingTrimmed || 0) + 1;
+        }
       }
     }
+    // The doorway has now written down what it saw. It still enrols nobody:
+    // one person crossing a door appears, disappears and reappears, and
+    // inventing somebody each time is how a morning becomes a thousand.
+    if (!mayEnrol) return null;
     if (w.seen < (w.faces ? NEW_PERSON_WITH_FACE : NEW_PERSON_NO_FACE)) return null;
 
     /**
