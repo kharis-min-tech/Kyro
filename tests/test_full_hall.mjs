@@ -310,9 +310,19 @@ function chairsChangeHands({ freeForReports, alike }) {
   const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
   ok("and the card says so where the number is", /Held at \{overSeats\.seats\.toLocaleString\(\)\}, the number of seats in this room/.test(card));
   ok("printing what was measured beside what it shows",
-     /Kyro counted \$\{summary\.totalArrived\.toLocaleString\(\)\}/.test(card));
-  ok("only ever against the register, never a tally of crossings",
-     /const held = overSeats && usingRegister && summary\.totalArrived > overSeats\.seats \? overSeats\.seats : null;/.test(card));
+     /Kyro counted \$\{\(attendance \?\? summary\.totalArrived\)\.toLocaleString\(\)\}/.test(card));
+  /**
+   * The hold is checked against the ATTENDANCE, never against the cameras'
+   * tally of crossings.
+   *
+   * It used to require usingRegister, which was the only way to be sure the
+   * figure was people rather than crossings. The attendance figure now comes
+   * straight from the website — doorway first, rooms second — so it is
+   * people whether or not the register's own movement is there, and the test
+   * has to allow that without letting crossings back in.
+   */
+  ok("only ever against a count of people, never a tally of crossings",
+     /const held = overSeats && \(usingRegister \|\| \(attendance \?\? 0\) > 0\)\s*\n\s*&& \(attendance \?\? summary\.totalArrived\) > overSeats\.seats \? overSeats\.seats : null;/.test(card));
   const svc = fs.readFileSync(new URL("../dashboard/src/components/ui/AutoServices.tsx", import.meta.url), "utf8");
   ok("the service card is held to the same figure", /people_seen_shown/.test(svc));
 
