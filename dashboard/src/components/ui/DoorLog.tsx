@@ -41,6 +41,8 @@ interface Identity {
   in_a_uniform: number; helped_by_their_seat: number; changed_seats: number; seated_now: number;
   joined_across_cameras?: number; not_people?: number; ignored_not_people?: number;
   found_again_in_their_seat?: number; two_boxes_one_person?: number;
+  questions_open?: number; questions_waiting_for_a_picture?: number;
+  questions_showing?: number; questions_answered?: number;
   cameras?: string[];
 }
 
@@ -98,6 +100,21 @@ export function IdentityHealth() {
     ["Changed seats", d.changed_seats ?? 0, "a new seat, never a new person"],
     ["Everyone dressed alike", d.in_a_uniform ?? 0, "choir or ushers: appearance refused, only a face will do"],
     ["Helped by their seat", d.helped_by_their_seat ?? 0, "where they were sitting tipped a close match"],
+    /**
+     * What happened to the questions.
+     *
+     * "not one question has been shown … thats most likely why it is 179."
+     *
+     * Raised and shown are different things, and the difference is the whole
+     * diagnosis. None raised means Kyro was never unsure — which, with a
+     * figure of 179 in a room of 114, would itself be the fault. Raised but
+     * waiting means it WAS unsure, asked, and the picture never arrived, so
+     * nobody could answer. Opposite faults, opposite fixes.
+     */
+    ["Questions waiting to be answered", d.questions_showing ?? 0, "on screen now, with both pictures"],
+    ["Questions Kyro couldn't show you", d.questions_waiting_for_a_picture ?? 0,
+     "it was unsure and asked, but a picture of one of the two never arrived — so nobody could answer"],
+    ["Questions you have answered", d.questions_answered ?? 0, "each one corrected the figures"],
     ["Two boxes, one person?", d.two_boxes_one_person ?? 0,
      "one camera drew two boxes that look like the same person at once — asked, never decided"],
     ["Lost and found in their seat", d.found_again_in_their_seat ?? 0,

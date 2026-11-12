@@ -322,5 +322,41 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
      /other_camera: a\.other_camera \?\? null/.test(worker));
 }
 
+// ── Raised, and shown, are different things ────────────────────────────────
+//
+// "not one question has been shown on questions being asked, not one today …
+// thats most likely why it is 179."
+//
+// She is right that it matters, and the gap she cannot see from outside is
+// between a question being RAISED and a question being SHOWN. A same-person
+// question is only shown once both pictures have arrived, because being asked
+// whether two people you cannot see are the same person is not a question
+// anybody can answer. So a question whose second picture never arrives waits
+// for ever, in silence — and from outside that is indistinguishable from Kyro
+// never having been unsure at all.
+//
+// Those are opposite faults with opposite fixes:
+//   none raised  → Kyro was never unsure, which with 179 in a room of 114 is
+//                  itself the fault;
+//   raised, not shown → it WAS unsure, asked, and the picture never arrived.
+{
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  ok("the counting panel says how many questions are open", /questions_open: live\.length,/.test(worker));
+  ok("…how many could not be shown for want of a picture",
+     /questions_waiting_for_a_picture: live\.filter\(/.test(worker));
+  ok("…how many are on screen now", /questions_showing: live\.filter\(/.test(worker));
+  ok("…and how many have been answered", /questions_answered: qs\.filter\(\(q\) => q\.answer\)\.length,/.test(worker));
+  ok("a question that has timed out is not counted as open",
+     /nowS - q\.created_at < QUESTION_TTL_MS \/ 1000/.test(worker));
+  // The one-picture kind is judged by its own bar, not the two-picture one.
+  ok("and each kind is judged by the number of pictures it actually needs",
+     /\(q\.review_type === "same_person_question" \? 2 : 1\)/.test(worker));
+  const panel = fs.readFileSync(path.join(root, "dashboard/src/components/ui/DoorLog.tsx"), "utf8");
+  ok("the page shows all three, so the two faults can be told apart",
+     /Questions Kyro couldn't show you/.test(panel)
+     && /Questions waiting to be answered/.test(panel)
+     && /Questions you have answered/.test(panel));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Kyro asks, and the answer moves the figure.");
 process.exit(fails ? 1 : 0);

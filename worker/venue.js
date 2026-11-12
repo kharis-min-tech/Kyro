@@ -885,7 +885,43 @@ export class VenueHub extends DurableObject {
       }
       if (p === "/api/live/identity" && request.method === "GET") {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can see this" }, 403);
-        return json(this.register ? this.register.diagnostics() : { unique_people: 0, service: null });
+        /**
+         * …and what has happened to the QUESTIONS.
+         *
+         * "not one question has been shown on questions being asked, not one
+         * today … thats most likely why it is 179."
+         *
+         * She is right that it matters, and the gap she cannot see from
+         * outside is between a question being RAISED and a question being
+         * SHOWN. A same-person question is only shown once both pictures
+         * have arrived from the counting browser, because being asked
+         * whether two people you cannot see are the same person is not a
+         * question anybody can answer. So a question whose second picture
+         * never arrives waits for ever, in silence, and from the outside
+         * that is indistinguishable from Kyro never having been unsure.
+         *
+         * Those are opposite faults with opposite fixes, and until now
+         * nothing here could tell them apart.
+         */
+        const qs = Object.values(await this.get("questions", {}));
+        const nowS = Date.now() / 1000;
+        const live = qs.filter((q) => !q.answer && nowS - q.created_at < QUESTION_TTL_MS / 1000);
+        return json({
+          ...(this.register ? this.register.diagnostics() : { unique_people: 0, service: null }),
+          /** Questions Kyro has raised and not had answered. */
+          questions_open: live.length,
+          /** …of those, the ones nobody can be shown yet, because a picture
+           *  of one of the two people never arrived. */
+          questions_waiting_for_a_picture: live.filter(
+            (q) => (q.pictures ?? 0) < (q.review_type === "same_person_question" ? 2 : 1)).length,
+          /** …and the ones that are on somebody's screen right now. */
+          questions_showing: live.filter(
+            (q) => (q.pictures ?? 0) >= (q.review_type === "same_person_question" ? 2 : 1)).length,
+          /** Answered today. Zero with the others at zero means Kyro was
+           *  never unsure; zero with questions waiting means it was unsure
+           *  and could not ask. */
+          questions_answered: qs.filter((q) => q.answer).length,
+        });
       }
       const svc = p.match(/^\/api\/live\/services\/([\w-]+)(?:\/(keep|end|rename))?$/);
       if (svc && role !== "admin") return json({ error: "Only administrators can keep, rename or delete a service" }, 403);
