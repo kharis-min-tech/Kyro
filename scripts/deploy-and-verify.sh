@@ -24,11 +24,25 @@ SITE="https://kyro.kharischurch.com"
 OUT="dashboard/out"
 
 # A stamp for worker/venue.js that doesn't change when the stamp itself does.
-stamp_of() { sed 's/^const VENUE_CODE = .*/const VENUE_CODE = "";/' worker/venue.js | shasum | cut -c1-12; }
+# The line matches whether or not it is exported. It became `export const`
+# the day the worker started importing it — and this pattern did not follow,
+# so for a whole afternoon the stamp was never written into the file, every
+# deploy genuinely succeeded, and this script sat waiting for the live server
+# to report a stamp that had never been deployed. Six "it is still on old
+# code" failures, every one of them wrong.
+stamp_of() { sed 's/^\(export \)*const VENUE_CODE = .*/const VENUE_CODE = "";/' worker/venue.js | shasum | cut -c1-12; }
 STAMP="venue-$(stamp_of)"
-if ! grep -q "^const VENUE_CODE = \"$STAMP\";$" worker/venue.js; then
-  sed -i '' "s/^const VENUE_CODE = .*/const VENUE_CODE = \"$STAMP\";/" worker/venue.js
+if ! grep -q "^\(export \)*const VENUE_CODE = \"$STAMP\";$" worker/venue.js; then
+  sed -i '' "s/^\(export \)*const VENUE_CODE = .*/\1const VENUE_CODE = \"$STAMP\";/" worker/venue.js
   echo "→ Stamped worker/venue.js as $STAMP"
+fi
+# …and never take it on trust again. A stamp that did not go in means every
+# check below is comparing against something that was never deployed, and the
+# failure it reports is a lie about the server.
+if ! grep -q "VENUE_CODE = \"$STAMP\";$" worker/venue.js; then
+  echo "✗ Could not write the stamp into worker/venue.js."
+  echo "  Everything below would be checking for code that was never deployed."
+  exit 1
 fi
 
 # Keep the previous builds' page files alongside the new ones.

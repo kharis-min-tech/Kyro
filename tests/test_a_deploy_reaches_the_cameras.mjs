@@ -143,5 +143,25 @@ const deploy = read("scripts/deploy-and-verify.sh");
      /the computer doing the counting holds a connection/.test(deploy));
 }
 
+// ── The check that was comparing against nothing ───────────────────────────
+//
+// The stamp line became `export const VENUE_CODE` the day the worker started
+// importing it. This script's pattern only matched `^const`, so from that
+// moment the stamp was never written into the file: every deploy genuinely
+// succeeded, and the script sat waiting for the live server to report a stamp
+// that had never been deployed. Six "it is still running old code" failures,
+// every one of them false, and six messages sent to somebody telling her to
+// close tabs that had nothing to do with it.
+{
+  ok("the stamp is found whether or not the line is exported",
+     /\^\\\(export \\\)\*const VENUE_CODE/.test(deploy));
+  ok("and writing it keeps the export", /\\1const VENUE_CODE = /.test(deploy));
+  // The part that matters more than the pattern: never take it on trust.
+  ok("and if the stamp does not go in, the script stops dead",
+     /Could not write the stamp into worker\/venue\.js\./.test(deploy));
+  ok("saying why that is worse than a failed deploy",
+     /checking for code that was never deployed/.test(deploy));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A deploy reaches the cameras.");
 process.exit(fails ? 1 : 0);
