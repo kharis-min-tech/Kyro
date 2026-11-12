@@ -112,5 +112,55 @@ const CALLED_BY_THE_RUNTIME = new Set([
      /this\.wipeFaces\(service, now\);/.test(venue));
 }
 
+// ── The same question, asked of the pages ──────────────────────────────────
+//
+// Methods nothing calls have an exact twin in the browser: components nothing
+// renders. Asking found two whole settings that existed, worked, saved
+// properly, and were on no page at all —
+//
+//   CountingSensitivity — "how sure must the AI be before it counts someone",
+//     which is the dial for the complaint that ran through two days: a wall
+//     counted as people at one end, a packed room counted as two at the other.
+//   FindCameras — the whole route for adding a network camera.
+//
+// Neither was reachable. Both are now on the Cameras page.
+{
+  const SRC = path.join(root, "dashboard/src");
+  const walk = (d, out = []) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f, out);
+      else if (/\.(ts|tsx)$/.test(e.name)) out.push(f);
+    }
+    return out;
+  };
+  const files = walk(SRC);
+  const whole = files.map((f) => fs.readFileSync(f, "utf8")).join("\n");
+  /**
+   * Named one by one rather than pattern-matched, so leaving something out
+   * of the pages is a decision somebody makes on purpose.
+   *
+   * Heatmap: a picture of where people sat, built for a page that was never
+   * finished. InfoTooltip and ThemeAutoNote: spare furniture.
+   * isUserChosenDemo: a second way of asking something there is already a way
+   * to ask.
+   */
+  const ON_PURPOSE = new Set(["Heatmap", "InfoTooltip", "ThemeAutoNote", "isUserChosenDemo"]);
+  const orphans = [];
+  for (const f of files) {
+    const src = fs.readFileSync(f, "utf8");
+    for (const [, name] of src.matchAll(/^export (?:async )?function ([A-Z]\w*)/gm)) {
+      if (ON_PURPOSE.has(name)) continue;
+      if ([...whole.matchAll(new RegExp("\\b" + name + "\\b", "g"))].length <= 1) {
+        orphans.push(`${f.replace(SRC + "/", "")} → ${name}`);
+      }
+    }
+  }
+  ok("every panel the pages define is rendered somewhere", orphans.length === 0, orphans.join("\n   "));
+  const cameras = fs.readFileSync(path.join(root, "dashboard/src/app/cameras/page.tsx"), "utf8");
+  ok("the counting-sensitivity dial is on the Cameras page", /<CountingSensitivity \/>/.test(cameras));
+  ok("and so is Find cameras", /<FindCameras$/m.test(cameras) || /<FindCameras /.test(cameras));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. Nothing is written and left unused.");
 process.exit(fails ? 1 : 0);

@@ -22,6 +22,8 @@ import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { CountingCard } from "@/components/ui/CountingCard";
 import { useCounting } from "@/lib/CountingContext";
+import { CountingSensitivity } from "@/components/ui/CountingSensitivity";
+import { FindCameras } from "@/components/ui/FindCameras";
 import { FaceMatching } from "@/components/ui/FaceMatching";
 import { scanOutcome } from "@/lib/cameraScan";
 
@@ -1921,8 +1923,31 @@ export default function CamerasPage() {
           </p>
         )}
 
+        {/**
+          * Two settings that existed, worked, and were on no page at all.
+          *
+          * Found by asking which components nothing renders — the same
+          * question that found a face-restoring method nothing called.
+          *
+          * "How sure must the AI be before it counts someone" is the dial
+          * for the exact complaint that ran through two days: a wall counted
+          * as people at one end, a packed room counted as two at the other.
+          * It was written, it saves properly, and there was no way to reach
+          * it.
+          *
+          * "Find cameras" is the whole route for adding a network camera —
+          * the camera computer scans its own network and offers what it
+          * finds. Also unreachable.
+          */}
         {edge && role === "admin" && (
           <FaceMatching />
+        )}
+        {edge && role === "admin" && (
+          <CountingSensitivity />
+        )}
+        {edge && canManage && (
+          <FindCameras onAdded={edge ? afterEdgeChange : refresh}
+            multipleComputers={(devices?.length ?? 0) > 1} />
         )}
 
         <div className="mt-4">
