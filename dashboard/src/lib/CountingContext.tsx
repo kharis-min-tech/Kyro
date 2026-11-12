@@ -19,7 +19,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import {
   loadEngine, listCameras, openCamera, openCameraAnySize, cameraKey, grab, countPeople, savedDevice, sendSeats,
   COUNT_WIDTH, DOOR_WIDTH,
-  sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, holdFocus, type Engine, type CameraReport, type Zone, type WantedPicture,
+  sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, holdFocus, refocus, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
@@ -81,6 +81,12 @@ const FACES_EVERY_MS = 4_000;
  * picture is actually asked for. Often enough that the one kept of somebody
  * is recent; rarely enough that a hall of a hundred costs almost nothing.
  */
+/** How many times a camera is asked to focus again before Kyro stops asking
+ *  and says so instead. */
+const MOST_REFOCUS = 3;
+/** …and how long between asks. A camera told to refocus every half minute is
+ *  a camera that is never in focus. */
+const REFOCUS_GAP_MS = 60_000;
 const CROP_EVERY_MS = 8_000;
 /** How many of those are kept per camera, oldest dropped first. */
 /**
@@ -215,6 +221,9 @@ interface Cam {
   whoIs: Record<number, number>;
   /** Whether this camera's focus could be held still — see holdFocus. */
   focus?: "locked" | "already steady" | "cannot";
+  /** How many times Kyro has asked it to focus again, and when last. */
+  refocused?: number;
+  refocusedAt?: number;
   tracker: PersonTracker;      // follows people between counts → arrived / left
   faces: string[] | null;      // face codes to send, when face matching is on
   facesAt: number;
@@ -559,6 +568,33 @@ export function CountingProvider({ children }: { children: ReactNode }) {
          * still when the camera allows it (see holdFocus) — and when it does
          * not, this is the half that notices.
          */
+        /**
+         * …and before saying anything, TRY TO FIX IT.
+         *
+         * A camera can settle on the wrong thing in the few seconds it is
+         * given — somebody walking past the lens as counting starts — and
+         * then be held there all service, which is a fault Kyro introduced
+         * by holding it at all. Handing it back and letting it look again
+         * costs a few seconds of hunting it was doing anyway.
+         *
+         * A few times only. A camera told to refocus every half minute is a
+         * camera that is never in focus.
+         */
+        if (c.watch.soft && !c.watch.black && !c.watch.frozen && c.stream
+            && (c.refocused ?? 0) < MOST_REFOCUS && Date.now() - (c.refocusedAt ?? 0) > REFOCUS_GAP_MS) {
+          c.refocused = (c.refocused ?? 0) + 1;
+          c.refocusedAt = Date.now();
+          const stream = c.stream;
+          refocus(stream).then((how) => {
+            c.focus = how;
+            // It is looking at the room again, so what "sharp" means here has
+            // to be learned again — the old best was measured through a lens
+            // focused somewhere else.
+            if (c.stream === stream) c.watch.forgetSharpness();
+          }).catch(() => {});
+          say(c.label, "The picture went soft, so Kyro asked the camera to focus again.",
+            `Attempt ${c.refocused} of ${MOST_REFOCUS}. If it keeps going soft, the lens may need wiping, or autofocus may need turning off in the camera's own software.`);
+        }
         if (c.watch.soft && !c.watch.black && !c.watch.frozen) {
           say(c.label, "The picture has gone soft — the camera is hunting for focus, and blurred people are not counted.",
             c.focus === "locked"

@@ -140,5 +140,55 @@ const blurred = (phase = 0) => {
      /c\.focus === "locked"/.test(ctx));
 }
 
+// ── Trying to fix it, not just reporting it ────────────────────────────────
+//
+// "you see how blurry it is" — sent while the focus-holding was already live.
+//
+// Two ways that happens. The camera may have settled on the wrong thing in
+// the few seconds it was given — somebody walking past the lens as counting
+// started — and then been held there for the rest of the service, which is a
+// fault Kyro introduced by holding it at all. Or the camera is one of the
+// many that will not be held, and is simply hunting.
+//
+// Either way the honest move is the same: hand it back, let it look at the
+// room again, try to hold it again.
+{
+  const cam = fs.readFileSync(path.join(root, "dashboard/src/lib/cameraMode.ts"), "utf8");
+  ok("Kyro can hand focus back to the camera", /export async function refocus/.test(cam));
+  ok("and then tries to hold it again", /return holdFocus\(stream\);/.test(cam));
+  ok("a camera that refuses to be handed anything still counts",
+     /catch \{ \/\* it may refuse; holdFocus will find out soon enough \*\/ \}/.test(cam));
+
+  const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
+  ok("a soft picture makes Kyro ask for a refocus", /refocus\(stream\)\.then/.test(ctx));
+  ok("…a few times only, not every half minute",
+     /const MOST_REFOCUS = 3;/.test(ctx) && /const REFOCUS_GAP_MS = 60_000;/.test(ctx)
+     && /\(c\.refocused \?\? 0\) < MOST_REFOCUS/.test(ctx));
+  ok("and it says what it did, and what to try if it keeps happening",
+     /The picture went soft, so Kyro asked the camera to focus again\./.test(ctx)
+     && /the lens may need wiping/.test(ctx));
+
+  // The part that is easy to get wrong: after refocusing, the camera is
+  // looking at the room through a different lens setting. Judging it against
+  // what "sharp" meant before would call a freshly focused camera soft for
+  // ever.
+  ok("what 'sharp' means is learned again after a refocus",
+     /forgetSharpness\(\): void/.test(fs.readFileSync(path.join(root, "dashboard/src/lib/pictureCheck.ts"), "utf8")));
+  ok("and only for the camera that was actually refocused",
+     /if \(c\.stream === stream\) c\.watch\.forgetSharpness\(\);/.test(ctx));
+}
+
+{
+  // …proved, rather than asserted: a watcher that has learned a sharp room,
+  // gone soft, and been told to forget, judges the new picture on its own.
+  const w = new PictureWatch();
+  for (let i = 0; i < SHARP_SAMPLES + 2; i++) w.saw(sharp(i));
+  w.saw(blurred(99));
+  ok("a watcher that has gone soft says so", w.soft);
+  w.forgetSharpness();
+  for (let i = 0; i < SHARP_SAMPLES + 2; i++) w.saw(blurred(i));
+  ok("and after a refocus it judges the new picture on its own terms", !w.soft);
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. A blurred camera says so.");
 process.exit(fails ? 1 : 0);

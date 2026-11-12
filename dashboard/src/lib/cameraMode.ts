@@ -229,6 +229,39 @@ const FOCUS_SETTLE_MS = 3_000;
  * camera that cannot lock its focus must still count people. Nothing below
  * may throw into the caller.
  */
+/**
+ * Make it look again.
+ *
+ * ── Why holding it is not enough ───────────────────────────────────────────
+ *
+ * "you see how blurry it is" — sent while the focus-holding was already
+ * running and live.
+ *
+ * Two ways that happens, and this answers both. The camera may have settled
+ * on the wrong thing in its three seconds — somebody walking past the lens as
+ * counting started — and then been locked there for the rest of the service,
+ * which is a fault Kyro introduced by locking at all. Or the camera is one of
+ * the many that will not be locked, and is simply hunting.
+ *
+ * Either way the honest move is the same: hand it back to the camera, let it
+ * look at the room properly, and try to hold it again. Done only when the
+ * picture has actually gone soft, and only a few times, because a camera
+ * being told to refocus every thirty seconds is a camera that is never in
+ * focus.
+ */
+export async function refocus(stream: MediaStream): Promise<"locked" | "already steady" | "cannot"> {
+  try {
+    const track = stream.getVideoTracks()[0];
+    if (!track || typeof track.getCapabilities !== "function") return "cannot";
+    const caps = track.getCapabilities() as MediaTrackCapabilities & { focusMode?: string[] };
+    if ((caps.focusMode ?? []).includes("continuous")) {
+      // Back to the camera's own judgement, and give it the room to use it.
+      await track.applyConstraints({ advanced: [{ focusMode: "continuous" } as never] });
+    }
+  } catch { /* it may refuse; holdFocus will find out soon enough */ }
+  return holdFocus(stream);
+}
+
 export async function holdFocus(stream: MediaStream): Promise<"locked" | "already steady" | "cannot"> {
   try {
     const track = stream.getVideoTracks()[0];

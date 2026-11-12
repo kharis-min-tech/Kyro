@@ -180,6 +180,14 @@ export class PictureWatch {
     return this.black !== wasBlack || this.frozen !== wasFrozen || this.soft !== wasSoft;
   }
 
+  /**
+   * The camera has been told to focus again, so what "sharp" means here has
+   * to be learned again: the old best was measured through a lens focused
+   * somewhere else, and judging the new picture against it would call a
+   * freshly focused camera soft for ever.
+   */
+  forgetSharpness(): void { this.soft = false; this.sharpest = 0; this.sharpSeen = 0; }
+
   /** The camera was reopened: start again rather than carry a stale complaint. */
   reset(): void {
     this.last = null; this.same = 0; this.black = false; this.frozen = false;
