@@ -110,16 +110,28 @@ for attempt in 1 2 3; do
     # ?restart=1 tells it to let go. The worker only passes that on when the
     # object really is behind THIS deploy, and the object writes down
     # everything that only lives in memory before it goes.
+    # ── Why the gaps between these checks are LONG ────────────────────────
+    #
+    # The live-cameras server is evicted a few seconds after its last
+    # request, and that eviction is what makes it pick up new code. Checking
+    # whether it has restarted is itself a request to it — so a check every
+    # five seconds is a request every five seconds, and the loop that was
+    # waiting for an idle moment was the thing preventing one. It would have
+    # waited for ever and blamed the server.
+    #
+    # So: ask once, then stand well back. Thirty seconds of silence is far
+    # more than the few it needs, and ten of those is five minutes.
     echo "→ Telling the live-cameras server to pick up the new code"
-    for _ in $(seq 1 30); do          # up to ~5 minutes
-      live=$(curl -s "$SITE/api/version?restart=1" | sed 's/.*"venue":"\([^"]*\)".*/\1/')
+    curl -s -o /dev/null "$SITE/api/version?restart=1"
+    for _ in $(seq 1 10); do          # up to ~5 minutes, quietly
+      sleep 30
+      live=$(curl -s "$SITE/api/version" | sed 's/.*"venue":"\([^"]*\)".*/\1/')
       if [ "$live" = "$STAMP" ]; then
         echo "   live cameras: $live ✓"
         echo "✓ Live and verified"
         exit 0
       fi
-      echo "   live cameras still on: ${live:-unknown} — asked it to restart"
-      sleep 5
+      echo "   live cameras still on: ${live:-unknown} — leaving it alone for another 30s"
     done
     echo "✗ The pages are live, but the live-cameras server is STILL running older code."
     echo "  Anything new it has to answer (new buttons, new figures) will say \"Not found\"."

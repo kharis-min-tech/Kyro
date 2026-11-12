@@ -69,6 +69,22 @@ const deploy = read("scripts/deploy-and-verify.sh");
 // ── The deploy asks, instead of waiting for idle that never comes ───────────
 {
   ok("the deploy asks rather than waits", /api\/version\?restart=1/.test(deploy));
+  /**
+   * …and then leaves it alone.
+   *
+   * The server is evicted a few seconds after its last request, and that
+   * eviction is what makes it pick up new code. Checking whether it has
+   * restarted is itself a request to it — so a check every five seconds was
+   * a request every five seconds, and the loop waiting for an idle moment
+   * was the thing preventing one. It would have waited for ever and blamed
+   * the server.
+   */
+  ok("it asks once rather than on every pass",
+     /curl -s -o \/dev\/null "\$SITE\/api\/version\?restart=1"/.test(deploy));
+  ok("and then stays quiet long enough for the server to fall idle",
+     /sleep 30/.test(deploy) && !/sleep 5\b/.test(deploy));
+  ok("the check itself no longer asks for a restart every time",
+     /live=\$\(curl -s "\$SITE\/api\/version"/.test(deploy));
   ok("and says so", /Telling the live-cameras server to pick up the new code/.test(deploy));
   ok("it still checks what is actually running before claiming success",
      /if \[ "\$live" = "\$STAMP" \]; then/.test(deploy));
