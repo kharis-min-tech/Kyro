@@ -187,5 +187,49 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
   ok("and there is a button for it", /Save the numbers/.test(card));
 }
 
+// ── "Came in" is people, never crossings ───────────────────────────────────
+//
+// "this is not the right number, it needs to be the same as this [25]" …
+// "the more accurate one."
+//
+// The tile said 84 under the words "Came in, this session", with 25 people in
+// the room. Neither figure was attendance.
+//
+// 84 was the cameras' own tally of CROSSINGS — every time a camera became
+// sure of somebody, which for a room camera is over and over all service. The
+// small print gave it away: "24 more came in than went out" is a sum about
+// crossings, not about people. It was there as a fallback for when the
+// register had nothing to say, and a fallback that answers a different
+// question under the same heading is worse than no fallback at all.
+//
+// 25 is the most seen at ONE MOMENT: a floor, because no camera sees a whole
+// hall — but an honest one, and it is what is shown when there is nothing
+// better, in those words.
+{
+  const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
+  ok("the tile takes the attendance figure every other page shows",
+     /attendance\?: number \| null;/.test(card)
+     && /value=\{\(held \?\? attendanceShown \?\? summary\.totalArrived\)/.test(card));
+  ok("…then the register's own movement, then the most seen at once",
+     /const attendanceShown = attendance != null && attendance > 0 \? attendance\s*\n\s*: usingRegister \? summary\.totalArrived\s*\n\s*: seenAtOnce != null && seenAtOnce > 0 \? seenAtOnce/.test(card));
+  ok("and says plainly when it is showing a floor rather than an answer",
+     /The most seen at once — at least this many were here/.test(card));
+  ok("naming why it cannot do better", /Nobody is counting at a doorway/.test(card));
+  const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
+  ok("the page hands it both", /attendance=\{edge && isToday/.test(page) && /seenAtOnce=\{edge && isToday/.test(page));
+  ok("from the same field every other page reads", /people_seen_shown/.test(page));
+
+  // The order itself, run rather than read.
+  const pick = (attendance, usingRegister, movementArrived, seenAtOnce) =>
+    attendance != null && attendance > 0 ? attendance
+    : usingRegister ? movementArrived
+    : seenAtOnce != null && seenAtOnce > 0 ? seenAtOnce
+    : null;
+  ok("a doorway's count of people wins", pick(31, false, 84, 25) === 31);
+  ok("then the register", pick(0, true, 46, 25) === 46);
+  ok("then the most seen at once, never the 84", pick(0, false, 84, 25) === 25);
+  ok("and nothing at all when there is nothing", pick(0, false, 0, 0) === null);
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. Every camera's figure is kept, and named.");
 process.exit(fails ? 1 : 0);

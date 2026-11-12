@@ -1569,6 +1569,15 @@ export default function AttendancePage() {
                    rooms: a doorway and a queue have no seats. Asked for
                    beside the figure it corrects, because the settings page
                    it used to live on is three screens from the mistake. */
+                /* The attendance figure every other page shows, so this
+                   card cannot disagree with them — and the most seen at
+                   once as an honest floor when nothing can answer it. See
+                   the note on the Came in tile. */
+                attendance={edge && isToday
+                  ? (venueTotal as unknown as { people_seen_shown?: number; people_seen?: number } | null)?.people_seen_shown
+                    ?? (venueTotal as unknown as { people_seen?: number } | null)?.people_seen ?? null
+                  : null}
+                seenAtOnce={edge && isToday ? venueTotal?.total_peak ?? null : null}
                 seats={roomSeats}
                 /* An operator may set it too. How many chairs are in the hall
                    is an operational fact known by whoever is standing in it,

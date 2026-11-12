@@ -86,7 +86,7 @@ function StatTile({ label, value, sub, swatch, action, note }: {
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -154,6 +154,15 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   seats?: number | null;
   /** Write a new seat count, from here. See the note on the field below. */
   onSetSeats?: (n: number) => Promise<void>;
+  /**
+   * How many DIFFERENT people Kyro has counted this service — the attendance
+   * figure, from the doorway if one is counting and from the rooms if not.
+   * The same number every other page shows. See people_seen in
+   * worker/venue.js.
+   */
+  attendance?: number | null;
+  /** The most the cameras saw at one moment: a floor, never the answer. */
+  seenAtOnce?: number | null;
 }) {
   const [minutes, setMinutes] = useState<SlotMinutes>(15);
   const [view, setView] = useState<"chart" | "table">("chart");
@@ -224,7 +233,17 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * people_seen_shown in worker/venue.js for whose decision this is and what
    * is deliberately NOT changed by it.
    */
-  const held = overSeats && usingRegister && summary.totalArrived > overSeats.seats ? overSeats.seats : null;
+  /**
+   * The figure to put under "Came in": the attendance every other page
+   * shows, or the most seen at once as an honest floor — never the cameras'
+   * tally of crossings, which counts one person over and over.
+   */
+  const attendanceShown = attendance != null && attendance > 0 ? attendance
+    : usingRegister ? summary.totalArrived
+    : seenAtOnce != null && seenAtOnce > 0 ? seenAtOnce
+    : null;
+  const held = overSeats && (usingRegister || (attendance ?? 0) > 0)
+    && (attendance ?? summary.totalArrived) > overSeats.seats ? overSeats.seats : null;
   /**
    * …and what went out, held so the two still add up.
    *
@@ -580,13 +599,46 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 number." The measurement is right there underneath it, and
                 nothing behind the figure is changed — see people_seen_shown
                 in worker/venue.js. */}
+            {/**
+              * The attendance figure, and NEVER a count of crossings.
+              *
+              * ── What was wrong ──────────────────────────────────────────
+              *
+              * "this is not the right number, it needs to be the same as
+              * this [25]" … "the more accurate one."
+              *
+              * This tile said 84 under the words "Came in, this session",
+              * with 25 people in the room. Neither figure was attendance.
+              *
+              * 84 was the cameras' own tally of CROSSINGS — every time a
+              * camera became sure of somebody, which for a room camera is
+              * over and over all service. The small print gave it away:
+              * "24 more came in than went out" is a sum about crossings,
+              * not about people. It was a fallback for when the register
+              * had nothing to say, and a fallback that answers a different
+              * question under the same heading is worse than no fallback.
+              *
+              * 25 is the most the cameras saw at ONE MOMENT. That is a
+              * floor — no camera sees a whole hall — and it is honest, so
+              * it is what is shown when there is nothing better, said in
+              * those words.
+              *
+              * The order is: the figure held at the seats, then the
+              * attendance every other page shows, then the register's own
+              * movement, and only then the floor. Crossings never appear
+              * here at all.
+              */}
             <StatTile label={`${showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
-              value={(held ?? summary.totalArrived).toLocaleString()}
+              value={(held ?? attendanceShown ?? summary.totalArrived).toLocaleString()}
               sub={held != null
-                ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${summary.totalArrived.toLocaleString()}`
+                ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(attendance ?? summary.totalArrived).toLocaleString()}`
+                : attendance != null && attendance > 0
+                ? "Different people, counted once each"
                 : usingRegister
                 ? "Different people, counted once each"
-                : `${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} more came in than went out`}
+                : seenAtOnce != null && seenAtOnce > 0
+                ? "The most seen at once — at least this many were here. Nobody is counting at a doorway, so Kyro cannot say how many different people came."
+                : "Nobody counted yet"}
               action={onSetSeats && !seats && usingRegister
                 ? { label: "Kyro doesn't know how many seats this room has. Set it \u2192",
                     onClick: () => { setSeatDraft("114"); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
