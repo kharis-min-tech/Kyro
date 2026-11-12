@@ -706,9 +706,32 @@ export function CountingProvider({ children }: { children: ReactNode }) {
     // comfortably, never fewer than the safe floor, and never so many that
     // the count starts lagging. secondsPerCount is measured, not assumed.
     const pace = c.secondsPerCount || 0;
-    const howMany = pace > 0 && pace <= FAST_ENOUGH_S
+    /**
+     * A doorway has a much tighter idea of "fast enough".
+     *
+     * "make sure you get it quick and right because people move fast."
+     *
+     * Reading a face is an AI run, and it competes with counting for the
+     * same few milliseconds. In a room that is a fair trade: the
+     * congregation is sitting still, and a face is worth more than another
+     * look at people who have not moved.
+     *
+     * At a door it is not. Somebody has to be seen TWICE to establish which
+     * way they walked, and they cross in about a second — so the counting
+     * has to manage a look every half second or the quick walkers are not
+     * counted at all, which is invisible and looks like a quiet morning.
+     * Judging a doorway against a room's idea of fast meant spending time on
+     * faces that the counting could not spare, right where people move
+     * fastest.
+     *
+     * So the door backs off to the fewest faces as soon as it is slower than
+     * it can afford, rather than waiting until it is slower than a ROOM can
+     * afford. See DOOR_SLOW_S.
+     */
+    const fastEnough = c.isDoor ? DOOR_SLOW_S : FAST_ENOUGH_S;
+    const howMany = pace > 0 && pace <= fastEnough
       ? Math.round(FEWEST_FACES_AT_ONCE + (MOST_FACES_AT_ONCE - FEWEST_FACES_AT_ONCE)
-          * Math.max(0, Math.min(1, (FAST_ENOUGH_S - pace) / FAST_ENOUGH_S)))
+          * Math.max(0, Math.min(1, (fastEnough - pace) / fastEnough)))
       : FEWEST_FACES_AT_ONCE;
     const nearest = c.people
       .map((p, i) => ({ i, size: p.box[3] - p.box[1] }))

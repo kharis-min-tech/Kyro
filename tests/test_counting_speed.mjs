@@ -133,5 +133,38 @@ const order = fs.readFileSync(path.join(root, "dashboard/src/lib/countOrder.ts")
   ok("with a limit, so it never stops asking altogether", /const TILE_CHECK_MOST = 120;/.test(ctx));
 }
 
+// ── A doorway spends its time counting, not reading faces ──────────────────
+//
+// "make sure you get it quick and right because people move fast."
+//
+// Reading a face is an AI run, and it competes with counting for the same
+// milliseconds. In a room that is a fair trade — the congregation is sitting
+// still, and a face is worth more than another look at people who have not
+// moved. At a door it is not: somebody must be seen twice to establish which
+// way they walked, and they cross in about a second.
+//
+// The back-off was judged against a ROOM's idea of fast, so a doorway went on
+// spending time on faces well past the point where it could afford them —
+// exactly where people move fastest.
+{
+  ok("a doorway judges 'fast enough' by its own standard",
+     /const fastEnough = c\.isDoor \? DOOR_SLOW_S : FAST_ENOUGH_S;/.test(ctx));
+  ok("and the back-off uses that, not the room's",
+     /pace > 0 && pace <= fastEnough/.test(ctx) && /\(fastEnough - pace\) \/ fastEnough/.test(ctx));
+  // The arithmetic, on the paces that matter.
+  const FEW = Number(/const FEWEST_FACES_AT_ONCE = (\d+);/.exec(ctx)[1]);
+  const MANY = Number(/const MOST_FACES_AT_ONCE = (\d+);/.exec(ctx)[1]);
+  const DOOR = Number(/const DOOR_SLOW_S = ([\d.]+);/.exec(ctx)[1]);
+  const ROOM = Number(/const FAST_ENOUGH_S = ([\d.]+);/.exec(ctx)[1]);
+  const faces = (pace, lim) => pace > 0 && pace <= lim
+    ? Math.round(FEW + (MANY - FEW) * Math.max(0, Math.min(1, (lim - pace) / lim))) : FEW;
+  ok("a door already at its limit reads the fewest faces it can",
+     faces(DOOR, DOOR) === FEW, `${faces(DOOR, DOOR)}`);
+  ok("…where a room at the same pace would still be reading plenty",
+     faces(DOOR, ROOM) > FEW, `${faces(DOOR, ROOM)}`);
+  ok("and a door with time to spare still reads them",
+     faces(0.1, DOOR) > FEW, `${faces(0.1, DOOR)}`);
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. The doorway gets the looks it needs.");
 process.exit(fails ? 1 : 0);

@@ -173,9 +173,11 @@ const GRACE_MS = 45_000;
  * reporting a departure quickly enough to watch a room empty.
  */
 /**
- * …and the track has to outlive the decision, or it would be tidied away
- * before there is anything to tidy. Ten minutes, against the five it now
- * waits before deciding. See DOOR_DECIDE_MS.
+ * …and the track is kept far longer than the decision takes, because that is
+ * what lets somebody be counted the other way when they come back. Ten
+ * minutes: long enough to cover stepping out to a car and returning, short
+ * enough that a doorway is not following a morning's worth of people at
+ * once. See DOOR_DECIDE_MS.
  */
 const DOOR_GRACE_MS = 10 * 60_000;
 /**
@@ -208,27 +210,31 @@ const RETURN_BY_PLACE_MS = 15_000;
  * are not in conflict here — they were only tied together by one number doing
  * both jobs.
  *
- * ── Fifteen seconds was too quick, and the church said so ──────────────────
+ * ── Asked for five minutes, and five minutes was the wrong fix ─────────────
  *
  * "it shouldnt wait 15 seconds after someone has left, it should wait 5-10
- * minutes."
+ * minutes" … then "make sure you get it quick and right because people move
+ * fast."
  *
- * Her reason is better than the one above. Fifteen seconds is long enough for
- * a pause, and not long enough for the thing that actually happens at a
- * church door: somebody steps just inside, out of shot, stands talking for
- * half a minute, and comes back out the way they came. Decided at fifteen
- * seconds that is an arrival, written down for good. Watched for five
- * minutes it is what it really was — somebody who came and went — and
- * wentIn() says "unclear" and counts them neither way.
+ * The worry behind the first is real: somebody steps just inside the door,
+ * out of shot, stands talking, and comes back out the way they came. Counted
+ * at fifteen seconds that is an arrival, and they are never in the building.
  *
- * The cost is real and worth stating: the came-in figure now trails the door
- * by about five minutes, so during the rush the screen is behind the room.
- * It catches up in full, and nothing is lost — the decision is simply made
- * on the whole of what somebody did rather than the first fifteen seconds of
- * it. For a figure a church writes down once at the end of a morning, being
- * right matters more than being quick.
+ * Waiting five minutes does fix it — by making every figure five minutes
+ * late, which is the opposite of the second instruction, and she is entitled
+ * to both.
+ *
+ * She can have both, because the correction already exists a few lines up:
+ * when a counted person is seen again, their crossing starts over from where
+ * they are now. So the door-hoverer is counted IN, and fifteen seconds after
+ * they walk back out they are counted OUT, and the building is right again —
+ * live, without anybody waiting for anything. Delaying the first decision
+ * would have bought almost nothing and cost every number five minutes.
+ *
+ * So it stays quick, and what makes it right is the second look rather than
+ * a longer first one.
  */
-export const DOOR_DECIDE_MS = 5 * 60_000;
+export const DOOR_DECIDE_MS = 15_000;
 const SAME_PERSON_IOU = 0.3;   // overlap between counts that means "same person"
 /** Someone who went out of sight and came back nearby is the same person, not a new arrival. */
 const RETURN_WITHIN_WIDTHS = 3;

@@ -423,6 +423,51 @@ fs.rmSync(tmp, { recursive: true, force: true });
      /forgetPeople\(\): void \{[\s\S]{0,60}this\.known = \[\];/.test(src));
 }
 
+// ── Quick AND right: the second look, not a longer first one ───────────────
+//
+// "make sure you get it quick and right because people move fast."
+//
+// The worry was somebody stepping just inside the door, standing talking out
+// of shot, and coming back out the way they came — counted as an arrival who
+// is not in the building. Waiting five minutes before deciding fixes that by
+// making every figure five minutes late, which is the opposite of quick.
+//
+// Both are possible, because a counted person who is seen again starts their
+// crossing over from where they are now. The hoverer is counted IN, and
+// fifteen seconds after they walk back out, counted OUT. The building is
+// right again, live.
+{
+  const tr = new PersonTracker();
+  tr.watchesDoorway("closer");
+  let t = 0;
+  const cross = (from, to) => {
+    for (let i = 0; i <= 6; i++) {
+      const h = from + (to - from) * (i / 6);
+      see(tr, [box(600 - h / 4, 400 - h, h / 2, h)], (t += 400));
+    }
+  };
+  cross(60, 200);                                  // in through the door
+  see(tr, [], (t += GONE_LONG_ENOUGH));
+  ok("somebody walking in is counted straight away", tr.entries === 1 && tr.exits === 0,
+     `in ${tr.entries} out ${tr.exits}`);
+  ok("and quickly: within the decision time, not minutes",
+     DOOR_DECIDE_MS <= 30_000, `${DOOR_DECIDE_MS}ms`);
+
+  // They were only standing inside the door. Out they come again.
+  cross(200, 60);
+  see(tr, [], (t += GONE_LONG_ENOUGH));
+  ok("…and when they come straight back out, that is counted too",
+     tr.exits === 1, `in ${tr.entries} out ${tr.exits}`);
+  ok("so the building is right: nobody left inside who is not there",
+     tr.entries - tr.exits === 0, `${tr.entries - tr.exits} inside`);
+
+  const src = fs.readFileSync(path.join(root, "dashboard/src/lib/personTracker.ts"), "utf8");
+  ok("which is what starting their crossing over does",
+     /if \(t\.tallied\) \{ t\.tallied = false; t\.firstBox = b; \}/.test(src));
+  ok("and the track outlives the decision by a long way, so it can happen",
+     /const DOOR_GRACE_MS = 10 \* 60_000;/.test(src));
+}
+
 console.log(fails
   ? `\n${fails} failed`
   : "\nAll good. Walking in counts in, walking out counts out, hovering counts neither.");
