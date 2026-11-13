@@ -196,13 +196,21 @@ const root = path.resolve(import.meta.dirname, "..");
   ok("the red ✗ is marked as decoration, not a button", /<XCircle size=\{13\} aria-hidden/.test(view));
   ok("and the thing that IS a button says what it does", /Put aside<\/button>|\{asiding === `\$\{p\.where\}-\$\{i\}` \? "Putting aside…" : "Put aside"\}/.test(view));
   ok("the page says putting aside is not deleting",
-     /doesn&apos;t delete it/.test(view) && /comes straight back up here if it happens again/.test(view));
+     /doesn&apos;t delete it/.test(view) && /comes\s+straight back if it happens again/.test(view));
   ok("only an administrator is offered it", /\{admin && \(\s*\n?\s*<button onClick=\{\(\) => putAside/.test(view));
   ok("each camera's checks are listed one by one", /c\.checks\.map/.test(view));
-  ok("and the attendance figure says which kind it is",
-     /No register yet, so attendance is each camera's own count/.test(view));
+  // "⚠ No register yet, so attendance is each camera's own count" was here
+  // and was asked to go: the figure's own card already says what it is and
+  // is not. The card still says so when the register IS what it is reading.
+  ok("and the attendance figure says so when it is the register",
+     /Attendance is the register of people/.test(view)
+     && !/No register yet/.test(view));
   ok("Kyro not answering is itself reported", /Kyro isn&apos;t answering/.test(view));
-  ok("a fixed problem is kept and shown", /Fixed, but worth knowing about/.test(view));
+  // It was shown, under "Fixed, but worth knowing about", until that list
+  // was asked for twice to be taken off. Kept is the half that matters, and
+  // it is checked where keeping actually happens.
+  ok("a fixed problem is kept", /v\.fixed = true; v\.fixedAt = now;/.test(
+       fs.readFileSync(path.join(root, "worker/health.js"), "utf8")));
 }
 
 // ── Nothing invents a number to fill a gap ─────────────────────────────────

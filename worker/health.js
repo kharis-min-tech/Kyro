@@ -96,9 +96,12 @@ export class Trouble {
    * icons hoping one of them was a button.
    *
    * Putting one aside is safe, which is what makes it allowable: it is marked
-   * fixed, not deleted — the time it happened, the count and the detail all
-   * stay under "Fixed, but worth knowing about" — and if it happens once more
-   * note() marks it live again. Nothing can be hidden that is still going on.
+   * fixed, not deleted — the time it happened, the count and the detail are
+   * all still here — and if it happens once more note() marks it live again.
+   * Nothing can be hidden that is still going on.
+   *
+   * It used to be listed on the page afterwards, under "Fixed, but worth
+   * knowing about". That list is no longer printed; the record is the same.
    */
   aside(where, what = null, who = "") {
     const now = Date.now();

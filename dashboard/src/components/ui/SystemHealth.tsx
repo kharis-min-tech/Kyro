@@ -122,7 +122,6 @@ export function SystemHealth() {
   const live = h.problems.filter((p) => !p.fixed);
   /** Cameras that have stopped reporting altogether — the ones worth clearing. */
   const gone = h.cameras.filter((c) => c.state === "not reporting");
-  const fixed = h.problems.filter((p) => p.fixed).slice(0, 8);
   const colour = h.ok ? GOOD : live.length ? BAD : WARN;
 
   return (
@@ -202,9 +201,9 @@ export function SystemHealth() {
                 </button>
               )}
               <span style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-                Putting one aside doesn&apos;t delete it — it moves down to <strong>Fixed, but worth knowing
-                about</strong>, and comes straight back up here if it happens again. Use it for a camera you&apos;ve
-                unplugged or switched off: it can&apos;t tell Kyro it&apos;s working again, because it isn&apos;t there.
+                Putting one aside doesn&apos;t delete it — it is kept, it stops being shown here, and it comes
+                straight back if it happens again. Use it for a camera you&apos;ve unplugged or switched off: it
+                can&apos;t tell Kyro it&apos;s working again, because it isn&apos;t there.
               </span>
             </li>
           )}
@@ -357,11 +356,14 @@ export function SystemHealth() {
               <Users size={11} /> Counting
             </p>
             <ul style={{ marginTop: 6 }}>
-              <li style={{ fontSize: 12, color: h.counting.attendance_is_from_register ? "var(--text-secondary)" : WARN }}>
-                {h.counting.attendance_is_from_register
-                  ? `✓ Attendance is the register of people — ${h.counting.people_in_register.toLocaleString()} different people this service`
-                  : "⚠ No register yet, so attendance is each camera's own count — which counts the same people repeatedly and reads too high"}
-              </li>
+              {/* …and nothing at all before there is a register, rather
+                  than a warning about a figure whose own card already says
+                  what it is and is not. */}
+              {h.counting.attendance_is_from_register && (
+                <li style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  ✓ Attendance is the register of people — {h.counting.people_in_register.toLocaleString()} different people this service
+                </li>
+              )}
               <li style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                 {h.counting.building_seats > 0
                   ? `✓ ${h.counting.building_seats.toLocaleString()} seats found in the building`
@@ -373,26 +375,22 @@ export function SystemHealth() {
             </ul>
           </div>
 
-          {fixed.length > 0 && (
-            <div className="px-5 py-3" style={{ borderTop: `1px solid ${BORDER}` }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
-                Fixed, but worth knowing about
-              </p>
-              <ul style={{ marginTop: 4 }}>
-                {fixed.map((p, i) => (
-                  <li key={`${p.where}-f-${i}`} style={{ fontSize: 11, color: "var(--text-tertiary)", marginTop: 2 }}>
-                    <strong>{p.where}</strong> — {p.what} · {p.happened.toLocaleString()}×, {when(p.since)} to {when(p.last)}
-                    {p.aside_by && ` · put aside by ${p.aside_by}`}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <p className="px-5 py-2.5" style={{ fontSize: 11, color: "var(--text-faint)", borderTop: `1px solid ${BORDER}` }}>
-            Checked {when(h.checked_at)} · live-cameras code {h.code} · a problem here stays until the thing that failed
-            works again, or an administrator puts it aside
-          </p>
+          {/**
+            * "Fixed, but worth knowing about" was here: everything that had
+            * gone wrong and then come right, with how many times and over
+            * what stretch, listed for ever.
+            *
+            * A fixed problem is not a job. This card is for what is wrong
+            * NOW, and a standing list of what used to be wrong is the thing
+            * somebody has to read and scroll past before they can see it.
+            * Nothing is deleted — the record is kept on the server exactly
+            * as it was; it is no longer printed.
+            *
+            * The line under it, naming when the check ran and which code
+            * the live-cameras server is on, went with it for the same
+            * reason: it is for somebody debugging, and this card is read by
+            * somebody running a service.
+            */}
         </div>
       )}
     </div>

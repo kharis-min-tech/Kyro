@@ -170,7 +170,13 @@ const view = fs.readFileSync(path.join(root, "dashboard/src/components/ui/System
   ok("the page offers it per problem", /putAside\(\{ where: p\.where, what: p\.what \}/.test(view));
   ok("and for the lot", /putAside\(\{ all: true \}, "all"\)/.test(view));
   ok("the red ✗ is decoration and says so", /<XCircle size=\{13\} aria-hidden/.test(view));
-  ok("a put-aside problem shows who put it aside", /put aside by \$\{p\.aside_by\}/.test(view));
+  // Who put it aside used to be printed under "Fixed, but worth knowing
+  // about". That list is no longer on the card — asked for, twice — and the
+  // record of who and when is kept on the server exactly as it was. See
+  // test_the_health_card_shows_what_is_wrong_now.mjs.
+  ok("who put a problem aside is still recorded",
+     /asideBy = String\(who \|\| ""\)/.test(
+       fs.readFileSync(path.join(root, "worker/health.js"), "utf8")));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. Off looks off, and a problem can be dealt with.");
