@@ -229,6 +229,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   }).sort((a, b) => b.arrived - a.arrived), [byCamera, unverified, showingSession, sessionFrom, minutes]);
   const { slots, peakArrival, peakDeparture } = summary;
   const hasData = slots.length > 0;
+
   /**
    * The seat count, when Kyro has counted more different people than this
    * room holds — the figure to show instead of the one it measured.
@@ -271,9 +272,39 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   const heldLeft = held != null
     ? Math.max(0, held - Math.max(0, summary.totalArrived - summary.totalLeft))
     : null;
+  /**
+   * The Entries figure and the words under it, decided together.
+   *
+   * They were decided apart, and disagreed: the figure fell through to the
+   * cameras' own tally of CROSSINGS when there was nothing better, while
+   * the line under it ran out of branches and said "Nobody counted yet".
+   * The card read 7,393 over the words "Nobody counted yet".
+   *
+   * The note further up this file says crossings never appear in this tile,
+   * and it is right — a room camera's tally counts every time it became
+   * sure of somebody, which for one person at a desk is over and over.
+   * There was one way left for them to get here and this closes it.
+   *
+   * When there is no honest figure there is no figure. A dash and a reason
+   * is the truth; a large number nobody can account for is not.
+   */
+  const entries: { value: string; sub: string } = held != null
+    ? { value: held.toLocaleString(),
+        // What was MEASURED, beside what is shown. From the server's own
+        // record of the hold rather than worked out again here, so the two
+        // cannot drift apart.
+        sub: `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(overSeats?.counted ?? attendance ?? 0).toLocaleString()}` }
+    : attendanceShown != null && attendanceShown > 0
+    ? { value: attendanceShown.toLocaleString(), sub: "Different people, counted once each" }
+    : seenAtOnce != null && seenAtOnce > 0
+    ? { value: seenAtOnce.toLocaleString(),
+        sub: "The most seen at once — at least this many were here. Nobody is counting at a doorway, so Kyro cannot say how many different people came." }
+    : { value: "—", sub: "Nobody counted yet" };
 
   // ── Geometry ──
   const padL = 40, padR = 8, padT = 22, padB = 22, axisH = 22;
+  /** "15 minutes", "hour", "2 hours" — the window, in words. */
+  const windowName = minutes < 60 ? `${minutes} minutes` : minutes === 60 ? "hour" : `${minutes / 60} hours`;
   const minColW = minutes === 15 ? 18 : minutes === 30 ? 28 : minutes === 60 ? 44 : 64;
   const fitColW = slots.length ? (wrapW - padL - padR) / slots.length : 0;
   const colW = Math.min(64, Math.max(minColW, fitColW));
@@ -690,16 +721,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 "Entries": "this is meant to be the session structure [...]
                 so i dont know why its like this". */}
             <StatTile label={`${showingSession && sessionFrom ? `Entries, since ${fmtTime(sessionFrom)}` : showingSession ? "Entries, this session" : "Entries, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
-              value={(held ?? attendanceShown ?? summary.totalArrived).toLocaleString()}
-              sub={held != null
-                ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(attendance ?? summary.totalArrived).toLocaleString()}`
-                : attendance != null && attendance > 0
-                ? "Different people, counted once each"
-                : usingRegister
-                ? "Different people, counted once each"
-                : seenAtOnce != null && seenAtOnce > 0
-                ? "The most seen at once — at least this many were here. Nobody is counting at a doorway, so Kyro cannot say how many different people came."
-                : "Nobody counted yet"}
+              value={entries.value}
+              sub={entries.sub}
               action={onSetSeats && !seats && usingRegister
                 ? { label: "Kyro doesn't know how many seats this room has. Set it \u2192",
                     // Opened empty, not filled in with somebody else's hall.
@@ -729,10 +752,23 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 : usingRegister
                 ? "People nobody has seen for five minutes"
                 : summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
-            <StatTile label="Busiest arrival time" swatch={ARRIVE}
+            {/**
+              * The window is in the label, not only in the times.
+              *
+              * "every time i change the table on my real data to 1 hour 2
+              * hr and see the data, nothing changes."
+              *
+              * Two of these five figures are the whole day and cannot
+              * change — that is what "all day" means. These two do, and
+              * they changed so quietly that the buttons looked broken:
+              * "9:00 – 10:00 AM" becoming "8:00 – 10:00 AM" is one digit
+              * on a card full of digits. Saying "Busiest hour" and then
+              * "Busiest 2 hours" is the button answering out loud.
+              */}
+            <StatTile label={`Busiest ${windowName}`} swatch={ARRIVE}
               value={peakArrival ? fmtRange(peakArrival, minutes) : "—"}
               sub={peakArrival ? `${peakArrival.arrived.toLocaleString()} ${peakArrival.arrived === 1 ? "person" : "people"} arrived` : undefined} />
-            <StatTile label="Busiest exit time" swatch={LEAVE}
+            <StatTile label={`Busiest ${windowName} for leaving`} swatch={LEAVE}
               value={peakDeparture ? fmtRange(peakDeparture, minutes) : "—"}
               sub={peakDeparture ? `${peakDeparture.left.toLocaleString()} ${peakDeparture.left === 1 ? "person" : "people"} left` : undefined} />
             <StatTile label="Half had arrived by"

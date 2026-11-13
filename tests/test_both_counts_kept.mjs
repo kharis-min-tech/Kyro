@@ -207,9 +207,14 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
 // better, in those words.
 {
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
+  // The figure and the words under it are now one decision — they used to
+  // be two, and disagreed: 7,393 over "Nobody counted yet". The order of
+  // preference is unchanged; what is gone is the fall through to the
+  // cameras' crossings at the end of it.
   ok("the tile takes the attendance figure every other page shows",
      /attendance\?: number \| null;/.test(card)
-     && /value=\{\(held \?\? attendanceShown \?\? summary\.totalArrived\)/.test(card));
+     && /const entries: \{ value: string; sub: string \} = held != null/.test(card)
+     && /: attendanceShown != null && attendanceShown > 0/.test(card));
   ok("…then the register's own movement, then the most seen at once",
      /const attendanceShown = attendance != null && attendance > 0 \? attendance\s*\n\s*: usingRegister \? summary\.totalArrived\s*\n\s*: seenAtOnce != null && seenAtOnce > 0 \? seenAtOnce/.test(card));
   ok("and says plainly when it is showing a floor rather than an answer",

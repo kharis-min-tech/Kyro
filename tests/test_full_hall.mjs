@@ -325,8 +325,10 @@ function chairsChangeHands({ freeForReports, alike }) {
      && /counted: attendance,/.test(worker));
   const card = fs.readFileSync(new URL("../dashboard/src/components/ui/ArrivalTimes.tsx", import.meta.url), "utf8");
   ok("and the card says so where the number is", /Held at \{overSeats\.seats\.toLocaleString\(\)\}, the number of seats in this room/.test(card));
+  // From the server's own record of the hold, which is where the measured
+  // figure already lives — rather than worked out again beside it.
   ok("printing what was measured beside what it shows",
-     /Kyro counted \$\{\(attendance \?\? summary\.totalArrived\)\.toLocaleString\(\)\}/.test(card));
+     /Kyro counted \$\{\(overSeats\?\.counted \?\? attendance \?\? 0\)\.toLocaleString\(\)\}/.test(card));
   /**
    * The hold is checked against the ATTENDANCE, never against the cameras'
    * tally of crossings.
