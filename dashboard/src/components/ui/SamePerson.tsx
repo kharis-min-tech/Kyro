@@ -118,7 +118,8 @@ export function SamePerson() {
   const load = useCallback(() => {
     edgeFetch<Ask[]>("/api/live/questions")
       .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question"
-        || q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat")))
+        || q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat"
+        || q.review_type === "same_chair_question")))
       .catch(() => {});
     // The learning figures are no longer read out here — see the note by the
     // card's footer — so they are not fetched either. "How the counting is
@@ -144,6 +145,8 @@ export function SamePerson() {
           : r.action === "merged" ? `Taken off: counted as one person. ${r.people} different people this service.`
           : r.action === "split" ? `Counted as two. ${r.people} different people this service.`
           : r.action === "removed" ? `Taken off the count, and off today's figures. ${r.people} different people this service — and anything that looks like it won't be counted again.`
+          : r.action === "one_chair" ? "Joined into one chair, so it is no longer counted twice."
+          : r.action === "two_chairs" ? "Kept as two chairs. You won't be asked about that pair again."
           : "Noted.",
       );
       setAsks((prev) => prev.filter((x) => x.review_id !== q.review_id));
@@ -207,10 +210,71 @@ export function SamePerson() {
         <p className="px-5 py-2" style={{ fontSize: 12, color: "#f87171", borderBottom: `1px solid ${BORDER}` }}>{err}</p>
       )}
 
-      {/* "Is this a seat?" shows the same way as "is this a person?": one
-          picture, two answers. The chair is cropped where it stands — it
-          does not move, so there is nothing to have kept. */}
-      {asks.map((q) => q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat" ? (
+      {/**
+        * "Is this the same chair?" — two pictures, one from each camera.
+        *
+        * This was asked on the seating page, as rows of seat ids with a
+        * tally: "S37 and S24 — same person in both 81 times". Nobody can
+        * answer that. Here it is two photographs of two chairs, which is a
+        * question a person can actually settle in a second.
+        */}
+      {asks.map((q) => q.review_type === "same_chair_question" ? (
+        <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="flex gap-3">
+            <Side id={q.review_id} side="a" label={q.where || "One camera"} />
+            <Side id={q.review_id} side="b" label={q.other_where || "The other camera"} />
+          </div>
+          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this the same chair?</p>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+            Two cameras can see the same chair, and each counts it as a seat of its own — so one person sitting
+            down looks like two. Kyro thinks these two may be one chair because {q.why || "the same person was in both at once"}.
+            Nobody is in two places at once. But two chairs side by side look identical from a camera, so it
+            won&apos;t decide this on its own.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => answer(q, "Yes, one chair")} disabled={busy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+              style={{ background: "#16a34a" }}>
+              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, one chair
+            </button>
+            <button onClick={() => answer(q, "No, two chairs")} disabled={busy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+              style={{ background: "#b45309" }}>
+              <X size={12} /> No, two chairs
+            </button>
+          </div>
+        </div>
+      ) : q.review_type === "is_this_a_seat" ? (
+        /* One picture of a chair, two answers. A chair does not move, so it
+           is cropped where it stands rather than from anything kept.
+
+           This used to share the "is this a person?" block below, and so
+           asked "Is this a person?" over a photograph of a chair. */
+        <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <div className="flex gap-3">
+            <div style={{ width: "40%" }}><Side id={q.review_id} side="a" label={q.where || "In the hall"} /></div>
+            <div className="flex-1 min-w-0 flex flex-col justify-center gap-2">
+              <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this a seat?</p>
+              <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+                Kyro isn&apos;t sure this is somewhere people sit — {q.why || "somebody was in this spot again and again, but it does not look like the other seats"}.
+                Someone standing very still in one place looks much the same as a chair nobody has moved.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => answer(q, "Yes, a seat")} disabled={busy !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#16a34a" }}>
+                  {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, a seat
+                </button>
+                <button onClick={() => answer(q, "No, not a seat")} disabled={busy !== null}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: "#b91c1c" }}>
+                  <X size={12} /> No, not a seat
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : q.review_type === "is_this_a_person" ? (
         /* One picture, one thing to decide. The AI is asked where the people
            are and answers honestly — a cushion is person-shaped, and so is a
            photograph of somebody. Nothing in a single frame settles it. What

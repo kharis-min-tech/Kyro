@@ -1587,6 +1587,15 @@ export class VenueHub extends DurableObject {
     const wantPictures = await this.makeAsks(cams, now);
     // …and the chairs, which ask the same way and want the same picture.
     if (seatAsks.length) wantPictures.push(...(await this.askAboutSeats(seatAsks, cams, now)));
+    // …and "is this the same chair?", which needs a picture from each of the
+    // two cameras that disagree about it.
+    try {
+      wantPictures.push(...(await this.askAboutSameChair(cams, now)));
+    } catch (e) {
+      await this.wrong("Seating",
+        "Couldn't ask which chairs are the same chair, so one chair seen by two cameras may be counted twice",
+        e && e.message);
+    }
     // Answers to the AI's questions, for this computer's cameras (delivered once).
     const answers = await this.takeAnswers(device.id);
     // Rota holds and stage / ignore areas, per camera (small; sent every time).
@@ -1919,14 +1928,6 @@ export class VenueHub extends DurableObject {
       case "restore": out = b.restore(id, user, v); break;
       case "merge":   out = b.merge(id, other, user, v); break;
       case "split":   out = b.split(id, other, user, v); break;
-      // "No, two different chairs" — the answer the panel could not take.
-      case "not_one_chair": {
-        const pair = Array.isArray(body.views) ? body.views.slice(0, 2).map((x) => clean(x, 120)) : [];
-        out = pair.length === 2
-          ? b.notOneChair(pair[0], pair[1], user, v)
-          : { error: "Don't know which two chairs you mean" };
-        break;
-      }
       case "move":    out = b.move(id, user, v, { place: body.place, camera: clean(body.camera, 80) || undefined, bbox: body.bbox }); break;
       case "add":     out = b.add(user, v, { section: clean(body.section, 40) || "Main", kind: body.kind, places: num(body.places, 1, 60), place: body.place ?? null, view: body.view ?? null }); break;
       case "stage":   out = b.setStage(clean(body.camera, 80), body.where, user, v); break;
@@ -3886,6 +3887,97 @@ export class VenueHub extends DurableObject {
   }
 
   /**
+   * "Is this the same chair?" — two cameras, two pictures, one answer.
+   *
+   * Two cameras pointed at one hall each find their own seats, so one chair
+   * becomes two and one person sitting in it looks like two people in two
+   * seats. Kyro works out which pairs are suspect on its own, and it does it
+   * honestly: not on appearance — two chairs side by side are identical from
+   * a camera — but on WHO SITS THERE. The same person, in both, at the same
+   * moment, again and again. Nobody is in two places at once.
+   *
+   * What it will not do is decide. Two chairs in a row can produce that
+   * pattern if the register ever confuses two people, so the last step is a
+   * person's.
+   *
+   * This used to be asked on the seating page, as a list of pairs of seat
+   * ids with a tally beside them — "S37 and S24 — same person in both 81
+   * times". Nobody can answer that: the ids mean nothing and there is
+   * nothing to look at. "if ever the system does not know, thats when
+   * questions would be able to come up." So it is asked the way Kyro asks
+   * everything else it does not know: a picture of each chair, side by side,
+   * and two buttons.
+   *
+   * Asked once per pair. The answer is applied to the building immediately —
+   * see answerQuestion.
+   */
+  async askAboutSameChair(cams, now) {
+    const b = await this.theBuilding();
+    const pairs = b.proposals();
+    if (!pairs.length) {
+      // Nothing outstanding: let any unanswered picture requests lapse.
+      if (now - (this.chairWantsAt ?? 0) >= ASK_PICTURE_WAIT_MS) this.chairWants = [];
+      return this.chairWants ?? [];
+    }
+    const qs = await this.get("questions", {});
+    const asked = await this.get("chairs_asked", {});
+    let live = Object.values(qs).filter((q) => q.review_type === "same_chair_question" && !q.answer).length;
+    const want = [];
+    for (const p of pairs) {
+      if (live >= 2) break;                    // two at a time, never a list
+      const mark = [...p.views].sort().join("|");
+      if (asked[mark]) continue;
+      const [camA, camB] = p.cameras;
+      const a = cams[camA], c = cams[camB];
+      // A question about a camera that isn't running can never get its
+      // picture, so it would sit unanswerable until it expired.
+      if (!a || !c || a.hidden || a.pending || c.hidden || c.pending) continue;
+      const seatNo = (view) => {
+        const m = /#K(\d+)$/.exec(view);
+        return m ? Number(m[1]) : null;
+      };
+      const nA = seatNo(p.views[0]), nB = seatNo(p.views[1]);
+      if (nA === null || nB === null) continue;
+      asked[mark] = now;
+      live++;
+      const id = `chair-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
+      qs[id] = {
+        type: "review_request", review_id: id, camera_id: camA,
+        review_type: "same_chair_question", target_role: "operator",
+        question: "Is this the same chair?",
+        guess: "same", score: p.confidence ?? null, had_face: false,
+        why: `the same person was in both of these at the same moment, ${p.agreements} times`,
+        where: clean(a.zone_name || a.name || "", 60),
+        other_where: clean(c.zone_name || c.name || "", 60),
+        /** What to do with the answer. Never shown. other_camera is read by
+         *  the check that decides whether a computer may send the second
+         *  picture — the two halves may be on two different computers. */
+        ask: { kind: "chair", camera: camA, other_camera: camB,
+               views: [p.views[0], p.views[1]], keep: p.keep, drop: p.drop },
+        track_id: null, position: [0, 0], bbox_hint: null,
+        confidence: p.confidence ?? 0, best_guess: "One chair",
+        options: ["Yes, one chair", "No, two chairs"],
+        created_at: now / 1000,
+        pictures: 0,
+      };
+      want.push({ id, side: "a", camera_id: camA, seat: nA });
+      want.push({ id, side: "b", camera_id: camB, seat: nB });
+    }
+    if (want.length) {
+      await this.ctx.storage.put("questions", qs);
+      await this.ctx.storage.put("chairs_asked", asked);
+      this.chairWants = want;
+      this.chairWantsAt = now;
+      return want;
+    }
+    // Keep offering until the pictures arrive or the request lapses. Both
+    // halves may be on different computers, so each only sees its own.
+    if (this.chairWants?.length && now - (this.chairWantsAt ?? 0) < ASK_PICTURE_WAIT_MS) return this.chairWants;
+    this.chairWants = [];
+    return [];
+  }
+
+  /**
    * "Is this a seat?" — one question per chair Kyro cannot settle.
    *
    * The seat finder already decides this for itself wherever it can: a place
@@ -3930,8 +4022,8 @@ export class VenueHub extends DurableObject {
     }
     if (!want.length) return [];
     await this.ctx.storage.put("questions", qs);
-    // Tidied with the service: a seat asked about in one morning is a seat
-    // asked about, and a new building is a new set of chairs.
+    // Kept for good: a seat asked about once has been asked about, and a
+    // hall of a hundred chairs must not become a hundred questions a week.
     await this.ctx.storage.put("seats_asked", asked);
     return want;
   }
@@ -3943,6 +4035,8 @@ export class VenueHub extends DurableObject {
       // "Is this the same person?" without the two pictures is two names and
       // a number. Nobody can answer that, so it is not asked.
       .filter((q) => q.review_type !== "same_person_question" || (q.pictures ?? 0) >= 2)
+      // …and "is this the same chair?", which is two chairs or it is nothing.
+      .filter((q) => q.review_type !== "same_chair_question" || (q.pictures ?? 0) >= 2)
       // …and one for "is this a person?", which has only one thing to show.
       .filter((q) => !["is_this_a_person", "is_this_a_seat"].includes(q.review_type) || (q.pictures ?? 0) >= 1)
       .sort((a, b) => a.created_at - b.created_at)
@@ -4024,6 +4118,32 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.delete(`qsnap:${id}:b`);
       await this.ctx.storage.delete(`qsnap:${id}`);
       return json({ ok: true, ...result });
+    }
+    /**
+     * "Is this the same chair?" — answered here, not sent to a camera.
+     *
+     * It is the BUILDING that holds the duplicate, so the building is what
+     * the answer corrects, and it corrects it now: "yes" joins the two seats
+     * into one so the hall stops counting the chair twice, "no" settles the
+     * pair for good so it is never put again.
+     *
+     * No version is passed. The question was asked of whoever is looking,
+     * and a seat somebody confirmed on another page in the meantime is not a
+     * reason to throw their answer away.
+     */
+    if (q.review_type === "same_chair_question") {
+      const yes = /^yes/i.test(q.answer);
+      const bl = await this.theBuilding();
+      const who = clean(user, 60);
+      if (yes) result = bl.merge(q.ask?.keep, q.ask?.drop, who, undefined);
+      else result = bl.notOneChair(q.ask?.views?.[0], q.ask?.views?.[1], who, undefined);
+      if (result?.ok) await this.saveBuilding(true);
+      await this.ctx.storage.put("questions", qs);
+      await this.ctx.storage.delete(`qsnap:${id}:a`);
+      await this.ctx.storage.delete(`qsnap:${id}:b`);
+      await this.ctx.storage.delete(`qsnap:${id}`);
+      return json({ ok: true, changed: !!result?.ok, action: yes ? "one_chair" : "two_chairs",
+                    ...(result?.error ? { error: result.error } : {}) });
     }
     if (q.review_type === "same_person_question") {
       const said = /^same/i.test(q.answer) ? true : /^different/i.test(q.answer) ? false : null;

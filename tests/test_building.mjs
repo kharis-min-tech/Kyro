@@ -273,14 +273,33 @@ const seatList = (box) => all.map((c, i) => ({ seat_id: `K${i + 1}`, bbox: box(c
     ["reject a false detection", /do: "reject"/],
     ["add one Kyro missed", /do: "add"/],
     ["move a seat", /do: "move"|place:/],
-    ["merge duplicates", /do: "merge"/],
     ["remove a seat that has gone", /do: "remove"/],
     ["undo the last change", /do: "undo"/],
     ["set where the stage is", /do: "stage"/],
   ]) ok(`an administrator can ${what}`, re.test(page));
   ok("destructive changes ask first", /setConfirming\(\{ what/.test(page) && /Yes, do it/.test(page));
   ok("the history is on the page, with who and when", /showHistory/.test(page) && /\{h\.by \|\| "—"\}/.test(page));
-  ok("confidence is shown rather than implied", /same person in both \{p\.agreements\} times/.test(page));
+  /**
+   * Duplicates are no longer argued about on this page.
+   *
+   * They were, as a list of pairs of seat ids with a tally beside them, and
+   * the two checks that used to be here held that list in place: one for the
+   * merge button, one for the tally. "its a bit weird and dont know which
+   * area you are talking about, if ever the system does not know, thats when
+   * questions would be able to come up."
+   *
+   * So the merging still happens and the evidence is still shown — as a
+   * question, with a photograph of each chair, where every other thing Kyro
+   * is unsure of is asked. test_the_chair_question_is_asked.mjs follows that
+   * path from the suspect pair to the answer changing the seating.
+   */
+  ok("duplicate chairs are asked about, not listed",
+     !/do: "merge"/.test(page) && !/p\.agreements/.test(page));
+  {
+    const asksPage = fs2.readFileSync(new URL("../dashboard/src/components/ui/SamePerson.tsx", import.meta.url), "utf8");
+    ok("and the question is one somebody can answer, with both pictures",
+       /same_chair_question/.test(asksPage) && /Yes, one chair/.test(asksPage) && /No, two chairs/.test(asksPage));
+  }
   ok("operators can look but not change", /Changing it is for administrators/.test(page));
 
   const worker = fs2.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");

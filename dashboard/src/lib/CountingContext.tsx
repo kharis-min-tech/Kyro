@@ -1013,7 +1013,10 @@ export function CountingProvider({ children }: { children: ReactNode }) {
              * the picture the crop is taken from.
              */
             if (want.seat) {
-              const pl = c.seatFinder.uncertain().find((x) => x.id === want.seat);
+              // Any seat, not only an unsure one: "is this the same chair?"
+              // asks about two chairs Kyro is perfectly sure are chairs. It
+              // is which ONE they are that it cannot settle.
+              const pl = c.seatFinder.places.find((x) => x.id === want.seat);
               if (!pl || !c.grabCanvas.width) continue;
               const sx = c.grabCanvas.width / SEAT_W, sy = c.grabCanvas.height / SEAT_H;
               const shot = cropOf(c.grabCanvas,

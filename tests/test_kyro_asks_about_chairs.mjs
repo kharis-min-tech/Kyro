@@ -96,8 +96,13 @@ const { SeatFinder, SEAT_W, SEAT_H } = await import(path.join(tmp, "seatFinder.j
   ok("…and a few at a time, so a hall of chairs is not a hall of questions",
      /if \(added >= 3\) break;/.test(worker));
   ok("a picture of the chair is asked for", /want\.push\(\{ id, side: "a", camera_id: a\.camera_id, seat: a\.seat \}\)/.test(worker));
+  // Any seat, not only an unsure one. This used to read uncertain(), which
+  // was right while "is this a seat?" was the only question about a chair.
+  // "Is this the same chair?" asks about two chairs Kyro is quite sure ARE
+  // chairs — it is which one they are that it cannot settle — and those are
+  // not in uncertain(), so it would have sent no picture at all.
   ok("the camera crops it where it stands, not from the kept people pictures",
-     /const pl = c\.seatFinder\.uncertain\(\)\.find\(\(x\) => x\.id === want\.seat\);/.test(ctx));
+     /const pl = c\.seatFinder\.places\.find\(\(x\) => x\.id === want\.seat\);/.test(ctx));
   ok("…scaling the seat finder's own space back to the picture",
      /const sx = c\.grabCanvas\.width \/ SEAT_W, sy = c\.grabCanvas\.height \/ SEAT_H;/.test(ctx));
   ok("the question is not shown until there is a picture to show",

@@ -20,18 +20,12 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Armchair, Check, X, Undo2, Merge, Split, Trash2, RotateCcw, Plus, History, AlertTriangle } from "lucide-react";
+import { Armchair, Check, X, Undo2, Trash2, RotateCcw, Plus, History, AlertTriangle } from "lucide-react";
 import { edgeFetch } from "@/lib/edgeAuth";
 import { useAuth } from "@/hooks/useAuth";
 
 const BORDER = "var(--border-subtle)";
 
-interface Proposal {
-  keep: string; drop: string; views: string[];
-  /** Which camera saw each of the two — see proposals() in worker/building.js. */
-  cameras?: string[];
-  agreements: number; disagreements: number; confidence: number;
-}
 interface MasterSeat {
   id: string; section: string; kind: string; places: number; row: string; number: number;
   confirmed: boolean; cameras: string[]; place: { x: number; y: number } | null; by: string;
@@ -41,7 +35,6 @@ interface Overview {
   stage_of: Record<string, string>;
   total: number; places: number; seen_by_more_than_one_camera: number;
   unconfirmed: number; rejected: number; removed: number; merged: number;
-  proposals: Proposal[];
   seats: MasterSeat[];
   history: { at: string; by: string; what: string }[];
 }
@@ -61,17 +54,6 @@ export function SeatManager({ cameras }: { cameras: { camera_id: string; name: s
     .then((r) => { setD(r); setErr(null); })
     .catch((e) => setErr(e instanceof Error ? e.message : "Couldn't load the seating")), []);
   useEffect(() => { load(); const t = setInterval(load, 20_000); return () => clearInterval(t); }, [load]);
-
-  /**
-   * A camera's name, for a camera id.
-   *
-   * The ids are the computer's, not anybody's — "web-a3f2:usb-0" on a row of
-   * a list tells a person nothing, and the pair of them is the whole point
-   * of the row. The name somebody gave the camera does tell them something.
-   */
-  const cameraName = (id: string) =>
-    cameras.find((c) => c.camera_id === id)?.name
-    ?? (id.includes(":") ? id.slice(id.indexOf(":") + 1) : id);
 
   const act = async (body: Record<string, unknown>) => {
     if (!d) return;
@@ -160,52 +142,20 @@ export function SeatManager({ cameras }: { cameras: { camera_id: string; name: s
         </div>
       )}
 
-      {/* Duplicates, with the evidence that produced them. */}
-      {d.proposals.length > 0 && (
-        <div className="px-5 py-4 flex flex-col gap-2" style={{ borderBottom: `1px solid ${BORDER}`, background: "rgba(79,70,229,0.05)" }}>
-          <p style={{ fontSize: 12, fontWeight: 600, color: "var(--text-secondary)" }}>
-            Possibly the same chair, seen by two cameras
-          </p>
-          <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-            Two cameras can see the same chair, and each gives it a seat of its own — so one person sitting down looks
-            like two people in two seats. Kyro noticed the same person in both of these at the same moment, more than
-            once. Nobody is in two places at once, so they are probably one chair. Two chairs side by side can look
-            identical from a camera, so this is for you to decide, not for Kyro. <strong>One chair</strong> joins them;{" "}
-            <strong>Different chairs</strong> takes the pair off this list for good.
-          </p>
-          {d.proposals.slice(0, 12).map((p) => (
-            <div key={`${p.keep}-${p.drop}`} className="flex flex-wrap items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${BORDER}` }}>
-              {/* Which camera saw each one. A seat id on its own is two
-                  letters and a number; with the camera beside it, the pair
-                  explains itself. */}
-              <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                <strong>{p.keep}</strong>
-                {p.cameras?.[0] && <span style={{ fontSize: 11, color: "var(--text-faint)" }}> on {cameraName(p.cameras[0])}</span>}
-                {" "}and <strong>{p.drop}</strong>
-                {p.cameras?.[1] && <span style={{ fontSize: 11, color: "var(--text-faint)" }}> on {cameraName(p.cameras[1])}</span>}
-              </span>
-              <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-                same person in both {p.agreements} times{p.disagreements ? `, different ${p.disagreements}` : ""}
-              </span>
-              <span className="flex-1" />
-              {admin && (
-                <button onClick={() => act({ do: "merge", seat: p.keep, other: p.drop })} disabled={busy}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
-                  style={{ background: "#4f46e5" }}>
-                  <Merge size={12} /> One chair
-                </button>
-              )}
-              {admin && (
-                <button onClick={() => act({ do: "not_one_chair", views: p.views })} disabled={busy}
-                  className="px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-50"
-                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
-                  Different chairs
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {/**
+        * Duplicate chairs are no longer argued about here.
+        *
+        * This page used to carry a panel of pairs — "S37 and S24 — same
+        * person in both 81 times" — asking which were one chair. Two seat
+        * ids and a tally, with nothing to look at: "its a bit weird and dont
+        * know which area you are talking about".
+        *
+        * She is right about where it belongs. Kyro not knowing something is
+        * a question, and a question comes with the two pictures and the
+        * answer in the same place as every other one it asks. The evidence
+        * and the merging still happen; see askAboutSameChair in
+        * worker/venue.js for where the asking went.
+        */}
 
       {/* Every seat. */}
       <div className="max-h-96 overflow-y-auto">

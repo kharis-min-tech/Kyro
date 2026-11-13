@@ -386,7 +386,7 @@ function ReviewCard({
       <div className="px-4 pb-2">
         {inDemoMode() && !isEdgeLive()
           ? <DemoSnapshot review={review} />
-          : review.review_type === "same_person_question"
+          : review.review_type === "same_person_question" || review.review_type === "same_chair_question"
           /* Two sightings, two pictures, side by side — because the question
              is whether they are the same person, and one picture cannot ask
              it. See the note on LiveSnapshot. */
