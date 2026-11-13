@@ -382,15 +382,10 @@ function ActiveRota({ cameraId, entries, onDeleted }: {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function RotaPage() {
-  const { cameras, loading: camsLoading } = useCameras();
+  const { cameras } = useCameras();
   const [cameraId, setCameraId]     = useState<string | null>(null);
   const [edge, setEdge]             = useState(false);
   useEffect(() => { setEdge(isEdgeLive()); }, []);
-  // Rows and seats come from camera rooms, so without one an entry can hold
-  // times but not seats. That is a reason to say so, not a reason to refuse
-  // the whole page — the times are the part that matters most, and on the
-  // live site the rota belongs to Kyro rather than to any camera.
-  const noEdgeRooms = edge && !camsLoading && cameras.filter((c) => c.location !== "queue").length === 0;
   const activeCamId = cameraId ?? cameras[0]?.camera_id ?? null;
 
   // Known seating areas for the active camera — used to auto-fill obvious
@@ -621,19 +616,9 @@ export default function RotaPage() {
             lives on the help page, where somebody who wants it can go.
             See user-docs/pages/rota.md. */}
 
-        {noEdgeRooms && (
-          <div className="rounded-xl px-4 py-4 flex items-start gap-3" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
-            <Users2 size={16} className="text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-white">No camera rooms yet — times still work</p>
-              <p className="text-xs text-gray-500 mt-1">
-                You can put the times in now and Kyro will name and record the sessions from them.
-                Rows and reserved seats come from your camera rooms, so those stay empty until you
-                add a camera on the Cameras page and give it a room name.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* "No camera rooms yet — times still work" was here. The times
+            work whether or not it says so, and the rows that stay empty
+            explain themselves by being empty. */}
 
         {/* Active rota */}
         {<div className="rounded-xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>

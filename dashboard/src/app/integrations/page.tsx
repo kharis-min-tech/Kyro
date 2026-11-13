@@ -257,24 +257,10 @@ export default function IntegrationsPage() {
           </p>
         </div>
 
-        {/* Plain-English explanation */}
-        <div className="rounded-2xl px-5 py-4 flex gap-3" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.25)" }}>
-          <Info size={16} className="text-indigo-400 shrink-0 mt-0.5" />
-          <div className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
-            <p className="font-semibold mb-1" style={{ color: "var(--text-primary)" }}>What happens when you send</p>
-            <ul className="list-disc pl-4 space-y-0.5">
-              {edge ? (<>
-                <li>Kyro takes <strong>today&apos;s approved Manual Counts</strong> (drafts are left out) and <strong>each camera room&apos;s highest count today</strong> — from Camera Mode or a camera computer — then adds up the total.</li>
-                <li>If a room has both, the approved manual count is used instead of the camera number, so nobody is counted twice.</li>
-              </>) : (
-                <li>Kyro takes <strong>today&apos;s approved Manual Counts</strong> — every room and the total (drafts are left out).</li>
-              )}
-              <li>It posts them to your webhook address as a small data message, like the example at the bottom of this page.</li>
-              <li><strong>Send a test</strong> {edge ? "uses a pretend camera count of 42 instead of the real camera numbers" : "adds a pretend camera count of 42"} and is marked <code>&quot;test&quot;: true</code>, so you can check it arrives without confusing your records.</li>
-              <li>Nothing is changed in Kyro — sending just shares a copy of the numbers.</li>
-            </ul>
-          </div>
-        </div>
+        {/* Five bullets on what sending does were here. The example message
+            at the foot of this page shows the same thing by being the thing
+            — and what a page does belongs on the help page, not in front of
+            somebody who came to use it. See user-docs/pages/integrations.md. */}
 
         {/* Settings */}
         <div className="rounded-2xl overflow-hidden" style={{ background: CARD, border: `1px solid ${BORDER}` }}>
