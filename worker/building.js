@@ -437,7 +437,15 @@ export class Building {
       rejected: all.filter((s) => s.status === "rejected").length,
       removed: all.filter((s) => s.status === "removed").length,
       merged: all.filter((s) => s.status === "merged").length,
-      proposals: this.proposals().slice(0, 50),
+      /**
+       * Not sent any more: nothing reads it.
+       *
+       * The seating page used to list these pairs for somebody to settle.
+       * They are now put as questions, with a picture of the person at each
+       * seat — see askAboutSameChair in worker/venue.js — and proposals()
+       * is called there directly. Leaving fifty pairs of seat ids in every
+       * reply is fifty pairs nobody will ever look at.
+       */
       seats: active.map((s) => ({
         id: s.id, section: s.section, kind: s.kind, places: s.places, row: s.row, number: s.number,
         confirmed: s.confirmed, cameras: Object.keys(s.views), place: s.place, by: s.by,

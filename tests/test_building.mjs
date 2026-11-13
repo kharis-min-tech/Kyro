@@ -296,6 +296,12 @@ const seatList = (box) => all.map((c, i) => ({ seat_id: `K${i + 1}`, bbox: box(c
   ok("duplicate chairs are asked about, not listed",
      !/do: "merge"/.test(page) && !/p\.agreements/.test(page));
   {
+    // …and the reply no longer carries a list nobody reads.
+    const b2 = fs2.readFileSync(new URL("../worker/building.js", import.meta.url), "utf8");
+    ok("and the overview does not send fifty pairs of seat ids to nobody",
+       !/proposals: this\.proposals\(\)/.test(b2));
+  }
+  {
     const asksPage = fs2.readFileSync(new URL("../dashboard/src/components/ui/SamePerson.tsx", import.meta.url), "utf8");
     ok("and the question is one somebody can answer, with both pictures",
        /same_chair_question/.test(asksPage) && /Yes, the same person/.test(asksPage) && /No, different people/.test(asksPage));

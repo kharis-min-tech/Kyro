@@ -555,7 +555,7 @@ function SeatCloseUp({ src, bbox, state, height = 120 }: {
     return () => ro.disconnect();
   }, []);
 
-  const v = size ? closeUp(bbox, size.w, size.h) : null;
+  const v = size && size.w > 0 && size.h > 0 ? closeUp(bbox, size.w, size.h) : null;
 
   return (
     <div ref={hold} className="relative overflow-hidden w-full" style={{ height }}>
@@ -607,6 +607,21 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
   const { url: edgeUrl, live: edgeLive } = useEdgeSnapshot(edge ? cameraId : null, edge, 2000);
   const shown = edge ? edgeUrl : snapshotSrc;
   const noPicture = edge ? !edgeUrl : feedErrored;
+  /**
+   * A moment's grace before saying the camera is off.
+   *
+   * There is no picture for the first second after this opens, because one
+   * has been asked for and has not arrived. Saying CAMERA OFF in that
+   * second is a confident, wrong answer that is then corrected — and the
+   * one thing a picture panel must not do is tell somebody their camera is
+   * dead while it is in fact working.
+   */
+  const [waited, setWaited] = useState(false);
+  useEffect(() => {
+    setWaited(false);
+    const t = setTimeout(() => setWaited(true), 4_000);
+    return () => clearTimeout(t);
+  }, [cameraId, seat.seat_id]);
 
   useEffect(() => { setName(seat.reserved_for ?? ""); setReserving(false); }, [seat.seat_id]);
 
@@ -677,7 +692,9 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
           <span style={{ fontSize: 8, color: inDemoMode() || noPicture ? "#f59e0b" : GREEN, fontWeight: 700 }}>
             {/* "LIVE" means moving pictures are arriving. A photograph every
                 couple of seconds is honest about being a photograph. */}
-            {inDemoMode() ? "SCHEMATIC" : noPicture ? "CAMERA OFF" : edge && !edgeLive ? "PHOTO" : "LIVE"}
+            {inDemoMode() ? "SCHEMATIC"
+              : noPicture ? (waited ? "CAMERA OFF" : "LOOKING…")
+              : edge && !edgeLive ? "PHOTO" : "LIVE"}
           </span>
         </div>
       </div>
@@ -967,7 +984,30 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   }, [camera.camera_id]);
 
   const handleReset = useCallback(async (clearReservations: boolean) => {
-    if (inDemoMode()) {
+    /**
+     * Clearing reservations, where the reservations actually are.
+     *
+     * On the live site they are kept on the counting server, so that every
+     * phone and the camera computer see the same ones — but this asked a
+     * FastAPI backend the church's build does not have, and the failure was
+     * swallowed. The dialog closed, the page carried on, and the reserved
+     * seats were exactly where they had been.
+     *
+     * (Before today this fell into the demo branch instead and deleted a
+     * key nothing reads. Neither did anything; one of them at least did
+     * not pretend to.)
+     */
+    if (isEdgeLive()) {
+      if (clearReservations) {
+        const ids = edgeSeats.seats.filter((s) => s.reserved || s.state === "reserved").map((s) => s.seat_id);
+        if (ids.length) {
+          try { await edgeVenueApi.reserveSeats(camera.camera_id, ids, false); }
+          catch (e) { alert(e instanceof Error ? e.message : "Couldn't clear the reservations"); }
+        }
+        edgeSeats.reload();
+      }
+      localStorage.removeItem(`kyro_seat_overrides_${camera.camera_id}`);
+    } else if (inDemoMode()) {
       localStorage.removeItem(`kyro_seat_overrides_${camera.camera_id}`);
       if (clearReservations) localStorage.removeItem(`kyro_demo_reserved_${camera.camera_id}`);
       window.dispatchEvent(new CustomEvent("kyro_demo_reset", { detail: { cameraId: camera.camera_id } }));
@@ -978,7 +1018,7 @@ function CameraSeatView({ camera }: { camera: Camera }) {
     // Hand corrections are local; clearing them and reloading brings back
     // whatever reservations are still stored.
     setOverrides({}); setLoadedId(null); setSelectedSeat(null); setShowReset(false);
-  }, [camera.camera_id]);
+  }, [camera.camera_id, edgeSeats]);
 
   // Queue camera
   if (isQueue) {

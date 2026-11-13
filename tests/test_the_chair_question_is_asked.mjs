@@ -230,6 +230,35 @@ const theQuestion = (h) => Object.values(h.store.get("questions") ?? {})[0];
      still[0].id === first[0].id && Object.keys(h.store.get("questions")).length === 1);
 }
 
+// ── 9b. An answered question stops asking for pictures ───────────────────
+//
+// Answering "yes" merges the two seats, which leaves no pair to put — and
+// the loop used to take an early way out before checking which pictures
+// were still wanted. Both cameras went on sending a crop of somebody every
+// couple of seconds, for ten minutes, for a question already settled.
+{
+  const h = hub(hall());
+  const t0 = Date.now();
+  await h.askAboutSameChair(cams, t0);
+  const q = theQuestion(h);
+  await h.answerQuestion(q.review_id, "operator", "ruth",
+    { json: async () => ({ answer: "Yes, the same person" }) });
+  ok("9b. the pair is gone, because it is now one chair", h.building.proposals().length === 0);
+  const after = await h.askAboutSameChair(cams, t0 + 2_000);
+  ok("9b. and nothing is still being asked for", after.length === 0, JSON.stringify(after));
+}
+
+// ── 9c. …and so does one whose pictures are both in ──────────────────────
+{
+  const h = hub(hall());
+  const t0 = Date.now();
+  await h.askAboutSameChair(cams, t0);
+  const q = theQuestion(h);
+  q.sides = { a: true, b: true }; q.pictures = 2;
+  ok("9c. a question with both pictures asks for no more",
+     (await h.askAboutSameChair(cams, t0 + 2_000)).length === 0);
+}
+
 // ── 10. If nobody ever sits there, it is withdrawn and tried again ────────
 //
 // Leaving it would leave a question nobody can answer sitting on the page;

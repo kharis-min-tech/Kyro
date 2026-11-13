@@ -143,6 +143,50 @@ const where = (v, p) => ({
      /"CAMERA OFF"/.test(page));
 }
 
+// ── 7. Nothing else on that page quietly changed hands ───────────────────
+//
+// Making inDemoMode() tell the truth means every OTHER demo check on this
+// page now answers "no" on the live site, where it used to answer "yes".
+// Each one has to be reached through isEdgeLive() first, or it falls into a
+// branch that calls a FastAPI backend the church's build has not got — and
+// those failures are caught and swallowed, so the button simply does
+// nothing and says it worked. "Reset" was exactly that: it asked a dead
+// address to clear the reservations, and the reserved seats stayed put.
+{
+  const page = read("dashboard/src/app/seating/page.tsx");
+  ok("7. clearing reservations goes to where they are kept",
+     /if \(isEdgeLive\(\)\) \{[\s\S]{0,400}edgeVenueApi\.reserveSeats\(camera\.camera_id, ids, false\)/.test(page));
+  ok("7. …taking the ones that are actually reserved",
+     /edgeSeats\.seats\.filter\(\(s\) => s\.reserved \|\| s\.state === "reserved"\)/.test(page));
+  ok("7. and says so if it fails, rather than swallowing it",
+     /Couldn't clear the reservations/.test(page));
+  ok("7. with the seat map re-read afterwards", /edgeSeats\.reload\(\);/.test(page));
+
+  // Every demo branch on this page is behind an edge check, or is the seat
+  // panel's own. A new one that is neither is the bug above, again.
+  const lines = page.split("\n");
+  const loose = [];
+  lines.forEach((l, i) => {
+    if (!/\binDemoMode\(\)/.test(l)) return;
+    if (/^\s*[/*]/.test(l)) return;                       // a note, not a test
+    if (/\|\| edge\b|\|\| noPicture\b/.test(l)) return;      // the seat panel's own
+    if (/\? "SCHEMATIC"/.test(l)) return;
+    const before = lines.slice(Math.max(0, i - 12), i).join("\n");
+    if (/isEdgeLive\(\)/.test(before)) return;            // reached only off the edge
+    loose.push(`${i + 1}: ${l.trim()}`);
+  });
+  ok("7. no demo branch is reachable on the live site unchecked", loose.length === 0, loose.join("\n   "));
+}
+
+// ── 8. It does not call the camera dead while the picture is coming ──────
+{
+  const page = read("dashboard/src/app/seating/page.tsx");
+  ok("8. a picture on its way is not a camera that is off",
+     /noPicture \? \(waited \? "CAMERA OFF" : "LOOKING…"\)/.test(page));
+  ok("8. and nothing is drawn until the frame has a size to draw in",
+     /size && size\.w > 0 && size\.h > 0 \? closeUp/.test(page));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} failed` : "\nAll good");
 process.exit(fails ? 1 : 0);

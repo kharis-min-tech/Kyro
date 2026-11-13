@@ -175,7 +175,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-660dde725e61";
+export const VENUE_CODE = "venue-9cacee89c29a";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -4005,9 +4005,21 @@ export class VenueHub extends DurableObject {
         await this.ctx.storage.put("chairs_asked", asked);
       }
     }
-    if (!pairs.length) return this.chairWants ?? [];
     const qs = await this.get("questions", {});
     const asked = await this.get("chairs_asked", {});
+    /**
+     * Only ever ask for a picture that is still wanted.
+     *
+     * A question that has been answered, or has both its pictures, needs
+     * nothing more — and this used to return before reaching that test
+     * whenever there were no pairs left to put. Answering "yes, the same
+     * person" merges the two seats, which leaves no pair, which took that
+     * early way out: both cameras went on sending a crop of somebody every
+     * two seconds, for ten minutes, for a question already settled.
+     */
+    const stillWanted = () => (this.chairWants ?? [])
+      .filter((w) => qs[w.id] && !qs[w.id].answer && !qs[w.id].sides?.[w.side]);
+    if (!pairs.length) return stillWanted();
     let live = Object.values(qs).filter((q) => q.review_type === "same_chair_question" && !q.answer).length;
     const want = [];
     for (const p of pairs) {
@@ -4063,7 +4075,7 @@ export class VenueHub extends DurableObject {
     // Keep offering until the pictures arrive or the request lapses — but
     // only the half that is still missing. Both halves may be on different
     // computers, and each only ever sees its own.
-    return (this.chairWants ?? []).filter((w) => !qs[w.id]?.sides?.[w.side] && !qs[w.id]?.answer);
+    return stillWanted();
   }
 
   /**
