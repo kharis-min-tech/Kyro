@@ -303,7 +303,45 @@ export const zonesApi = {
     }
   },
 
+  /**
+   * …and the three that CHANGE a zone, which never reached Kyro at all.
+   *
+   * ── What was happening ───────────────────────────────────────────────────
+   *
+   * "i mark a zone called Entrance Exit, i try and save it — but nothing
+   * happens."
+   *
+   * Nothing happened because nothing was meant to. `list` above has known
+   * about the live site for a long time; create, update and delete did not.
+   * They posted to /api/v1/zones — the separate Python backend, which this
+   * site does not run — and when that failed, which it always did, they fell
+   * through to localStorage with a console warning nobody was ever going to
+   * read.
+   *
+   * So the zone was saved, in her browser, on that one computer, and Kyro
+   * was never told. It looked like a save that did nothing because it was a
+   * save that did nothing.
+   *
+   * The live site keeps the whole list for a camera in one go, so each of
+   * these reads the current list, changes the one zone, and writes it back.
+   */
+  saveAll: async (cameraId: string, zones: ZoneDef[]): Promise<ZoneDef[]> => {
+    const saved = await edgeFetch<ZoneDef[]>(`/api/live/zones/${encodeURIComponent(cameraId)}`, {
+      method: "PUT", body: JSON.stringify(zones),
+    });
+    writeDemoZones(cameraId, saved, true);
+    return saved;
+  },
+
   create: async (cameraId: string, body: { label: string; zone_type: ZoneType; bbox: number[]; hold_seats_in_rows?: string[] }): Promise<ZoneDef> => {
+    if (isEdgeLive()) {
+      const made: ZoneDef = {
+        zone_id: makeZoneId(), label: body.label, zone_type: body.zone_type,
+        bbox: toBboxTuple(body.bbox), hold_seats_in_rows: body.hold_seats_in_rows ?? [], is_active: true,
+      };
+      const saved = await zonesApi.saveAll(cameraId, [...(await zonesApi.list(cameraId)), made]);
+      return saved.find((z) => z.zone_id === made.zone_id) ?? made;
+    }
     if (!inDemoMode()) {
       try {
         return await request<ZoneDef>(`/api/v1/zones/${cameraId}`, { method: "POST", body: JSON.stringify(body) });
@@ -327,6 +365,18 @@ export const zonesApi = {
   },
 
   update: async (cameraId: string, zoneId: string, body: { label: string; zone_type: ZoneType; bbox: number[]; hold_seats_in_rows?: string[] }): Promise<ZoneDef> => {
+    if (isEdgeLive()) {
+      const now: ZoneDef = {
+        zone_id: zoneId, label: body.label, zone_type: body.zone_type,
+        bbox: toBboxTuple(body.bbox), hold_seats_in_rows: body.hold_seats_in_rows ?? [], is_active: true,
+      };
+      const all = await zonesApi.list(cameraId);
+      const next = all.some((z) => z.zone_id === zoneId)
+        ? all.map((z) => (z.zone_id === zoneId ? now : z))
+        : [...all, now];
+      const saved = await zonesApi.saveAll(cameraId, next);
+      return saved.find((z) => z.zone_id === zoneId) ?? now;
+    }
     if (!inDemoMode()) {
       try {
         return await request<ZoneDef>(`/api/v1/zones/${cameraId}/${zoneId}`, { method: "PUT", body: JSON.stringify(body) });
@@ -350,6 +400,10 @@ export const zonesApi = {
   },
 
   delete: async (cameraId: string, zoneId: string): Promise<void> => {
+    if (isEdgeLive()) {
+      await zonesApi.saveAll(cameraId, (await zonesApi.list(cameraId)).filter((z) => z.zone_id !== zoneId));
+      return;
+    }
     if (!inDemoMode()) {
       try {
         await request<void>(`/api/v1/zones/${cameraId}/${zoneId}`, { method: "DELETE" });
@@ -397,19 +451,22 @@ export const seatsApi = {
     ? edgeFetch<void>(`/api/live/seats/${encodeURIComponent(cameraId)}/layouts/${layoutId}`, { method: "DELETE" })
     : request<void>(`/api/v1/seats/${cameraId}/layouts/${layoutId}`, { method: "DELETE" }),
 
-  /** Auto-generate and activate a layout from the camera's capacity. Called when a camera is first registered. */
+  /**
+   * Auto-generate and activate a layout from the camera's capacity, when a
+   * camera is first registered.
+   *
+   * Went straight to the separate Python backend, with no live branch at
+   * all — so on this site it has never once worked, and a camera registered
+   * with a capacity got no layout and no error. Found by looking for the
+   * same fault as the zones, which were saving into the browser and telling
+   * nobody.
+   */
   autoGenerateLayout: async (cameraId: string, cameraName: string, capacity: number) => {
     if (capacity <= 0) return null;
     const { generateSeatsFromCapacity } = await import("@/lib/seatGenerator");
     const seats = generateSeatsFromCapacity(capacity);
-    const layout = await request<import("@/types").SeatLayout>(
-      `/api/v1/seats/${cameraId}/layouts`,
-      { method: "POST", body: JSON.stringify({ name: `${cameraName} — auto`, seats }) }
-    );
-    await request<{ activated: boolean; seat_count: number }>(
-      `/api/v1/seats/${cameraId}/layouts/${layout.id}/activate`,
-      { method: "POST" }
-    );
+    const layout = await seatsApi.createLayout(cameraId, { name: `${cameraName} — auto`, seats });
+    await seatsApi.activateLayout(cameraId, layout.id);
     return layout;
   },
 };

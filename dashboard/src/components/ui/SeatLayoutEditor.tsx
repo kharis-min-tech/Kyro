@@ -443,7 +443,29 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
     setStatus(null);
     try {
       const layout = await seatsApi.createLayout(cameraId, { name: layoutName, seats: finalSeats });
-      setStatus(`Saved "${layout.name}" — ${layout.seat_count} seats (ID: ${layout.id})`);
+      /**
+       * …and put it to use, which saving never did.
+       *
+       * "the seat editor ... dosent save nor is it working together with
+       * kyro."
+       *
+       * Both halves of that were true, and this is the second. A saved
+       * layout was stored and nothing used it: seats are counted against
+       * the ACTIVE layout, and activating was a separate button further
+       * down a list she had no reason to think she needed. So the drawing
+       * worked, the save worked, the message said "Saved", and the seat map
+       * went on showing whatever it showed before.
+       *
+       * A layout somebody has just drawn and saved is the one they want
+       * used. If putting it to use fails, the layout is still saved and the
+       * message says exactly that, rather than claiming a success it did
+       * not have.
+       */
+      let live = false;
+      try { await seatsApi.activateLayout(cameraId, layout.id); live = true; } catch { /* said below */ }
+      setStatus(live
+        ? `Saved "${layout.name}" — ${layout.seat_count} seats, now in use`
+        : `Saved "${layout.name}" — ${layout.seat_count} seats, but Kyro is still using the old layout. Press Use on it in the list below.`);
       onSaved?.(layout.id);
     } catch (e: any) {
       setStatus(`Error: ${e.message}`);
