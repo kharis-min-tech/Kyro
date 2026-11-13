@@ -395,6 +395,45 @@ export function CountingProvider({ children }: { children: ReactNode }) {
    * still gets their picture taken.
    */
   const wantPics = useRef<WantedPicture[]>([]);
+  /**
+   * How many people one camera reports to the website in one go.
+   *
+   * It was forty, and the website cut it to forty again on arrival. A hall
+   * of a hundred and fourteen therefore put forty people into the register
+   * and silently dropped the rest — "not all people are marked or counted
+   * for during the service". Nothing about forty was ever about people; it
+   * was about the size of a face code, and faces are rationed separately
+   * now.
+   */
+  const MOST_SEEN_SENT = 400;
+  /** At most this many face codes in one report, and no more often than
+   *  this for any one person. One face is enough to anchor somebody. */
+  const FACES_PER_REPORT = 25;
+  const FACE_AGAIN_MS = 60_000;
+  /**
+   * Whose face has gone up lately, per camera, and whether to send another.
+   *
+   * Held outside the camera's own record because it is about the trip to
+   * the website, not about the person.
+   */
+  const faceSentAt = useRef<Map<string, Map<number, number>>>(new Map());
+  const wantsFace = (c: Cam, track: number, now: number) => {
+    let mine = faceSentAt.current.get(c.key);
+    if (!mine) { mine = new Map(); faceSentAt.current.set(c.key, mine); }
+    let sentThisTime = 0;
+    for (const at of mine.values()) if (now - at < 2_500) sentThisTime++;
+    if (sentThisTime >= FACES_PER_REPORT) return false;
+    const last = mine.get(track) ?? 0;
+    if (now - last < FACE_AGAIN_MS) return false;
+    mine.set(track, now);
+    // Tracks come and go all morning; this must not become a list of every
+    // one of them.
+    if (mine.size > 1200) {
+      const old = [...mine.entries()].sort((a, b) => a[1] - b[1]);
+      for (const [k] of old.slice(0, mine.size - 1200)) mine.delete(k);
+    }
+    return true;
+  };
   const faceLoading = useRef(false);
   const wake = useRef<{ release(): Promise<void> } | null>(null);
   const holder = useRef<HTMLDivElement | null>(null);
@@ -1171,7 +1210,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // people. A look is eight small numbers; a face only travels while
         // face matching is switched on, and is a list of numbers either way —
         // never a picture. See worker/identity.js.
-        seen: following.slice(0, 40).map((x, i) => ({
+        seen: following.slice(0, MOST_SEEN_SENT).map((x, i) => ({
           t: x.track,
           // Where in the picture they are, as four fractions of the frame.
           // Fractions rather than pixels so it means the same thing on any
@@ -1188,7 +1227,21 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           l: x.look ? [x.look.top[0], x.look.top[1], x.look.top[2],
                        x.look.bottom[0], x.look.bottom[1], x.look.bottom[2],
                        x.look.shape, x.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
-          f: faceOnRef.current && x.face ? packFace(x.face) : null,
+          /**
+           * A face, but not everybody's face every two seconds.
+           *
+           * A coat reading is eight numbers; a face code is 128, about 350
+           * characters once packed. Sending one for all of a congregation
+           * on every report is a quarter of a megabyte every two seconds,
+           * which is why the whole list used to be cut off at forty people
+           * — and cutting the LIST is how people stop being counted.
+           *
+           * The register only needs a face once to anchor somebody. So the
+           * list is as long as it needs to be and the faces are rationed:
+           * the ones it has not sent for this track recently, a few at a
+           * time. See faceSentAt.
+           */
+          f: faceOnRef.current && x.face && wantsFace(c, x.track, now) ? packFace(x.face) : null,
           // How long this box has not moved at all. A seated human being is
           // never still; a pillow, a coat over a chair or a poster is. Sent
           // so the website can ASK about one — never so it can decide. See

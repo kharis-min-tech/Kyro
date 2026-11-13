@@ -308,6 +308,17 @@ const CHAIR_PICTURE_WAIT_MS = 10 * 60_000;
  *  on screen is not a job anybody will finish. */
 const MOST_ASKS = 12;
 /**
+ * The most people one camera may report in one go.
+ *
+ * It was forty, on both sides. A camera following a hundred and fourteen
+ * people sent forty of them and the website kept forty of those, so
+ * seventy-four people in a full hall were never in the register at all —
+ * never counted, never recognised, never asked about. Nothing about forty
+ * was ever about people: it was about the size of a face code, and the
+ * faces are rationed on their own now.
+ */
+const MOST_SEEN = 400;
+/**
  * How many answers before Kyro will move the line it matches people on.
  *
  * Few enough that a church sees it happen within a service or two of
@@ -1836,7 +1847,9 @@ export class VenueHub extends DurableObject {
           if (!key || !Array.isArray(c.seen)) continue;
           const camera_id = `${device.id}:${key}`;
           const mine = {};
-          for (const x of c.seen.slice(0, 40)) {
+          // The same number the register itself took, or the page would be
+          // told who the first forty people are and nothing about the rest.
+          for (const x of c.seen.slice(0, MOST_SEEN)) {
             const t = Number(x.t) || 0;
             const id = this.register.idOfTrack(camera_id, t);
             if (id) mine[t] = id;
@@ -1989,7 +2002,10 @@ export class VenueHub extends DurableObject {
       const camera_id = `${device.id}:${key}`;
       if (!cams[camera_id] || cams[camera_id].hidden || cams[camera_id].pending) continue;
       const id = camera_id;
-      const obs = c.seen.slice(0, 40).map((x) => ({
+      // As many as the camera actually sent. It was forty here as well, so a
+      // hall of a hundred and fourteen put forty people into the register and
+      // dropped the rest without a word. See MOST_SEEN_SENT.
+      const obs = c.seen.slice(0, MOST_SEEN).map((x) => ({
         track: Number(x.t) || 0,
         look: Array.isArray(x.l) && x.l.length === 8 ? x.l.map(Number) : null,
         // A face only ever enters the register while face matching is switched

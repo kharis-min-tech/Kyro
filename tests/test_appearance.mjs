@@ -274,7 +274,11 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
   ok("and a canvas is only ever asked how big it is",
      [...reports.matchAll(/grabCanvas\.(\w+)/g)].every(([, m]) => m === "width" || m === "height"),
      [...reports.matchAll(/grabCanvas\.\w+/g)].map((m) => m[0]).join(", "));
-  ok("a face only travels while face matching is on", /f: faceOnRef\.current && x\.face \? packFace/.test(reports));
+  // …and only when one is actually wanted. Sending every face every two
+  // seconds is what forced the list of PEOPLE to be cut to forty, which is
+  // how people stopped being counted. See wantsFace.
+  ok("a face only travels while face matching is on",
+     /f: faceOnRef\.current && x\.face && wantsFace\(c, x\.track, now\) \? packFace/.test(reports));
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("and the website refuses to register one otherwise",
      /face: faceOk && typeof x\.f === "string" \? unpackFace\(x\.f\) : null,/.test(worker));
