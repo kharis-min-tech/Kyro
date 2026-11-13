@@ -466,7 +466,12 @@ function service({ n = 120, faces = true, seed = 1 } = {}) {
      /const camera_id = `\$\{device\.id\}:\$\{key\}`;/.test(worker));
   ok("and an unknown camera is ignored rather than guessed at",
      /if \(!cams\[camera_id\] \|\| cams\[camera_id\]\.hidden \|\| cams\[camera_id\]\.pending\) continue;/.test(worker));
-  ok("the register is saved at a size that fits", /this\.register\.snapshot\(SAFE_VALUE_BYTES\)/.test(worker));
+  // It used to be squeezed into ONE stored value, which stopped at about
+  // seven hundred people and then threw. It is now written in as many parts
+  // as it takes, each one inside the limit. See saveRegister.
+  ok("the register is saved in parts that fit",
+     /if \(part\.length && bytes \+ size > SAFE_VALUE_BYTES\)/.test(worker)
+     && /await this\.ctx\.storage\.put\(`register:\$\{i\}`, parts\[i\]\)/.test(worker));
 }
 
 // ── Cost ────────────────────────────────────────────────────────────────────

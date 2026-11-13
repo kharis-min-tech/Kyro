@@ -124,8 +124,10 @@ const docs = (f) => fs.readFileSync(path.join(root, "user-docs", f), "utf8").rep
      /if \(st\.quiet_since && now - st\.quiet_since >= SERVICE_END_MS\) \{/.test(worker));
   ok("coming back on the rota cancels the countdown",
      /} else if \(live\.from_rota\) \{[\s\S]{0,200}this\.ctx\.storage\.delete\("rota_over_since"\)/.test(worker));
+  // The register is written in as many parts as it needs now — one
+  // stored value stopped at about seven hundred people. See saveRegister.
   ok("and finishing a service tidies it away wherever it came from",
-     /await this\.ctx\.storage\.delete\("register"\);\s*\n\s*await this\.ctx\.storage\.delete\("rota_over_since"\);/.test(worker));
+     /await this\.forgetRegister\(\);\s*\n\s*await this\.ctx\.storage\.delete\("rota_over_since"\);/.test(worker));
 }
 
 // ── And it is shown where the figures are ──────────────────────────────────

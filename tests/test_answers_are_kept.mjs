@@ -62,7 +62,7 @@ const { IdentityRegistry } = await import(path.join(tmp, "identity.js"));
 {
   const worker = read("worker/venue.js");
   ok("2. the worker still deletes the register on a change of service",
-     /this\.register\.startService\(service\);\s*\n\s*await this\.ctx\.storage\.delete\("register"\);/.test(worker));
+     /this\.register\.startService\(service\);\s*\n\s*await this\.forgetRegister\(\);/.test(worker));
   const identity = read("worker/identity.js");
   ok("2. so the furniture is not kept inside that snapshot",
      !/notPeople:/.test(identity.slice(identity.indexOf("snapshot("), identity.indexOf("restore("))));

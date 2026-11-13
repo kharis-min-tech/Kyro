@@ -42,8 +42,10 @@ const deploy = read("scripts/deploy-and-verify.sh");
   // Everything that only lives in memory is written down first. The register
   // is the one that matters: losing it starts a congregation again from
   // nobody, which is the exact failure the restart is meant to end.
+  // The register is written in as many parts as it needs now — one
+  // stored value stopped at about seven hundred people. See saveRegister.
   ok("the register is written down before it goes",
-     /await this\.ctx\.storage\.put\("register", this\.register\.snapshot\(SAFE_VALUE_BYTES\)\)/
+     /await this\.saveRegister\(\)/
        .test(venue.slice(venue.indexOf('p === "/internal/restart"'))));
   ok("and so is who has been seen this service",
      /if \(service\) this\.savePeople\(service\);/.test(venue.slice(venue.indexOf('p === "/internal/restart"'))));

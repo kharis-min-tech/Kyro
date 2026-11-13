@@ -819,7 +819,7 @@ export class VenueHub extends DurableObject {
        */
       if (p === "/internal/restart" && request.headers.get("X-Kyro-Internal") === "1") {
         try {
-          if (this.register) await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+          if (this.register) await this.saveRegister();
           const service = (await this.get("service_live", null))?.id ?? null;
           if (service) this.savePeople(service);
         } catch { /* going either way; a stale brain is worse than a lost second */ }
@@ -1870,7 +1870,7 @@ export class VenueHub extends DurableObject {
        * worker/identity.js.
        */
       this.register.notPeople = await this.get("not_people", []);
-      const saved = await this.get("register", null);
+      const saved = await this.loadRegister();
       if (saved && saved.service === service) {
         this.register.restore(saved);
         /**
@@ -1908,7 +1908,7 @@ export class VenueHub extends DurableObject {
     // register is destroyed, faces and all, exactly as the face data is.
     if (this.register.service !== service) {
       this.register.startService(service);
-      await this.ctx.storage.delete("register");
+      await this.forgetRegister();
     }
     // Nothing is recorded outside a service: a register of people needs a
     // reason to exist, and "somebody left a camera running" is not one.
@@ -1979,7 +1979,7 @@ export class VenueHub extends DurableObject {
       // readings each first, then the oldest people lose their readings
       // altogether. They stay in the register and stay counted; they just
       // can't be recognised by appearance afterwards.
-      await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+      await this.saveRegister();
       // Faces go in their own table, one row each, so they can be deleted on
       // their own the moment the service ends.
       // Asked again here rather than trusted from earlier in the request:
@@ -2405,6 +2405,75 @@ export class VenueHub extends DurableObject {
    */
   async facesAllowed() {
     return (await this.privacy()).face_matching === true;
+  }
+
+  /**
+   * Writing the register down, however many people are in it.
+   *
+   * ── The ceiling this removes ───────────────────────────────────────────
+   *
+   * "10,000 people were tested in this system, kyro couldnt do it."
+   *
+   * It could count them — measured, it held 9,999 of 10,000 in memory. What
+   * it could not do was write them down. One stored value is capped at
+   * 128 KB, the whole register went into ONE of them, and the snapshot
+   * passes about 110 KB at roughly seven hundred people:
+   *
+   *     400 people ... 107 KB ✓      800 people ... 110 KB ✗
+   *     700 people ... 107 KB ✓   10,000 people ... 1,441 KB ✗
+   *
+   * Above that the write threw, the failure was caught, and attendance
+   * "fell back to the cameras' own tallies" — which is the covering-up she
+   * describes. Then the next restart (every deploy, or the object simply
+   * going idle) found nothing saved and started the congregation again from
+   * nobody.
+   *
+   * There is no need for it to be one value. The people go into as many
+   * numbered parts as they need, each comfortably inside the limit, and are
+   * read back in order. Ten thousand people is about fourteen parts.
+   */
+  async saveRegister() {
+    if (!this.register) return;
+    const snap = this.register.snapshot(0);            // no trimming: it all gets kept
+    const people = snap.people ?? [];
+    const head = { ...snap, people: [], parts: 0, v: snap.v ?? 2 };
+    /** As many people as fit in one part, measured rather than guessed. */
+    const parts = [];
+    let part = [], bytes = 0;
+    for (const p of people) {
+      const size = JSON.stringify(p).length + 1;
+      if (part.length && bytes + size > SAFE_VALUE_BYTES) { parts.push(part); part = []; bytes = 0; }
+      part.push(p); bytes += size;
+    }
+    if (part.length) parts.push(part);
+    head.parts = parts.length;
+    const was = (await this.get("register", null))?.parts ?? 0;
+    for (let i = 0; i < parts.length; i++) await this.ctx.storage.put(`register:${i}`, parts[i]);
+    await this.ctx.storage.put("register", head);
+    // Parts from a bigger register than this one, so a shrinking service
+    // cannot be read back with somebody else's people on the end of it.
+    for (let i = parts.length; i < was; i++) await this.ctx.storage.delete(`register:${i}`);
+  }
+
+  /** …and reading it back, in either shape. */
+  async loadRegister() {
+    const head = await this.get("register", null);
+    if (!head) return null;
+    // Written before this was split up: the people are in the value itself.
+    if (!head.parts) return head;
+    const people = [];
+    for (let i = 0; i < head.parts; i++) {
+      const part = await this.get(`register:${i}`, null);
+      if (Array.isArray(part)) people.push(...part);
+    }
+    return { ...head, people };
+  }
+
+  /** The register and every part of it. */
+  async forgetRegister() {
+    const head = await this.get("register", null);
+    for (let i = 0; i < (head?.parts ?? 0); i++) await this.ctx.storage.delete(`register:${i}`);
+    await this.ctx.storage.delete("register");
   }
 
   async theBuilding() {
@@ -4393,7 +4462,7 @@ export class VenueHub extends DurableObject {
           this.forgetPeopleRows(this.register.service);
           this.savePeople(this.register.service);
           try {
-            await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+            await this.saveRegister();
           } catch (e) {
             await this.wrong("Register of people", "Couldn't save the correction you just made", e && e.message);
           }
@@ -4444,7 +4513,7 @@ export class VenueHub extends DurableObject {
         await this.learnFromAnswer(q, said, result);
         await this.maybeMoveTheLine();
         try {
-          await this.ctx.storage.put("register", this.register.snapshot(SAFE_VALUE_BYTES));
+          await this.saveRegister();
         } catch (e) {
           await this.wrong("Register of people", "Couldn't save the correction you just made", e && e.message);
         }
@@ -4845,7 +4914,7 @@ export class VenueHub extends DurableObject {
     this.faceCodes.clear();
     this.wipeFaces();
     this.register?.startService(null);
-    await this.ctx.storage.delete("register");
+    await this.forgetRegister();
     await this.ctx.storage.delete("rota_over_since");
   }
 
@@ -4904,7 +4973,7 @@ export class VenueHub extends DurableObject {
       await this.wrong("Register of people", "Couldn't put the register of people back to nobody", e && e.message);
     }
     if (this.register) this.register.startService(service);
-    await this.ctx.storage.delete("register");
+    await this.forgetRegister();
     this.peopleSavedAt = 0;
     this.peopleSavedFor = null;
     this.movementCache = null;

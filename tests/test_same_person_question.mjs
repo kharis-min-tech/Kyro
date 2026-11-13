@@ -213,8 +213,10 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
   ok("the answer goes to the register, not back to a camera",
      /if \(q\.review_type === "same_person_question"\) \{/.test(worker)
      && /result = this\.register\.answerAsk\(q\.ask, said\);/.test(worker));
+  // The register is written in as many parts as it needs now — one
+  // stored value stopped at about seven hundred people. See saveRegister.
   ok("the corrected register is saved, so a restart keeps the correction",
-     /await this\.ctx\.storage\.put\("register", this\.register\.snapshot\(SAFE_VALUE_BYTES\)\);/.test(worker));
+     /await this\.saveRegister\(\);/.test(worker));
   ok("both pictures are deleted the moment it is answered",
      /await this\.ctx\.storage\.delete\(`qsnap:\$\{id\}:a`\);/.test(worker)
      && /await this\.ctx\.storage\.delete\(`qsnap:\$\{id\}:b`\);/.test(worker));
