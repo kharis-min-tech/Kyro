@@ -16,18 +16,7 @@ import { useEdgeVenue, useEdgeSeatStates, useEdgeSnapshot, edgeVenueApi } from "
 import { closeUp, usableBox } from "@/lib/seatCloseUp";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-/**
- * Demo mode — which is not the same thing as "there is no FastAPI backend".
- *
- * This read `!NEXT_PUBLIC_API_URL` as demo, and that variable is unset on
- * every build that runs on Cloudflare — which is the live church one. So on
- * the real site, running real cameras, this said demo, and the seat panel
- * drew a diagram of coloured dots labelled SCHEMATIC instead of showing the
- * camera: "i should be able to see the actual person and them on the seat
- * not just a UI design".
- */
-const inDemoMode = () => typeof window !== "undefined" && !isEdgeLive()
-  && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { inDemoMode } from "@/lib/mode";
 const userChoseDemo = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 import { Sidebar } from "@/components/layout/Sidebar";
 import type { Camera, SeatState } from "@/types";

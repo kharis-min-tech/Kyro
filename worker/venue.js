@@ -2528,6 +2528,18 @@ export class VenueHub extends DurableObject {
         camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? (/^usb-\d+$/.test(c.key) ? `USB camera ${Number(c.key.slice(4)) + 1}` : "USB camera")
           : c.kind === "web" ? `Camera mode · ${devices[c.device_id]?.name ?? "browser"}` : c.address || "Network camera",
         location: c.location, zone_name: c.zone_name, zone_capacity: c.zone_capacity, zone_order: c.zone_order,
+        /**
+         * Whether somebody ENTERED that seat count or Kyro guessed it.
+         *
+         * Left out of this list, and this list is what venueTotal() reads.
+         * So every seat count in the building came back as a guess, however
+         * carefully it had been typed in — and a guess is deliberately not
+         * allowed to drive anything. "Seats —  set it on Cameras" on a card
+         * beside a camera already showing a capacity of 91, every time,
+         * whatever she set. The same blank for "how full" and "spaces left",
+         * and the filling-up alerts silent with it.
+         */
+        capacity_from: c.capacity_from ?? null,
         is_active: !c.hidden && this.isOnline(live[c.camera_id]), created_at: c.created_at, kind: c.kind, device_id: c.device_id,
         hidden: !!c.hidden, pending: !!c.pending, ignore_zones: c.ignore_zones ?? [], device_name: devices[c.device_id]?.name ?? "",
         inward: c.inward || "closer",
@@ -3093,6 +3105,37 @@ export class VenueHub extends DurableObject {
       // as arriving twice, and the page should not pretend otherwise.
       face_matching: faceOn,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((hereNow / cap) * 1000) / 10 : 0,
+      /**
+       * Why these figures can be nought while a camera plainly sees people.
+       *
+       * "this is meant to be the session structure, so i dont know why its
+       * like this" — beside a camera card reading 78 and a capacity of 91.
+       *
+       * Both are right, and that is the problem. "Here now" is built from
+       * ROOM cameras, because a doorway is not a room: it sees everybody
+       * once on their way through and nobody after that. "Seats" is built
+       * from capacities somebody ENTERED on a room, because a guess must
+       * not drive how full the building is said to be. So a building whose
+       * only camera is set as a doorway, or whose seat count is Kyro's own
+       * guess, gets nought under both — honestly, and with no way to tell
+       * from the card which of the two it was.
+       *
+       * These three say which, so the card can say it in words rather than
+       * leaving a nought to be argued with.
+       */
+      why_nothing: {
+        /** Everything the running cameras can see between them, room or not. */
+        cameras_seeing: zones.reduce((n, z) => n + (z.is_running ? z.current || 0 : 0), 0),
+        /** No camera is watching a room, so there is nothing to be "here now" in. */
+        no_room_camera: roomZones.length === 0 && doorZones.length > 0,
+        /** A seat count that exists but is not allowed to drive anything, and
+         *  why: on a doorway, or Kyro's own guess rather than an entered one. */
+        seats_not_used: cap > 0 ? null
+          : zones.filter((z) => z.capacity > 0).map((z) => ({
+              camera: z.zone_name || z.camera_name, seats: z.capacity,
+              because: z.location === "entrance" ? "doorway" : z.capacity_from === "admin" ? null : "guess",
+            })).filter((x) => x.because)[0] ?? null,
+      },
       /**
        * How many seats Kyro has FOUND by itself, when nobody has entered one.
        *

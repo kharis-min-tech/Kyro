@@ -9,7 +9,7 @@ import { WhoIsOnKyro, UserPresence } from "@/components/ui/Presence";
 import type { WhoIsHere } from "@/lib/presence";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 // Accounts kept in this browser: Demo mode, or a self-hosted build that has no backend.
 // Live mode on the Cloudflare build uses the Kyro server instead (isEdgeLive).
 const localStore = () => inDemoMode() && !isEdgeLive();

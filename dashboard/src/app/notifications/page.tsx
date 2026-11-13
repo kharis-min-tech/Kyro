@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 
 const BG      = "var(--bg-base)";
 const CARD_BG = "var(--bg-card)";

@@ -118,9 +118,12 @@ const where = (v, p) => ({
 // unset on every Cloudflare build, which is the church's.
 {
   const page = read("dashboard/src/app/seating/page.tsx");
-  const line = page.split("\n").find((l) => l.startsWith("const inDemoMode ="))
-    ?? page.slice(page.indexOf("const inDemoMode ="), page.indexOf("const inDemoMode =") + 240);
-  ok("5. being on the edge is not being in a demo", /!isEdgeLive\(\)/.test(line), line);
+  ok("5. the page keeps no answer of its own", !/const inDemoMode = \(\) =>/.test(page));
+  ok("5. it asks whether this is a demonstration, not whether a backend exists",
+     /import \{ inDemoMode \} from "@\/lib\/mode";/.test(page));
+  const mode = read("dashboard/src/lib/mode.ts");
+  ok("5. and a live edge is never a demonstration",
+     /return noBackend\(\) && !isEdgeLive\(\);/.test(mode));
 }
 
 // ── 6. The picture comes from the counting server, not a missing backend ──

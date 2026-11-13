@@ -13,7 +13,7 @@ import { AutoServices } from "@/components/ui/AutoServices";
 import { edgeVenueApi, useEdgeVenue, type EdgeHistoryPoint } from "@/lib/edgeVenue";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 import { Play, Square, Download, Radio, WifiOff, ChevronRight, Plus } from "lucide-react";
 import Link from "next/link";
 import type { SessionResponse, Camera, ZoneLive } from "@/types";
@@ -179,8 +179,20 @@ function LiveCameraCard({
             <p className="text-2xl font-bold text-green-400 tabular-nums">{entries.toLocaleString()}</p>
           </div>
           {camera.zone_capacity > 0 && (
+            /**
+             * A guess is labelled a guess here too.
+             *
+             * This read "Capacity 91" flatly, beside a service card reading
+             * "Seats —  set it on Cameras", and the two could not both be
+             * right to look at: one was presenting Kyro's own guess from the
+             * picture as a fact about the building, and the other was
+             * refusing to let a guess drive anything. The refusal is correct
+             * — so the figure says which it is.
+             */
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">Capacity</p>
+              <p className="text-xs text-gray-500 mb-0.5">
+                {edgeZone?.capacity_from === "found" ? "Seats (Kyro's guess)" : "Capacity"}
+              </p>
               <p className="text-lg font-semibold tabular-nums" style={{ color: "var(--text-muted)" }}>{camera.zone_capacity.toLocaleString()}</p>
             </div>
           )}

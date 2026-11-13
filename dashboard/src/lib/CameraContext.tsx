@@ -8,7 +8,7 @@ import { edgeVenueApi } from "@/lib/edgeVenue";
 import type { Camera } from "@/types";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 
 // Mode-scoped storage keys. Live and Demo mode now keep COMPLETELY SEPARATE
 // camera lists — adding, overriding or deleting a camera in one mode cannot

@@ -13,7 +13,7 @@ import { edgeVenueApi, type DeletedDay } from "@/lib/edgeVenue";
 import { useCameras } from "@/hooks/useCameras";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 import { TrendingUp, Users, Calendar, BarChart2, Search, X, ArrowUp, ArrowDown, Minus, Trash2, RotateCcw, AlertTriangle } from "lucide-react";
 import { DatePicker } from "@/components/ui/DatePicker";
 import type { AttendancePoint, AnalyticsSummary, HourlyBucket } from "@/types";

@@ -15,7 +15,7 @@ import type { ReviewRequest } from "@/types";
 import { DEMO_MODE, getNextDemoReviews } from "@/lib/demo";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+import { noBackend as inDemoMode } from "@/lib/mode";
 import { useAuth } from "@/hooks/useAuth";
 import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
 

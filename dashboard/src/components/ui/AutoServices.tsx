@@ -103,6 +103,15 @@ export function AutoServices() {
    *  happened — see attendance_over_seats in worker/venue.js. */
   const over = (venue as unknown as { attendance_over_seats?: { seats: number; counted: number; left: number } | null } | null | undefined)
     ?.attendance_over_seats ?? null;
+  /**
+   * Why a figure here is nought while a camera card plainly reads 78.
+   *
+   * See why_nothing in worker/venue.js. Only ever said when the figure IS
+   * nought: a reason beside a number that is fine is noise.
+   */
+  const why = venue?.why_nothing;
+  const noRoom = !venue?.total_current && !!why?.no_room_camera;
+  const unused = !venue?.total_capacity ? why?.seats_not_used ?? null : null;
   const nameBox = (s: Service) => editing?.id === s.id ? (
     <span className="flex items-center gap-1.5 min-w-0">
       <input value={editing.name} onChange={(e) => setEditing({ id: s.id, name: e.target.value })} autoFocus
@@ -163,7 +172,29 @@ export function AutoServices() {
               <div>
                 <p className="text-xs text-gray-500">Here now</p>
                 <p className="text-2xl font-bold text-white tabular-nums">{venue?.total_current ?? "–"}</p>
-                <p className="text-xs text-gray-500">the cameras can see</p>
+                {/**
+                  * A nought, beside a camera card reading 78.
+                  *
+                  * "this is meant to be the session structure, so i dont know
+                  * why its like this."
+                  *
+                  * Both figures were right. This one is built from cameras
+                  * watching a ROOM, because a doorway sees everybody once on
+                  * their way through and nobody after — so a building whose
+                  * only camera is set as a doorway reads nought here, for a
+                  * reason that was nowhere on the screen. Now it is, with
+                  * what to do about it.
+                  */}
+                {noRoom ? (
+                  <p className="text-xs" style={{ color: "#fcd34d" }}>
+                    {venue?.why_nothing?.cameras_seeing
+                      ? `cameras see ${venue.why_nothing.cameras_seeing} — but every camera is set as a doorway`
+                      : "every camera is set as a doorway"}
+                    {" · "}<a href="/cameras" className="underline">set one to a room</a>
+                  </p>
+                ) : (
+                  <p className="text-xs text-gray-500">the cameras can see</p>
+                )}
               </div>
               <div>
                 <p className="text-xs text-gray-500">Busiest</p>
@@ -200,7 +231,24 @@ export function AutoServices() {
                     full" and the filling-up alerts all stay off. Saying so is
                     the difference between a gap and a job. */}
                 {!venue?.total_capacity && (
-                  <p className="text-xs" style={{ color: "#fcd34d" }}>set it on Cameras</p>
+                  /**
+                   * "set it on Cameras" — beside a camera card already
+                   * showing a capacity of 91.
+                   *
+                   * Two different things can make this a dash, and telling
+                   * somebody to do what they have already done is the worst
+                   * of them: the number is set, on a camera that is watching
+                   * a doorway, or it is Kyro's own guess, which is shown as
+                   * a guess and drives nothing. Either way the card now says
+                   * which rather than asking for it again.
+                   */
+                  <p className="text-xs" style={{ color: "#fcd34d" }}>
+                    {unused?.because === "doorway"
+                      ? `${unused.seats} set on ${unused.camera}, which is a doorway`
+                      : unused?.because === "guess"
+                        ? `${unused.seats} is Kyro's guess — enter it to use it`
+                        : "set it on Cameras"}
+                  </p>
                 )}
               </div>
             </div>

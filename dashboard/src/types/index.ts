@@ -170,6 +170,17 @@ export interface VenueTotal {
   whats_on?: WhatsOn | null;
   /** The service being recorded right now, if one is. */
   service_now?: { id: string; name: string; started_at: string; from_rota: boolean } | null;
+  /**
+   * Why a figure above is nought while a camera plainly sees people.
+   *
+   * A nought that is right for a reason nobody can see is argued with, and
+   * rightly. See why_nothing in worker/venue.js.
+   */
+  why_nothing?: {
+    cameras_seeing: number;
+    no_room_camera: boolean;
+    seats_not_used: { camera: string; seats: number; because: "doorway" | "guess" } | null;
+  };
 }
 
 export interface RotaWhen {
