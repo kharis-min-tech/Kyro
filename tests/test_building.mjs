@@ -298,7 +298,7 @@ const seatList = (box) => all.map((c, i) => ({ seat_id: `K${i + 1}`, bbox: box(c
   {
     const asksPage = fs2.readFileSync(new URL("../dashboard/src/components/ui/SamePerson.tsx", import.meta.url), "utf8");
     ok("and the question is one somebody can answer, with both pictures",
-       /same_chair_question/.test(asksPage) && /Yes, one chair/.test(asksPage) && /No, two chairs/.test(asksPage));
+       /same_chair_question/.test(asksPage) && /Yes, the same person/.test(asksPage) && /No, different people/.test(asksPage));
   }
   ok("operators can look but not change", /Changing it is for administrators/.test(page));
 

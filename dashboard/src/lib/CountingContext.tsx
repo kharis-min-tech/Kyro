@@ -1012,11 +1012,41 @@ export function CountingProvider({ children }: { children: ReactNode }) {
              * is in the seat finder's own space, so it is scaled back to
              * the picture the crop is taken from.
              */
+            /**
+             * "Is this the same chair?" — a picture of WHOEVER IS SITTING
+             * IN IT, not of the chair.
+             *
+             * "uno a chair is meant to look the same, its the person that
+             * you should be focusing on, because chairs are usually
+             * identical."
+             *
+             * Quite right, and it undoes the question as first written. Two
+             * photographs of two church chairs are two photographs of the
+             * same brown chair, and nobody could answer from them — which
+             * is the very thing that stops Kyro deciding it alone. What can
+             * be answered is whether the person in this one and the person
+             * in that one are the same person: if they are, the two cameras
+             * are looking at one chair.
+             *
+             * Nobody in it this moment means no picture this moment; the
+             * question is still waiting and will be asked again.
+             */
+            if (want.seat && want.who) {
+              const seen = c.tracker.seenNow();
+              if (!seen.length || !c.grabCanvas.width) continue;
+              const fw = c.grabCanvas.width, fh = c.grabCanvas.height;
+              const { personOfSeat } = c.seatFinder.whoIsWhere(
+                seen.map((x) => x.box as [number, number, number, number]), fw, fh);
+              const pi = personOfSeat.get(`K${want.seat}`);
+              if (pi === undefined) continue;
+              const kept = c.crops.get(seen[pi].track);
+              if (!kept) continue;
+              sendPersonPicture(want.id, want.side, kept.crop).catch(() => {});
+              wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
+              continue;
+            }
             if (want.seat) {
-              // Any seat, not only an unsure one: "is this the same chair?"
-              // asks about two chairs Kyro is perfectly sure are chairs. It
-              // is which ONE they are that it cannot settle.
-              const pl = c.seatFinder.places.find((x) => x.id === want.seat);
+              const pl = c.seatFinder.uncertain().find((x) => x.id === want.seat);
               if (!pl || !c.grabCanvas.width) continue;
               const sx = c.grabCanvas.width / SEAT_W, sy = c.grabCanvas.height / SEAT_H;
               const shot = cropOf(c.grabCanvas,

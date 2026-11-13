@@ -473,6 +473,13 @@ export interface WantedPicture {
   id: string; side: "a" | "b"; key: string; track: number;
   /** A seat rather than a person: crop this seat's box instead of a track. */
   seat?: number;
+  /**
+   * …or the person sitting in that seat, rather than the seat itself.
+   *
+   * "Is this the same chair?" is settled by looking at who is in it: church
+   * chairs are identical, so a photograph of one answers nothing.
+   */
+  who?: boolean;
 }
 
 /** Sends this browser's counts. Returns the cameras switched off on the website,
@@ -562,7 +569,8 @@ export async function sendReport(
       .filter((w: unknown): w is WantedPicture => {
         const x = w as WantedPicture;
         return !!x && typeof x.id === "string" && (x.side === "a" || x.side === "b")
-          && typeof x.key === "string" && (Number.isFinite(x.track) || Number.isFinite(x.seat));
+          && typeof x.key === "string" && (Number.isFinite(x.track) || Number.isFinite(x.seat))
+          && (x.who === undefined || typeof x.who === "boolean");
       })
       .slice(0, 24),
   };

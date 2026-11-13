@@ -88,6 +88,16 @@ function serviceName(ms) {
   return `${day} ${part} service · ${date}`;
 }
 const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed this long
+/**
+ * …except "is this the same chair?", which is not perishable.
+ *
+ * A question about a person is about one morning: ten minutes later the
+ * figure has moved on and the answer is of no use. A chair is a chair every
+ * Sunday, so its answer is worth having whenever it comes — and it may have
+ * spent most of the ten minutes waiting for somebody to sit down in both
+ * seats, which would leave almost no time to answer it.
+ */
+const CHAIR_QUESTION_TTL_MS = 60 * 60_000;
 // Face codes older than this aren't compared. The box refreshes every 4 s and
 // reports every 2 s, so this must comfortably exceed both or de-duplication
 // flickers on and off and the total jumps about. Over-subtraction from a code
@@ -204,6 +214,15 @@ const QUESTION_TYPES = ["stage_question", "front_rush_question", "absence_questi
  * two names and a number, which nobody can answer, so it is not shown.
  */
 const ASK_PICTURE_WAIT_MS = 60_000;
+/**
+ * …and longer for "is this the same chair?", which waits on a PERSON.
+ *
+ * A person question wants a crop of somebody who is in shot right now, so a
+ * minute is plenty. A chair question wants whoever is sitting in each of two
+ * particular seats, and those two seats may be empty for most of a morning.
+ * Giving up after a minute meant the duplicate was never put to anybody.
+ */
+const CHAIR_PICTURE_WAIT_MS = 10 * 60_000;
 /** How many "same person?" questions are kept waiting at once. More than this
  *  on screen is not a job anybody will finish. */
 const MOST_ASKS = 12;
@@ -1652,7 +1671,7 @@ export class VenueHub extends DurableObject {
       })(),
       want_pictures: wantPictures.filter((w) => w.camera_id.startsWith(`${device.id}:`))
         .map((w) => ({ id: w.id, side: w.side, key: w.camera_id.slice(device.id.length + 1),
-          track: w.track, ...(w.seat ? { seat: w.seat } : {}) })),
+          track: w.track, ...(w.seat ? { seat: w.seat } : {}), ...(w.who ? { who: true } : {}) })),
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
       // When a fresh start was last asked for. A counter that hasn't applied
       // this one yet puts its arrivals and departures back to zero — so "Start
@@ -3914,11 +3933,35 @@ export class VenueHub extends DurableObject {
   async askAboutSameChair(cams, now) {
     const b = await this.theBuilding();
     const pairs = b.proposals();
-    if (!pairs.length) {
-      // Nothing outstanding: let any unanswered picture requests lapse.
-      if (now - (this.chairWantsAt ?? 0) >= ASK_PICTURE_WAIT_MS) this.chairWants = [];
-      return this.chairWants ?? [];
+    /**
+     * A request that ran out of time is withdrawn, and the pair goes back
+     * into the queue.
+     *
+     * Nobody sat in those two seats while it was waiting. Leaving the
+     * question in place would leave an unanswerable one lying about for the
+     * rest of the day, and leaving the pair marked as asked would mean the
+     * duplicate was never put to anybody at all — the chair would go on
+     * being counted twice, silently, which is the whole thing this is for.
+     */
+    const lapsed = (this.chairWants ?? []).filter((w) => now - w.at >= CHAIR_PICTURE_WAIT_MS);
+    if (lapsed.length) {
+      const qs = await this.get("questions", {});
+      const asked = await this.get("chairs_asked", {});
+      let dropped = false;
+      for (const w of lapsed) {
+        const q = qs[w.id];
+        this.chairWants = this.chairWants.filter((x) => x.id !== w.id);
+        if (!q || q.answer || (q.pictures ?? 0) >= 2) continue;
+        delete qs[w.id];
+        delete asked[[...(q.ask?.views ?? [])].sort().join("|")];
+        dropped = true;
+      }
+      if (dropped) {
+        await this.ctx.storage.put("questions", qs);
+        await this.ctx.storage.put("chairs_asked", asked);
+      }
     }
+    if (!pairs.length) return this.chairWants ?? [];
     const qs = await this.get("questions", {});
     const asked = await this.get("chairs_asked", {});
     let live = Object.values(qs).filter((q) => q.review_type === "same_chair_question" && !q.answer).length;
@@ -3944,7 +3987,7 @@ export class VenueHub extends DurableObject {
       qs[id] = {
         type: "review_request", review_id: id, camera_id: camA,
         review_type: "same_chair_question", target_role: "operator",
-        question: "Is this the same chair?",
+        question: "Is this the same person?",
         guess: "same", score: p.confidence ?? null, had_face: false,
         why: `the same person was in both of these at the same moment, ${p.agreements} times`,
         where: clean(a.zone_name || a.name || "", 60),
@@ -3955,26 +3998,28 @@ export class VenueHub extends DurableObject {
         ask: { kind: "chair", camera: camA, other_camera: camB,
                views: [p.views[0], p.views[1]], keep: p.keep, drop: p.drop },
         track_id: null, position: [0, 0], bbox_hint: null,
-        confidence: p.confidence ?? 0, best_guess: "One chair",
-        options: ["Yes, one chair", "No, two chairs"],
+        confidence: p.confidence ?? 0, best_guess: "The same person",
+        options: ["Yes, the same person", "No, different people"],
         created_at: now / 1000,
         pictures: 0,
       };
-      want.push({ id, side: "a", camera_id: camA, seat: nA });
-      want.push({ id, side: "b", camera_id: camB, seat: nB });
+      // A picture of whoever is SITTING in each, not of the two chairs.
+      // "uno a chair is meant to look the same, its the person that you
+      // should be focusing on, because chairs are usually identical."
+      want.push({ id, side: "a", camera_id: camA, seat: nA, who: true, at: now });
+      want.push({ id, side: "b", camera_id: camB, seat: nB, who: true, at: now });
     }
     if (want.length) {
       await this.ctx.storage.put("questions", qs);
       await this.ctx.storage.put("chairs_asked", asked);
-      this.chairWants = want;
-      this.chairWantsAt = now;
-      return want;
+      // Added to, not replacing: a pair still waiting for somebody to sit
+      // down must not lose its request because a second pair came up.
+      this.chairWants = [...(this.chairWants ?? []), ...want];
     }
-    // Keep offering until the pictures arrive or the request lapses. Both
-    // halves may be on different computers, so each only sees its own.
-    if (this.chairWants?.length && now - (this.chairWantsAt ?? 0) < ASK_PICTURE_WAIT_MS) return this.chairWants;
-    this.chairWants = [];
-    return [];
+    // Keep offering until the pictures arrive or the request lapses — but
+    // only the half that is still missing. Both halves may be on different
+    // computers, and each only ever sees its own.
+    return (this.chairWants ?? []).filter((w) => !qs[w.id]?.sides?.[w.side] && !qs[w.id]?.answer);
   }
 
   /**
@@ -4031,7 +4076,8 @@ export class VenueHub extends DurableObject {
   async listQuestions(role) {
     const now = Date.now() / 1000;
     return Object.values(await this.get("questions", {}))
-      .filter((q) => !q.answer && now - q.created_at < QUESTION_TTL_MS / 1000 && (role === "admin" || q.target_role !== "admin"))
+      .filter((q) => !q.answer && (role === "admin" || q.target_role !== "admin")
+        && now - q.created_at < (q.review_type === "same_chair_question" ? CHAIR_QUESTION_TTL_MS : QUESTION_TTL_MS) / 1000)
       // "Is this the same person?" without the two pictures is two names and
       // a number. Nobody can answer that, so it is not asked.
       .filter((q) => q.review_type !== "same_person_question" || (q.pictures ?? 0) >= 2)
@@ -4062,6 +4108,11 @@ export class VenueHub extends DurableObject {
     if (!mine) return json({ error: "No such question" }, 404);
     await this.ctx.storage.put(`qsnap:${id}${side ? `:${side}` : ""}`, new Uint8Array(buf));
     if (side) {
+      // Which sides are in. A chair question may wait ten minutes for
+      // somebody to sit down, and without this it would go on asking both
+      // cameras for a picture it already has, every few seconds, for all of
+      // them. See askAboutSameChair.
+      q.sides = { ...(q.sides ?? {}), [side]: true };
       // Shown only once both sides have arrived.
       const have = await this.ctx.storage.get(`qsnap:${id}:${side === "a" ? "b" : "a"}`);
       q.pictures = have ? 2 : 1;

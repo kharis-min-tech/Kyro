@@ -145,8 +145,8 @@ export function SamePerson() {
           : r.action === "merged" ? `Taken off: counted as one person. ${r.people} different people this service.`
           : r.action === "split" ? `Counted as two. ${r.people} different people this service.`
           : r.action === "removed" ? `Taken off the count, and off today's figures. ${r.people} different people this service — and anything that looks like it won't be counted again.`
-          : r.action === "one_chair" ? "Joined into one chair, so it is no longer counted twice."
-          : r.action === "two_chairs" ? "Kept as two chairs. You won't be asked about that pair again."
+          : r.action === "one_chair" ? "One chair, seen by two cameras — joined, so it is no longer counted twice."
+          : r.action === "two_chairs" ? "Two different chairs, then. You won't be asked about that pair again."
           : "Noted.",
       );
       setAsks((prev) => prev.filter((x) => x.review_id !== q.review_id));
@@ -211,12 +211,22 @@ export function SamePerson() {
       )}
 
       {/**
-        * "Is this the same chair?" — two pictures, one from each camera.
+        * One chair or two — settled by looking at the PERSON in each.
         *
         * This was asked on the seating page, as rows of seat ids with a
         * tally: "S37 and S24 — same person in both 81 times". Nobody can
-        * answer that. Here it is two photographs of two chairs, which is a
-        * question a person can actually settle in a second.
+        * answer that, so it became a question with a picture of each chair
+        * instead — which nobody can answer either:
+        *
+        *   "uno a chair is meant to look the same, its the person that you
+        *    should be focusing on, because chairs are usually identical."
+        *
+        * Quite right. A church buys a hundred of the same chair; two
+        * photographs of two of them settle nothing, which is exactly why
+        * Kyro won't decide it on appearance either. What a person CAN
+        * answer is whether the man in this picture and the man in that one
+        * are the same man — and if they are, the two cameras are pointed at
+        * one chair.
         */}
       {asks.map((q) => q.review_type === "same_chair_question" ? (
         <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
@@ -224,23 +234,24 @@ export function SamePerson() {
             <Side id={q.review_id} side="a" label={q.where || "One camera"} />
             <Side id={q.review_id} side="b" label={q.other_where || "The other camera"} />
           </div>
-          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this the same chair?</p>
+          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this the same person?</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-            Two cameras can see the same chair, and each counts it as a seat of its own — so one person sitting
-            down looks like two. Kyro thinks these two may be one chair because {q.why || "the same person was in both at once"}.
-            Nobody is in two places at once. But two chairs side by side look identical from a camera, so it
-            won&apos;t decide this on its own.
+            Two cameras may be pointed at the same chair, and each is counting it as a seat of its own — so one
+            person sitting down is being counted as two. These are the people sitting in those two seats right
+            now, one from each camera.
+            {" "}<strong style={{ color: "var(--text-secondary)" }}>If it&apos;s the same person, it&apos;s one chair</strong>
+            {" "}and Kyro will stop counting it twice.
           </p>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => answer(q, "Yes, one chair")} disabled={busy !== null}
+            <button onClick={() => answer(q, "Yes, the same person")} disabled={busy !== null}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
               style={{ background: "#16a34a" }}>
-              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, one chair
+              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, the same person
             </button>
-            <button onClick={() => answer(q, "No, two chairs")} disabled={busy !== null}
+            <button onClick={() => answer(q, "No, different people")} disabled={busy !== null}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
               style={{ background: "#b45309" }}>
-              <X size={12} /> No, two chairs
+              <X size={12} /> No, different people
             </button>
           </div>
         </div>
