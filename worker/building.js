@@ -123,6 +123,33 @@ export class Building {
     this.evidence.set(key, e);
   }
 
+  /**
+   * "No — two different chairs."
+   *
+   * An administrator looking at a pair and saying they are NOT one chair is
+   * the strongest evidence there is, and there was no way to say it. The
+   * panel offered one button, "One chair", so a pair you disagreed with
+   * simply stayed on the list for ever, in front of every other pair.
+   *
+   * Recorded as enough disagreement to settle it rather than as one more
+   * vote, because it is a person's answer and not a camera's guess.
+   */
+  notOneChair(viewA, viewB, by, version) {
+    const key = [viewA, viewB].sort().join("|");
+    const seats = [this.byView.get(viewA), this.byView.get(viewB)].filter(Boolean);
+    const what = seats.length === 2
+      ? `Marked ${seats[0]} and ${seats[1]} as different chairs`
+      : "Marked two seats as different chairs";
+    return this.change(by, version, what, () => {
+      if (!viewA || !viewB || viewA === viewB) return { error: "No such pair" };
+      const e = this.evidence.get(key) ?? { for: 0, against: 0 };
+      const was = { ...e };
+      e.against = Math.max(e.against, MERGE_AGAINST) + 1;
+      this.evidence.set(key, e);
+      return { undo: { pair: key, was } };
+    });
+  }
+
   /** Duplicates worth putting to an administrator, strongest evidence first. */
   proposals() {
     const out = [];
@@ -134,6 +161,10 @@ export class Building {
       if (sa.status !== "active" || sb.status !== "active") continue;
       out.push({
         keep: sa.id, drop: sb.id, views: [a, b],
+        /** Which camera saw each of them — the whole point of the pair, and
+         *  the thing the panel never showed. A seat id on its own is two
+         *  letters and a number. */
+        cameras: [a.slice(0, a.lastIndexOf("#")), b.slice(0, b.lastIndexOf("#"))],
         agreements: e.for, disagreements: e.against,
         confidence: Math.min(0.99, e.for / (e.for + e.against + 4)),
       });
@@ -316,6 +347,7 @@ export class Building {
     if (!entry || !entry.undo) return { error: "Nothing to undo" };
     const u = entry.undo;
     if (u.plan !== undefined) this.plan = u.plan;
+    else if (u.pair) this.evidence.set(u.pair, { ...u.was });
     else if (u.cameraId) { if (u.where) this.stageOf[u.cameraId] = u.where; else delete this.stageOf[u.cameraId]; }
     else if (u.keepId && u.dropId) {
       const keep = this.seats.get(u.keepId), drop = this.seats.get(u.dropId);

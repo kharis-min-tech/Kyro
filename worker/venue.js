@@ -165,7 +165,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-d5b379d2bd9b";
+export const VENUE_CODE = "venue-edb51405db13";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -1919,6 +1919,14 @@ export class VenueHub extends DurableObject {
       case "restore": out = b.restore(id, user, v); break;
       case "merge":   out = b.merge(id, other, user, v); break;
       case "split":   out = b.split(id, other, user, v); break;
+      // "No, two different chairs" — the answer the panel could not take.
+      case "not_one_chair": {
+        const pair = Array.isArray(body.views) ? body.views.slice(0, 2).map((x) => clean(x, 120)) : [];
+        out = pair.length === 2
+          ? b.notOneChair(pair[0], pair[1], user, v)
+          : { error: "Don't know which two chairs you mean" };
+        break;
+      }
       case "move":    out = b.move(id, user, v, { place: body.place, camera: clean(body.camera, 80) || undefined, bbox: body.bbox }); break;
       case "add":     out = b.add(user, v, { section: clean(body.section, 40) || "Main", kind: body.kind, places: num(body.places, 1, 60), place: body.place ?? null, view: body.view ?? null }); break;
       case "stage":   out = b.setStage(clean(body.camera, 80), body.where, user, v); break;

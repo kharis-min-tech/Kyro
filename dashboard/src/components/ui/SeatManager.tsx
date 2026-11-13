@@ -28,6 +28,8 @@ const BORDER = "var(--border-subtle)";
 
 interface Proposal {
   keep: string; drop: string; views: string[];
+  /** Which camera saw each of the two — see proposals() in worker/building.js. */
+  cameras?: string[];
   agreements: number; disagreements: number; confidence: number;
 }
 interface MasterSeat {
@@ -59,6 +61,17 @@ export function SeatManager({ cameras }: { cameras: { camera_id: string; name: s
     .then((r) => { setD(r); setErr(null); })
     .catch((e) => setErr(e instanceof Error ? e.message : "Couldn't load the seating")), []);
   useEffect(() => { load(); const t = setInterval(load, 20_000); return () => clearInterval(t); }, [load]);
+
+  /**
+   * A camera's name, for a camera id.
+   *
+   * The ids are the computer's, not anybody's — "web-a3f2:usb-0" on a row of
+   * a list tells a person nothing, and the pair of them is the whole point
+   * of the row. The name somebody gave the camera does tell them something.
+   */
+  const cameraName = (id: string) =>
+    cameras.find((c) => c.camera_id === id)?.name
+    ?? (id.includes(":") ? id.slice(id.indexOf(":") + 1) : id);
 
   const act = async (body: Record<string, unknown>) => {
     if (!d) return;
@@ -154,14 +167,22 @@ export function SeatManager({ cameras }: { cameras: { camera_id: string; name: s
             Possibly the same chair, seen by two cameras
           </p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)" }}>
-            Kyro noticed the same person in both of these at the same moment, more than once. Nobody is in two places
-            at once, so they are probably one chair — but two chairs side by side can look identical, so this is for
-            you to decide, not for Kyro.
+            Two cameras can see the same chair, and each gives it a seat of its own — so one person sitting down looks
+            like two people in two seats. Kyro noticed the same person in both of these at the same moment, more than
+            once. Nobody is in two places at once, so they are probably one chair. Two chairs side by side can look
+            identical from a camera, so this is for you to decide, not for Kyro. <strong>One chair</strong> joins them;{" "}
+            <strong>Different chairs</strong> takes the pair off this list for good.
           </p>
           {d.proposals.slice(0, 12).map((p) => (
             <div key={`${p.keep}-${p.drop}`} className="flex flex-wrap items-center gap-2 py-1.5" style={{ borderTop: `1px solid ${BORDER}` }}>
+              {/* Which camera saw each one. A seat id on its own is two
+                  letters and a number; with the camera beside it, the pair
+                  explains itself. */}
               <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                <strong>{p.keep}</strong> and <strong>{p.drop}</strong>
+                <strong>{p.keep}</strong>
+                {p.cameras?.[0] && <span style={{ fontSize: 11, color: "var(--text-faint)" }}> on {cameraName(p.cameras[0])}</span>}
+                {" "}and <strong>{p.drop}</strong>
+                {p.cameras?.[1] && <span style={{ fontSize: 11, color: "var(--text-faint)" }}> on {cameraName(p.cameras[1])}</span>}
               </span>
               <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
                 same person in both {p.agreements} times{p.disagreements ? `, different ${p.disagreements}` : ""}
@@ -172,6 +193,13 @@ export function SeatManager({ cameras }: { cameras: { camera_id: string; name: s
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
                   style={{ background: "#4f46e5" }}>
                   <Merge size={12} /> One chair
+                </button>
+              )}
+              {admin && (
+                <button onClick={() => act({ do: "not_one_chair", views: p.views })} disabled={busy}
+                  className="px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-50"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                  Different chairs
                 </button>
               )}
             </div>
