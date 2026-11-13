@@ -1744,6 +1744,19 @@ export class VenueHub extends DurableObject {
     await this.theBuilding();     // so the register has somewhere to send evidence
 
     const faceOk = (await this.privacy()).face_matching;
+    /**
+     * Does the register already hold more people than the building can?
+     *
+     * Only the hub knows the seat count, so it tells the register, once a
+     * report. From then on a new person is asked about rather than made in
+     * silence — see `crowded` in worker/identity.js. Unknown seats mean
+     * unknown, not crowded: a building nobody has given a seat count to is
+     * not accused of being over-full.
+     */
+    try {
+      const seats = await this.seatsInBuilding();
+      this.register.crowded = seats > 0 && (this.register.size || 0) >= seats;
+    } catch { this.register.crowded = false; }
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
       if (!key || !Array.isArray(c.seen) || !c.seen.length) continue;

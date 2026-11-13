@@ -449,6 +449,15 @@ export class IdentityRegistry {
      */
     this.createsIdentities = opts.createsIdentities ?? (() => true);
     /**
+     * More different people written down than the room can hold.
+     *
+     * Set from outside, once a report, because only the hub knows how many
+     * seats the building has. When it is true, Kyro knows at least one entry
+     * is wrong and stops making new ones quietly — see the note where a new
+     * person is created.
+     */
+    this.crowded = false;
+    /**
      * Called when one person is found in one camera's seat and then, moments
      * later, in another camera's seat. Nobody is in two places at once, so
      * those two seats are very likely the same chair — which is how the
@@ -1308,6 +1317,56 @@ export class IdentityRegistry {
       return made.id;
     }
     const near = (uniform ? scored.filter((x) => x.look > 0).sort((a, b) => b.look - a.look)[0] : looks[0]) ?? null;
+    /**
+     * …and when the room is already fuller than it can be, ASK ANYWAY.
+     *
+     * ── What was silent ─────────────────────────────────────────────────
+     *
+     * "Questions are not asked enough with proof/pictures, you keep assuming
+     * things and not say a word, how will you learn."
+     *
+     * She is right, and this line was the worst of it. Making somebody new
+     * is the decision that puts a wrong number on a church's screen, and it
+     * asked about itself only when somebody already on file looked seventy
+     * per cent alike. Below that — silence. In a hall of dark coats under a
+     * blurred lens, appearance readings are washed out and nothing scores
+     * seventy, so the duplicates that actually happened were exactly the
+     * ones nobody was ever asked about.
+     *
+     * When Kyro has already written down more different people than the room
+     * holds, it KNOWS at least one of them is wrong. That is not a moment to
+     * keep guessing quietly. So every new person made from then on is asked
+     * about — against the closest match if there is one, and as "is this a
+     * person at all?" if there is not, which is the other way a count climbs
+     * past a room's walls.
+     *
+     * Only ever while the register is over the seats, so a normal morning is
+     * as quiet as it ever was, and every one of these questions carries a
+     * picture. See crowded.
+     */
+    if (this.crowded && !(near && near.look >= LOOK_ASK)) {
+      if (near) {
+        askAbout("different", near.p, {
+          score: Math.round(near.look * 1000) / 1000, had_face: faceReads.length > 0,
+          reason: "more people have been counted than this room holds, so one of these two is already counted",
+          made: made.id,
+        });
+      } else {
+        const key = `crowd|${cameraId}#${o.track}`;
+        if (!this.ruled.has(key) && !this.asks.some((a) => a.pair === key)) {
+          this.ruled.set(key, null);
+          this.asks.push({
+            pair: key, at: now, kind: "person", guess: "person",
+            camera: cameraId, track: o.track, person: null,
+            other_camera: null, other_track: null,
+            score: null, had_face: faceReads.length > 0,
+            reason: "more people have been counted than this room holds, and this is another one",
+          });
+          if (this.asks.length > 40) this.asks.shift();
+        }
+      }
+      return made.id;
+    }
     if (near && near.look >= LOOK_ASK) {
       const pair = `${cameraId}#${o.track}|${near.p.id}`;
       if (!this.ruled.has(pair) && !this.asks.some((a) => a.pair === pair)) {
