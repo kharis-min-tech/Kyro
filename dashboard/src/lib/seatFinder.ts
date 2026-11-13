@@ -57,6 +57,11 @@ const HOLD_MS = 45_000;
 const TOO_TALL = 1.5;
 /** Of the seat's area, how much a person must cover to be in it. */
 const IN_SEAT = 0.25;
+/** …and how little is enough to be the person AT it. See whoIsAt. */
+const NEAR_SEAT = 0.12;
+/** How long somebody at a seat must have stopped there to be its person
+ *  rather than somebody on their way past. See whoIsAt. */
+const STOPPED_MS = 1_500;
 
 export interface Place {
   id: number;
@@ -89,6 +94,12 @@ function covered(seat: Box, person: Box): number {
   const iy = Math.max(0, Math.min(seat[3], person[3]) - Math.max(seat[1], person[1]));
   const a = areaOf(seat);
   return a > 0 ? (ix * iy) / a : 0;
+}
+
+/** The lower part of a person's box — roughly where they are standing. */
+function footOf(b: Box): Box {
+  const h = b[3] - b[1];
+  return [b[0], b[3] - 0.35 * h, b[2], b[3]];
 }
 
 /** A chair's box → where a person sitting on it appears (the chair plus their upper body). */
@@ -276,6 +287,56 @@ export class SeatFinder {
       personOfSeat.set(seats[si].seat_id, pi);
     }
     return { seatOfPerson, personOfSeat };
+  }
+
+  /**
+   * Whoever is AT a seat — standing by it counts.
+   *
+   * Not the same question as whoIsWhere, and deliberately looser. That one
+   * decides whether a seat is taken, where somebody standing in front of a
+   * chair must NOT fill it: people walk past rows all morning and a count
+   * that believes them is wrong.
+   *
+   * This one only picks whose picture to take when Kyro wants to ask "is
+   * this the same person?" about two cameras' seats. "a person does not need
+   * to sit down to show that thats there seat" — quite so. Somebody standing
+   * at their place, taking their coat off, or leaning over the row in front
+   * is plainly the person at that seat, and refusing to photograph them
+   * until they sat down meant the question often went unasked.
+   *
+   * Nothing here can over-count anybody: the answer joins two seats or
+   * leaves them alone, and the worst a bad pick can do is make a question
+   * somebody answers "no" to.
+   */
+  whoIsAt(seatId: string, people: Box[], w: number, h: number, stillFor: number[] = []): number | null {
+    const seat = this.seats().find((s) => s.seat_id === seatId)
+      ?? (() => { const p = this.places.find((x) => `K${x.id}` === seatId); return p ? { bbox: p.box } : null; })();
+    if (!seat) return null;
+    let best: number | null = null, bestScore = NEAR_SEAT;
+    people.forEach((b, i) => {
+      const person = this.toSeatSpace(b, w, h);
+      // Of the seat, how much this person stands over — and, for somebody
+      // tall who covers it from above, whether their feet are at it.
+      const score = Math.max(covered(seat.bbox, person), covered(seat.bbox, footOf(person)));
+      if (score <= bestScore) return;
+      /**
+       * Somebody WALKING PAST the row is not the person at that seat.
+       *
+       * Standing in front of a chair covers it as thoroughly as sitting in
+       * it — more, usually — so coverage alone cannot tell the two apart.
+       * What tells them apart is that one of them has stopped. A picture of
+       * somebody on their way past, put to a person as "is this the same
+       * person?", gets an honest no, and two cameras looking at one chair
+       * are then told to go on counting it twice.
+       *
+       * So everybody here has to have stood still a moment, seated or not.
+       * Somebody who has only just arrived is simply photographed a few
+       * seconds later: the question waits, and asks again.
+       */
+      if ((stillFor[i] ?? 0) < STOPPED_MS) return;
+      bestScore = score; best = i;
+    });
+    return best;
   }
 
   occupancy(people: Box[], w: number, h: number, now: number): [string, SeatState, number, number][] {

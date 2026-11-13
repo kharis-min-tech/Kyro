@@ -94,8 +94,8 @@ const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed thi
  * A question about a person is about one morning: ten minutes later the
  * figure has moved on and the answer is of no use. A chair is a chair every
  * Sunday, so its answer is worth having whenever it comes — and it may have
- * spent most of the ten minutes waiting for somebody to sit down in both
- * seats, which would leave almost no time to answer it.
+ * spent most of the ten minutes waiting for somebody to be at both seats,
+ * which would leave almost no time to answer it.
  */
 const CHAIR_QUESTION_TTL_MS = 60 * 60_000;
 // Face codes older than this aren't compared. The box refreshes every 4 s and
@@ -218,9 +218,10 @@ const ASK_PICTURE_WAIT_MS = 60_000;
  * …and longer for "is this the same chair?", which waits on a PERSON.
  *
  * A person question wants a crop of somebody who is in shot right now, so a
- * minute is plenty. A chair question wants whoever is sitting in each of two
- * particular seats, and those two seats may be empty for most of a morning.
- * Giving up after a minute meant the duplicate was never put to anybody.
+ * minute is plenty. A chair question wants whoever is at each of two
+ * particular seats — standing by it counts, see whoIsAt — and those two
+ * places may be empty for a good while. Giving up after a minute meant the
+ * duplicate was never put to anybody.
  */
 const CHAIR_PICTURE_WAIT_MS = 10 * 60_000;
 /** How many "same person?" questions are kept waiting at once. More than this
@@ -3937,7 +3938,7 @@ export class VenueHub extends DurableObject {
      * A request that ran out of time is withdrawn, and the pair goes back
      * into the queue.
      *
-     * Nobody sat in those two seats while it was waiting. Leaving the
+     * Nobody was at those two seats while it was waiting. Leaving the
      * question in place would leave an unanswerable one lying about for the
      * rest of the day, and leaving the pair marked as asked would mean the
      * duplicate was never put to anybody at all — the chair would go on
@@ -4013,7 +4014,7 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.put("questions", qs);
       await this.ctx.storage.put("chairs_asked", asked);
       // Added to, not replacing: a pair still waiting for somebody to sit
-      // down must not lose its request because a second pair came up.
+      // for somebody must not lose its request because another came up.
       this.chairWants = [...(this.chairWants ?? []), ...want];
     }
     // Keep offering until the pictures arrive or the request lapses — but

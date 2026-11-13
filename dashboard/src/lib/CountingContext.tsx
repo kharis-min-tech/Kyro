@@ -1028,17 +1028,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
              * in that one are the same person: if they are, the two cameras
              * are looking at one chair.
              *
-             * Nobody in it this moment means no picture this moment; the
+             * Whoever is AT the seat, standing or sitting — "a person does
+             * not need to sit down to show that thats there seat". Nobody
+             * there at all this moment means no picture this moment; the
              * question is still waiting and will be asked again.
              */
             if (want.seat && want.who) {
               const seen = c.tracker.seenNow();
               if (!seen.length || !c.grabCanvas.width) continue;
               const fw = c.grabCanvas.width, fh = c.grabCanvas.height;
-              const { personOfSeat } = c.seatFinder.whoIsWhere(
-                seen.map((x) => x.box as [number, number, number, number]), fw, fh);
-              const pi = personOfSeat.get(`K${want.seat}`);
-              if (pi === undefined) continue;
+              const pi = c.seatFinder.whoIsAt(`K${want.seat}`,
+                seen.map((x) => x.box as [number, number, number, number]), fw, fh,
+                seen.map((x) => x.stillFor));
+              if (pi === null) continue;
               const kept = c.crops.get(seen[pi].track);
               if (!kept) continue;
               sendPersonPicture(want.id, want.side, kept.crop).catch(() => {});

@@ -237,8 +237,8 @@ export function SamePerson() {
           <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>Is this the same person?</p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
             Two cameras may be pointed at the same chair, and each is counting it as a seat of its own — so one
-            person sitting down is being counted as two. These are the people sitting in those two seats right
-            now, one from each camera.
+            person is being counted as two. These are the people at those two seats, one picture from each
+            camera.
             {" "}<strong style={{ color: "var(--text-secondary)" }}>If it&apos;s the same person, it&apos;s one chair</strong>
             {" "}and Kyro will stop counting it twice.
           </p>
