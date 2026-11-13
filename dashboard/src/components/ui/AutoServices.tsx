@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Check, Download, Loader2, Pencil, Play, Radio, RotateCcw, ScanFace, Square, Trash2, X } from "lucide-react";
+import { Check, Download, Loader2, Pencil, Play, Radio, RotateCcw, ScanFace, SlidersHorizontal, Square, Trash2, X } from "lucide-react";
 import { edgeFetch, isEdgeLive } from "@/lib/edgeAuth";
 import { edgeVenueApi, useEdgeVenue } from "@/lib/edgeVenue";
 import { useAuth } from "@/hooks/useAuth";
@@ -109,6 +109,16 @@ export function AutoServices() {
    * See why_nothing in worker/venue.js. Only ever said when the figure IS
    * nought: a reason beside a number that is fine is noise.
    */
+  /** The last time Kyro moved the counting sensitivity by itself. */
+  const sens = (venue as unknown as { sensitivity_set?: { at: number; to: number; name: string; from: number; why: string; then: string } | null } | null | undefined)
+    ?.sensitivity_set ?? null;
+  const [putting, setPutting] = useState(false);
+  const putBack = async (to: number) => {
+    setPutting(true);
+    try { await edgeFetch("/api/live/counting", { method: "PUT", body: JSON.stringify({ count_confidence: to }) }); }
+    catch { /* the note stays; nothing is claimed that did not happen */ }
+    setPutting(false);
+  };
   const why = venue?.why_nothing;
   const noRoom = !venue?.total_current && !!why?.no_room_camera;
   const unused = !venue?.total_capacity ? why?.seats_not_used ?? null : null;
@@ -263,6 +273,33 @@ export function AutoServices() {
               so it only ever goes up. They are meant to differ.
             </p>
             {live.quiet_since && <p className="text-xs text-gray-400">The hall has been nearly empty since {time(live.quiet_since)} — the service ends by itself 15 minutes after that.</p>}
+            {/**
+              * Kyro moved the counting sensitivity by itself, and says so.
+              *
+              * "its better for you to do it yourself, just let me know that
+              * you have changed it." This is the letting-know: what it
+              * changed, the two figures it changed it on, and one press to
+              * put it back — because a setting that moves by itself has to
+              * be answerable for. It shows for a few hours and then stops.
+              */}
+            {sens && (
+              <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
+                style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.4)" }}>
+                <SlidersHorizontal size={13} className="shrink-0 mt-0.5" style={{ color: "#a5b4fc" }} />
+                <div className="flex-1 min-w-0 flex flex-col gap-1">
+                  <p className="text-xs" style={{ color: "#c7d2fe" }}>
+                    Kyro set the counting to <strong>{sens.name}</strong> at {time(new Date(sens.at).toISOString())} — {sens.why}.
+                  </p>
+                  {admin && (
+                    <button onClick={() => putBack(sens.from)} disabled={putting}
+                      className="self-start text-xs underline disabled:opacity-50"
+                      style={{ color: "var(--text-faint)" }}>
+                      {putting ? "Putting it back…" : "Put it back how it was"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {data?.face_matching_now && (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><ScanFace size={13} className="text-green-400" />
                 Face matching is on for this service. Its face codes are wiped when the service ends.</p>

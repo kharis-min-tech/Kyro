@@ -158,7 +158,12 @@ const CALLED_BY_THE_RUNTIME = new Set([
   }
   ok("every panel the pages define is rendered somewhere", orphans.length === 0, orphans.join("\n   "));
   const cameras = fs.readFileSync(path.join(root, "dashboard/src/app/cameras/page.tsx"), "utf8");
-  ok("the counting-sensitivity dial is on the Cameras page", /<CountingSensitivity \/>/.test(cameras));
+  // The counting-sensitivity dial was here. Kyro moves it itself now —
+  // "its better for you to do it yourself [...] so you can remove it off my
+  // screen" — and says so on the service card when it does.
+  ok("the counting-sensitivity dial is gone, not orphaned",
+     !/<CountingSensitivity/.test(cameras)
+     && !fs.existsSync(path.join(root, "dashboard/src/components/ui/CountingSensitivity.tsx")));
   ok("and so is Find cameras", /<FindCameras$/m.test(cameras) || /<FindCameras /.test(cameras));
 }
 

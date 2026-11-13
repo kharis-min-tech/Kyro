@@ -22,7 +22,6 @@ import { InstallCommand } from "@/components/ui/InstallCommand";
 import { IgnoreZonesEditor } from "@/components/ui/IgnoreZonesEditor";
 import { CountingCard } from "@/components/ui/CountingCard";
 import { useCounting } from "@/lib/CountingContext";
-import { CountingSensitivity } from "@/components/ui/CountingSensitivity";
 import { FindCameras } from "@/components/ui/FindCameras";
 import { FaceMatching } from "@/components/ui/FaceMatching";
 import { scanOutcome } from "@/lib/cameraScan";
@@ -1942,9 +1941,19 @@ export default function CamerasPage() {
         {edge && role === "admin" && (
           <FaceMatching />
         )}
-        {edge && role === "admin" && (
-          <CountingSensitivity />
-        )}
+        {/**
+          * Counting sensitivity is no longer a thing anybody sets.
+          *
+          * "to be honest, i have a lot on my hands, its better for you to
+          * do it yourself, just let me know that you have changed it, so
+          * you can remove it off my screen."
+          *
+          * Kyro works it out from the door's count against what the rooms
+          * can see, and moves it itself — see maybeSetSensitivity in
+          * worker/venue.js. When it does, it says so on the service card,
+          * with the figures and one press to put it back, which is the only
+          * moment any of this needs to be on a screen.
+          */}
         {edge && canManage && (
           <FindCameras onAdded={edge ? afterEdgeChange : refresh}
             multipleComputers={(devices?.length ?? 0) > 1} />

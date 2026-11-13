@@ -153,6 +153,22 @@ const CAREFUL_CONFIDENCE = 0.4;
 const SUGGEST_SHORT_BY = 5;
 const SUGGEST_GAIN_AT_LEAST = 3;
 const SUGGEST_GAIN_SHARE = 0.4;
+/**
+ * …and what Kyro has to be sure of before it moves the setting ITSELF.
+ *
+ * "to be honest, i have a lot on my hands, its better for you to do it
+ * yourself, just let me know that you have changed it."
+ *
+ * Two rules, both about not flapping. The same answer has to hold for three
+ * minutes — somebody walking a row, or the door busy for a moment while the
+ * hall has not caught up, changes the figures for seconds at a time. And
+ * nothing moves twice inside twenty minutes, so a building that sits on the
+ * line cannot be switched back and forth all morning.
+ */
+const AUTO_SET_AFTER_MS = 3 * 60_000;
+const AUTO_SET_GAP_MS = 20 * 60_000;
+/** How long the change stays on the card where she will see it. */
+const AUTO_SET_SHOW_MS = 6 * 60 * 60_000;
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
  * A picture older than this is not of now, and is not shown.
@@ -189,7 +205,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-e2cd498a4aaa";
+export const VENUE_CODE = "venue-a5b4044b802b";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -2900,6 +2916,18 @@ export class VenueHub extends DurableObject {
     // honest answer is none.
     const anyRunning = zones.some((z) => z.is_running);
     const hereNow = anyRunning ? Math.min(Math.max(seenNow, countedNet), ceiling) : 0;
+    /**
+     * Is the counting bar in the right place? Worked out here, where the
+     * door's figure and the rooms' are both already in hand, and acted on
+     * rather than offered. See maybeSetSensitivity.
+     */
+    try {
+      await this.maybeSetSensitivity(await this.suggestSensitivity(zones, doorPeople));
+    } catch (e) {
+      await this.wrong("Counting",
+        "Couldn't check whether the counting sensitivity is in the right place",
+        e && e.message);
+    }
     return {
       seen_on_two_cameras: twice,
       // Cameras whose last report carried face readings, and how many faces
@@ -3129,7 +3157,15 @@ export class VenueHub extends DurableObject {
        * right place — see suggestSensitivity. null when it has nothing to
        * say, which is most of the time.
        */
-      sensitivity_hint: await this.suggestSensitivity(zones, doorPeople).catch(() => null),
+      /**
+       * The last time Kyro moved the Counting sensitivity by itself, with
+       * what it moved it from and why — shown on the service card for a few
+       * hours, with one press to put it back. See maybeSetSensitivity.
+       */
+      sensitivity_set: await (async () => {
+        const n = await this.get("sensitivity_set", null);
+        return n && Date.now() - n.at < AUTO_SET_SHOW_MS ? n : null;
+      })(),
       /**
        * Why these figures can be nought while a camera plainly sees people.
        *
@@ -5047,6 +5083,58 @@ export class VenueHub extends DurableObject {
     return { setting: SENSITIVE_CONFIDENCE, name: "Sensitive",
              why: `${doorPeople} have come through the door and the cameras can see ${seeingNow}, while dropping about ${wouldGain} more that they are nearly sure about`,
              then: `Sensitive would make it ${wouldSee}` };
+  }
+
+  /**
+   * …and setting it, rather than asking.
+   *
+   * "its better for you to do it yourself, just let me know that you have
+   * changed it, so you can remove it off my screen."
+   *
+   * So the control is gone and this does it. What that costs is the person
+   * who would have looked at the two figures and said "no, the back of the
+   * hall is simply out of shot" — so everything that made the suggestion
+   * cautious matters more now, not less:
+   *
+   *   - it only acts where a setting WOULD help, never where the people are
+   *     out of shot (see suggestSensitivity);
+   *   - the same answer has to hold for three minutes, not one reading;
+   *   - nothing moves twice inside twenty minutes;
+   *   - every change is written down with the figures behind it, and is on
+   *     the service card with one press to put it back.
+   */
+  async maybeSetSensitivity(hint, now = Date.now()) {
+    const want = hint?.setting ?? null;
+    const steady = this.sensitivitySince;
+    // Not a suggestion, or a different one from a moment ago: start the
+    // three minutes again.
+    if (want === null) { this.sensitivitySince = null; this.sensitivityWant = null; return; }
+    if (this.sensitivityWant !== want) {
+      this.sensitivityWant = want;
+      this.sensitivitySince = now;
+      return;
+    }
+    if (!steady || now - steady < AUTO_SET_AFTER_MS) return;
+    const was = (await this.counting()).count_confidence;
+    if (was === want) { this.sensitivitySince = null; this.sensitivityWant = null; return; }
+    const last = await this.get("sensitivity_set", null);
+    if (last && now - last.at < AUTO_SET_GAP_MS) return;
+    await this.ctx.storage.put("counting", { count_confidence: want });
+    const note = { at: now, to: want, name: hint.name, from: was, why: hint.why, then: hint.then };
+    await this.ctx.storage.put("sensitivity_set", note);
+    /**
+     * …and the whole list, because a setting that moves by itself has to be
+     * answerable for afterwards. "Do not delete or rewrite historical
+     * records to make the dashboard appear correct."
+     */
+    const log = await this.get("sensitivity_log", []);
+    log.unshift(note);
+    await this.ctx.storage.put("sensitivity_log", log.slice(0, 50));
+    this.sensitivitySince = null;
+    this.sensitivityWant = null;
+    this.ctx.waitUntil(notifyCount(this.env, {
+      kind: "sensitivity", zone: hint.name, count: 0,
+    }).catch(() => {}));
   }
 
   async counting() {

@@ -505,6 +505,15 @@ export function buildCountMessage(ev, sub) {
       url: "/attendance",
     };
   }
+  if (ev.kind === "sensitivity") {
+    return {
+      title: "🎚 Kyro adjusted the counting",
+      body: `Counting sensitivity is now ${ev.zone || "changed"} — it was counting the room wrong. Tap to see why, or put it back.`,
+      level: "info",
+      tag: "kyro-sensitivity",
+      url: "/",
+    };
+  }
   if (ev.kind === "offline") {
     return {
       title: "📷 A camera stopped",
@@ -544,10 +553,10 @@ export function buildCountMessage(ev, sub) {
  */
 export async function notifyCount(env, body) {
   if (!pushReady(env)) return;
-  const kind = ["approved", "camera", "question", "offline"].includes(body.kind) ? body.kind : "count";
+  const kind = ["approved", "camera", "question", "offline", "sensitivity"].includes(body.kind) ? body.kind : "count";
   // A question and a stopped camera are not about a number of people, so
   // they are not held to one.
-  const count = kind === "question" || kind === "offline" ? 0 : Math.round(Number(body.count));
+  const count = ["question", "offline", "sensitivity"].includes(kind) ? 0 : Math.round(Number(body.count));
   if (!Number.isFinite(count) || count < 0) return;
   const capRaw = Math.round(Number(body.capacity));
   const capacity = Number.isFinite(capRaw) && capRaw > 0 && capRaw <= 1_000_000 ? capRaw : null;

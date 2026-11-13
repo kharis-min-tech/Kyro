@@ -110,7 +110,28 @@ check() {
 
 for attempt in 1 2 3; do
   echo "→ Deploying (attempt $attempt)"
-  npx wrangler deploy 2>&1 | grep -E "assets to upload|No updated|Version ID" | sed 's/^/   /'
+  # ── Why the whole output is kept ────────────────────────────────────────
+  #
+  # This used to pipe wrangler straight into grep, which threw away both its
+  # exit code and anything it had to say. A deploy that FAILED outright then
+  # looked exactly like one that had worked: three lines of progress, then
+  # six files missing, then "not everything landed — deploying again", then
+  # "✗ Files are still missing after 3 attempts". Everything pointed at the
+  # files, and nothing anywhere said that wrangler had refused.
+  #
+  # One real failure read that way for its whole run. The site went on
+  # serving the build before it, which is the one thing this script exists
+  # to notice.
+  log="$(mktemp)"
+  if ! npx wrangler deploy >"$log" 2>&1; then
+    echo "   ✗ wrangler could not deploy. What it said:"
+    sed 's/^/   | /' "$log"
+    rm -f "$log"
+    echo "✗ Nothing was deployed. The site is still serving the build before this one."
+    exit 1
+  fi
+  grep -E "assets to upload|No updated|Version ID" "$log" | sed 's/^/   /'
+  rm -f "$log"
   echo "→ Verifying what the server actually serves"
   if check; then
     # The pages are right. Now the live-cameras link, which lags behind.

@@ -57,7 +57,14 @@ function hub({ now = 40, sensitive = 40, careful = 35, setting = 0.3, seats = 0,
   store.set("live", live);
   store.set("counting", { count_confidence: setting });
   const h = Object.create(VenueHub.prototype);
-  h.ctx = { storage: { get: async (k) => store.get(k), put: async (k, v) => { store.set(k, v); }, delete: async (k) => { store.delete(k); } } };
+  h.told = [];
+  h.ctx = {
+    storage: { get: async (k) => store.get(k), put: async (k, v) => { store.set(k, v); }, delete: async (k) => { store.delete(k); } },
+    // Telling a phone is work that outlives the request. Here it is just
+    // noted, so a test can check that she IS told.
+    waitUntil: (p) => { h.told.push(p); },
+  };
+  h.env = {};
   h.store = store;
   const zones = Object.values(cams).map((c, i) => ({
     camera_id: c.camera_id, zone_name: c.zone_name, camera_name: c.name,
@@ -165,28 +172,125 @@ function hub({ now = 40, sensitive = 40, careful = 35, setting = 0.3, seats = 0,
   ok("7. and sent with the report", /at_sensitive: c\.atSensitive, at_careful: c\.atCareful,/.test(ctx));
   const worker = read("worker/venue.js");
   ok("7. the website keeps them", /at_sensitive: num\(c\.at_sensitive, 0, 10000\)/.test(worker));
-  ok("7. and the live figures carry the answer",
-     /sensitivity_hint: await this\.suggestSensitivity\(zones, doorPeople\)/.test(worker));
+  // Worked out where the door's figure and the rooms' are both in hand,
+  // and acted on there rather than offered to anybody.
+  ok("7. and the answer is reached where those figures are",
+     /await this\.maybeSetSensitivity\(await this\.suggestSensitivity\(zones, doorPeople\)\);/.test(worker));
 }
 
-// ── 8. It is on the card, with its reasoning and a way to refuse ─────────
+// ── 8. Kyro sets it itself ───────────────────────────────────────────────
+//
+// "to be honest, i have a lot on my hands, its better for you to do it
+// yourself, just let me know that you have changed it, so you can remove it
+// off my screen."
+//
+// So the control is gone and this does it — which means the person who
+// would have looked at the two figures and said "no, the back of the hall
+// is out of shot" is gone too. Everything that kept the suggestion cautious
+// has to hold on its own now.
 {
-  const card = read("dashboard/src/components/ui/CountingSensitivity.tsx");
-  ok("8. the card reads Kyro's answer", /sensitivity_hint/.test(card));
-  ok("8. and shows what it is reasoning from", /\{hint\.why\}/.test(card) && /\{hint\.then\}/.test(card));
-  ok("8. with one press to take it", /Use \{hint\.name\}/.test(card)
-     && /onClick=\{\(\) => choose\(hint\.setting!\)\}/.test(card));
-  // Nothing applies itself. The point of showing the two figures is that
-  // somebody can look at them and say no.
-  ok("8. and nothing applies itself", !/choose\(hint\.setting\);/.test(card)
-     && !/useEffect\([^)]*choose\(/.test(card));
-  // …and no button at all when no setting would help.
-  ok("8. no button when the people are simply not in shot",
-     /hint\.setting !== null && Math\.abs/.test(card));
-  // The old advice was to go and count the room by hand, which is the job
-  // Kyro is for.
-  ok("8. it no longer asks her to count the room herself",
-     !/Count the people in the room yourself/.test(card));
+  const wrong = () => hub({ now: 40, sensitive: 62, careful: 30 });
+  const t0 = 1_000_000;
+
+  // One reading is not a reason to move anything.
+  {
+    const { h, zones } = wrong();
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0);
+    ok("8. one reading changes nothing", (await h.counting()).count_confidence === 0.3);
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0 + 60_000);
+    ok("8. nor does a minute of it", (await h.counting()).count_confidence === 0.3);
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0 + 4 * 60_000);
+    ok("8. three minutes of the same answer does", (await h.counting()).count_confidence === 0.2,
+       `${(await h.counting()).count_confidence}`);
+  }
+
+  // …and it is written down, with the figures behind it.
+  {
+    const { h, zones } = wrong();
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0);
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0 + 4 * 60_000);
+    const note = h.store.get("sensitivity_set");
+    ok("8. the change is recorded", !!note && note.to === 0.2 && note.from === 0.3, JSON.stringify(note));
+    ok("8. with why", /78/.test(note.why) && /40/.test(note.why), note.why);
+    ok("8. and what it was before, so it can be put back", note.from === 0.3);
+    ok("8. and it joins a list rather than replacing it",
+       (h.store.get("sensitivity_log") ?? []).length === 1);
+  }
+
+  // Nothing moves twice in twenty minutes, whatever the figures do.
+  {
+    const { h, zones } = wrong();
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0);
+    await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0 + 4 * 60_000);
+    // Now it reads as over-counting, steadily, for four minutes.
+    const over = hub({ now: 95, sensitive: 110, careful: 74, setting: 0.2 });
+    over.h.store.set("sensitivity_set", h.store.get("sensitivity_set"));
+    const at = t0 + 5 * 60_000;
+    await over.h.maybeSetSensitivity(await over.h.suggestSensitivity(over.zones, 78), at);
+    await over.h.maybeSetSensitivity(await over.h.suggestSensitivity(over.zones, 78), at + 4 * 60_000);
+    ok("8. and it will not move again inside twenty minutes",
+       (await over.h.counting()).count_confidence === 0.2, `${(await over.h.counting()).count_confidence}`);
+    // Twenty minutes later it will.
+    const later = t0 + 30 * 60_000;
+    await over.h.maybeSetSensitivity(await over.h.suggestSensitivity(over.zones, 78), later);
+    await over.h.maybeSetSensitivity(await over.h.suggestSensitivity(over.zones, 78), later + 4 * 60_000);
+    ok("8. but it will once that is past",
+       (await over.h.counting()).count_confidence === 0.4, `${(await over.h.counting()).count_confidence}`);
+  }
+
+  /**
+   * An answer that keeps changing its mind moves nothing at all.
+   *
+   * The same building, minute by minute, reading "Sensitive" and then
+   * "nothing to say" and then "Sensitive" again — a hall where somebody
+   * walks a row, or the door is busy for a moment while the hall has not
+   * caught up. Three minutes means three minutes of the SAME answer.
+   */
+  {
+    const { h, zones } = wrong();
+    for (let i = 0; i < 40; i++) {
+      const hint = i % 2 === 0 ? await h.suggestSensitivity(zones, 78) : null;
+      await h.maybeSetSensitivity(hint, t0 + i * 60_000);
+    }
+    ok("8. an answer that keeps flipping moves nothing",
+       (await h.counting()).count_confidence === 0.3, `${(await h.counting()).count_confidence}`);
+    ok("8. …and nothing is written down about it", !h.store.get("sensitivity_set"));
+  }
+
+  // And it never acts where no setting would help.
+  {
+    const { h, zones } = hub({ now: 40, sensitive: 42, careful: 38 });
+    for (let i = 0; i < 20; i++) {
+      await h.maybeSetSensitivity(await h.suggestSensitivity(zones, 78), t0 + i * 60_000);
+    }
+    ok("8. and never where the people are simply not in shot",
+       (await h.counting()).count_confidence === 0.3 && !h.store.get("sensitivity_set"));
+  }
+}
+
+// ── 9. She is told, and can put it back ──────────────────────────────────
+{
+  const worker = read("worker/venue.js");
+  ok("9. the live figures carry what was changed and why",
+     /sensitivity_set: await \(async \(\) => \{/.test(worker));
+  ok("9. and it stops being shown after a few hours",
+     /Date\.now\(\) - n\.at < AUTO_SET_SHOW_MS/.test(worker));
+  ok("9. her phone is told too", /kind: "sensitivity"/.test(worker));
+  const index = read("worker/index.js");
+  ok("9. and that alert has something to say",
+     /Kyro adjusted the counting/.test(index)
+     && /"sensitivity"\]\.includes\(body\.kind\)/.test(index));
+
+  const card = read("dashboard/src/components/ui/AutoServices.tsx");
+  ok("9. the service card says what it did", /Kyro set the counting to/.test(card));
+  ok("9. with the reason it did it", /\{sens\.why\}/.test(card));
+  ok("9. and one press to put it back", /Put it back how it was/.test(card)
+     && /putBack\(sens\.from\)/.test(card));
+
+  const cameras = read("dashboard/src/app/cameras/page.tsx");
+  ok("9. and the setting is off her screen",
+     !/<CountingSensitivity/.test(cameras)
+     && !fs.existsSync(path.join(root, "dashboard/src/components/ui/CountingSensitivity.tsx")));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

@@ -87,18 +87,32 @@ const put = (v) => ({ json: async () => ({ count_confidence: v }) });
   ok("2. and the setting is untouched", (await h.counting()).count_confidence === 0.3);
 }
 
-// ── 3. The three buttons are inside what the server will take ─────────────
+// ── 3. The settings Kyro itself moves between are ones it will take ───────
+//
+// There were three buttons on a card; Kyro now moves between the two ends
+// itself and nobody presses anything. The values still have to agree: a
+// setting the chooser picks and the endpoint refuses would be a change that
+// silently never happened.
 {
-  const card = read("dashboard/src/components/ui/CountingSensitivity.tsx");
-  const vals = [...card.matchAll(/\{ v: ([\d.]+), name: "(\w+)"/g)].map((m) => [m[2], Number(m[1])]);
-  ok("3. there are three", vals.length === 3, JSON.stringify(vals));
+  const worker = read("worker/venue.js");
+  const vals = [
+    ["Sensitive", Number(/const SENSITIVE_CONFIDENCE = ([\d.]+);/.exec(worker)?.[1])],
+    ["Normal", Number(/const DEFAULT_COUNT_CONFIDENCE = ([\d.]+);/.exec(worker)?.[1])],
+    ["Careful", Number(/const CAREFUL_CONFIDENCE = ([\d.]+);/.exec(worker)?.[1])],
+  ];
+  ok("3. all three are written down", vals.every(([, v]) => Number.isFinite(v)), JSON.stringify(vals));
   const h = hub();
   for (const [name, v] of vals) {
     const res = await h.setCounting(put(v));
     ok(`3. "${name}" (${v}) is one the server accepts`, res.status === 200, `${res.status}`);
   }
-  ok("3. and Normal is the one the server starts at",
+  ok("3. and Normal is the one it starts at",
      vals.find(([n]) => n === "Normal")?.[1] === 0.3);
+  // The browser's own copy of the two ends has to match the server's.
+  const det = read("dashboard/src/lib/peopleDetector.ts");
+  ok("3. and the cameras measure at the same two ends",
+     new RegExp(`SENSITIVE_CONFIDENCE = ${vals[0][1]};`).test(det)
+     && new RegExp(`CAREFUL_CONFIDENCE = ${vals[2][1]};`).test(det));
 }
 
 // ── 4. Every counting browser is told, on its next report ─────────────────
