@@ -1870,7 +1870,16 @@ export default function CamerasPage() {
             both at the same room without saying so and everyone in it is
             counted twice — which is exactly what happens when the zone is left
             blank, because it then takes the camera's own name. */}
-        {(!error || edge) && !loading && sameRoomWarning && (
+        {/**
+          * > 0, not just "truthy".
+          *
+          * sameRoomWarning is how MANY cameras are each in their own zone,
+          * and it is 0 when there is nothing to warn about. `x && <jsx/>`
+          * with x === 0 does not render nothing — it renders the number
+          * itself. A bare 0 sat above the next card, on a page with no
+          * other explanation for it: "remove this, why is that there".
+          */}
+        {(!error || edge) && !loading && sameRoomWarning > 0 && (
           <div className="rounded-xl p-3 mb-4 flex items-start gap-2"
             style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
             <AlertCircle size={14} className="shrink-0 mt-0.5" style={{ color: "var(--accent-amber)" }} />
