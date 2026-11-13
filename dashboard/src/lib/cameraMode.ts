@@ -453,6 +453,11 @@ export interface CameraReport {
   /** The middle time a person stays in this camera's view, in seconds — how
    *  a doorway is told from a room. See typicalLifeS in personTracker.ts. */
   life_s?: number;
+  /** What this camera would count at either end of Counting sensitivity.
+   *  Only ever used to tell a cutoff in the wrong place from a camera that
+   *  cannot see the whole room. */
+  at_sensitive?: number;
+  at_careful?: number;
   /** Everyone it is following: this camera's own id for them, an appearance
    *  reading, and a face code while face matching is on. Never a picture. */
   seen?: { t: number; l: number[] | null; f: string | null; s?: string | null; q?: number }[];

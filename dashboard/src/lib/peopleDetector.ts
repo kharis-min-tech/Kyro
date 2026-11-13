@@ -40,6 +40,16 @@ export interface DetectOptions {
  *  tidy(), 0.3 gave the lowest headcount error; 0.2 counted many objects and
  *  body parts as people, 0.35+ started missing real people. Same as the Camera Box. */
 export const COUNT_CONFIDENCE = 0.3;
+/**
+ * The two ends of the Counting sensitivity setting.
+ *
+ * Named here, beside the cutoff they replace, so that the camera can say
+ * what it WOULD have counted at each — which is how Kyro works out for
+ * itself whether the setting is in the wrong place. See suggestSensitivity
+ * in worker/venue.js.
+ */
+export const SENSITIVE_CONFIDENCE = 0.2;
+export const CAREFUL_CONFIDENCE = 0.4;
 /** A box this sure or more can "contain" a part-of-a-person box (tidy()). */
 const PART_CONTAINER_MIN = 0.2;
 

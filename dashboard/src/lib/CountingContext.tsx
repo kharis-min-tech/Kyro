@@ -21,7 +21,7 @@ import {
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, holdFocus, refocus, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
-import { SteadyCount, COUNT_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
+import { SteadyCount, COUNT_CONFIDENCE, SENSITIVE_CONFIDENCE, CAREFUL_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
@@ -202,6 +202,9 @@ interface Cam {
    *  who has gone out of view can still be shown. See the report tick. */
   crops: Map<number, { at: number; crop: HTMLCanvasElement }>;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
+  /** How many this picture would have counted at either end of the
+   *  Counting sensitivity setting. See suggestSensitivity. */
+  atSensitive: number; atCareful: number;
   countedAt: number; secondsPerCount: number; error: string | null; lastPicture: number;
   /** When this camera last gave a picture, or first failed to. A camera can be
    *  open and still send nothing — a black tile that never explains itself. */
@@ -453,7 +456,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         c = {
           deviceId: d.deviceId, key, label: d.label || `Camera ${cams.current.size + 1}`,
           stream: null, video: null, grabCanvas: document.createElement("canvas"),
-          steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [],
+          steady: new SteadyCount(3), count: 0, peak: 0, people: [], rawPeople: [], atSensitive: 0, atCareful: 0,
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, tilesNoHelp: 0,
           isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
@@ -697,10 +700,22 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // notHeldBySomebody.
           // Shaped and scored like a person, not in a "don't count this"
           // area, and not a picture of people held up in front of the lens.
-          c.people = notHeldBySomebody(
+          const atCutoff = (bar: number) => notHeldBySomebody(
             outsideZones(
-              looksLikeAPerson(people, px.height, countConfidenceRef.current),
+              looksLikeAPerson(people, px.height, bar),
               zonesRef.current[c.key], px.width, px.height));
+          c.people = atCutoff(countConfidenceRef.current);
+          /**
+           * …and what it WOULD have counted at either end of the setting.
+           *
+           * The same pictures, the same shape test, the same ignore areas —
+           * only the "sure enough" bar moved. Two numbers, worked out from
+           * detections already in hand, and they are how Kyro can tell a
+           * cutoff in the wrong place from a camera that simply cannot see
+           * the whole room. See suggestSensitivity in worker/venue.js.
+           */
+          c.atSensitive = atCutoff(SENSITIVE_CONFIDENCE).length;
+          c.atCareful = atCutoff(CAREFUL_CONFIDENCE).length;
           const codes = await faceCodes(c, px);
           // What each person looks like — the colour of what they're wearing,
           // their build, how tall they are in the picture. Costs nothing (no
@@ -1098,6 +1113,15 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // really pointed at a door — which invents a new person for everyone
         // who walks past it. See typicalLifeS in personTracker.ts.
         life_s: c.tracker.typicalLifeS || undefined,
+        /**
+         * What this camera WOULD be counting at either end of the Counting
+         * sensitivity setting, so the website can work out whether the
+         * setting is in the wrong place — see suggestSensitivity.
+         *
+         * Two small numbers off detections already in hand. They are not a
+         * count of anybody: nothing uses them but the suggestion.
+         */
+        at_sensitive: c.atSensitive, at_careful: c.atCareful,
         // Which of this camera's seats are taken. A seat id and a person id
         // are different things: somebody who sits in five chairs during a
         // service is five seats and one person in the attendance register.

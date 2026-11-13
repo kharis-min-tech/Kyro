@@ -125,7 +125,8 @@ const put = (v) => ({ json: async () => ({ count_confidence: v }) });
 {
   const ctx = read("dashboard/src/lib/CountingContext.tsx");
   ok("5. the cutoff is what the counting filters on",
-     /looksLikeAPerson\(people, px\.height, countConfidenceRef\.current\)/.test(ctx));
+     /c\.people = atCutoff\(countConfidenceRef\.current\);/.test(ctx)
+     && /looksLikeAPerson\(people, px\.height, bar\)/.test(ctx));
 
   const H = 720;
   const hall = [];

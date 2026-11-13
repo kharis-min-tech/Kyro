@@ -139,6 +139,20 @@ const MOVEMENT_FRESH_MS = 15_000;
  */
 const FACE_MAX_AGE_MS = 12 * 60 * 60_000;
 const DEFAULT_COUNT_CONFIDENCE = 0.3;   // matches the camera computer's own default
+/** The two ends of the setting — see SENSITIVE_CONFIDENCE in peopleDetector.ts. */
+const SENSITIVE_CONFIDENCE = 0.2;
+const CAREFUL_CONFIDENCE = 0.4;
+/**
+ * What makes a gap worth mentioning, and what makes it worth blaming on the
+ * setting rather than on where the camera is pointed.
+ *
+ * A handful either way is ordinary: people are in doorways, behind pillars,
+ * halfway out of shot. Kyro only speaks up when the gap is bigger than
+ * that, AND when being less fussy would close a real share of it.
+ */
+const SUGGEST_SHORT_BY = 5;
+const SUGGEST_GAIN_AT_LEAST = 3;
+const SUGGEST_GAIN_SHARE = 0.4;
 const DELETED_KEPT_DAYS = 30;     // how long a deleted day can still be brought back
 /**
  * A picture older than this is not of now, and is not shown.
@@ -1295,6 +1309,11 @@ export class VenueHub extends DurableObject {
         // How a camera set as a room but pointed at a door is spotted — see
         // DOORWAY_LIFE_S.
         life_s: num(c.life_s, 0, 100000) || null,
+        // What this camera would be counting at either end of the Counting
+        // sensitivity setting. Read by suggestSensitivity and by nothing
+        // else: they are not a count of anybody.
+        at_sensitive: num(c.at_sensitive, 0, 10000),
+        at_careful: num(c.at_careful, 0, 10000),
         width: num(c.width, 0, 10000), height: num(c.height, 0, 10000), updated_at: now,
       };
       /**
@@ -3105,6 +3124,12 @@ export class VenueHub extends DurableObject {
       // as arriving twice, and the page should not pretend otherwise.
       face_matching: faceOn,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((hereNow / cap) * 1000) / 10 : 0,
+      /**
+       * Kyro's own reading of whether the Counting sensitivity is in the
+       * right place — see suggestSensitivity. null when it has nothing to
+       * say, which is most of the time.
+       */
+      sensitivity_hint: await this.suggestSensitivity(zones, doorPeople).catch(() => null),
       /**
        * Why these figures can be nought while a camera plainly sees people.
        *
@@ -4931,6 +4956,98 @@ export class VenueHub extends DurableObject {
   // ── How sure the AI must be before someone is counted ────────────────────
   // Lower = counts people it's less certain about (a soft or far-away picture,
   // e.g. through a wireless transmitter). Higher = only the obvious ones.
+
+  /**
+   * Kyro working out its own Counting sensitivity, and saying so.
+   *
+   * ── Why ────────────────────────────────────────────────────────────────
+   *
+   * The card tells somebody to count the room by hand, compare, and adjust.
+   * Counting the room by hand is the job Kyro is for, so in practice nobody
+   * does it and the setting never moves off Normal.
+   *
+   * Kyro already has a second opinion: a camera on the DOOR counts everyone
+   * who walks through, one or two at a time, close and face-on, and keeps
+   * its own record of different people. That is the nearest thing to a
+   * ground truth in the building, and it is free.
+   *
+   * ── The trap, which is the whole difficulty ─────────────────────────────
+   *
+   * "the room camera cannot see the whole room."
+   *
+   * So a room camera seeing far fewer people than the door has let in is
+   * NORMAL, and no sensitivity setting fixes it. Comparing the two numbers
+   * and suggesting "Sensitive" whenever the room is lower would suggest it
+   * for ever, in every church, and be wrong nearly every time.
+   *
+   * What tells the two apart is what the camera is THROWING AWAY. Each
+   * camera reports what it would have counted with the bar lower and with
+   * it higher — the same pictures, the same shape test, only the "sure
+   * enough" line moved. Then:
+   *
+   *   - If the room is short of the door, and moving the bar down would
+   *     close a real part of that gap, the bar is in the wrong place. There
+   *     are people in shot that Kyro is nearly sure about and is dropping.
+   *   - If moving the bar down would barely change the number, the people
+   *     are not in shot at all. That is a camera pointed at part of a hall,
+   *     and the honest answer is to say so rather than to offer a setting
+   *     that cannot help.
+   *
+   * Nothing is changed automatically. This produces a sentence and a
+   * figure; a person presses the button.
+   */
+  async suggestSensitivity(zones, doorPeople, now = Date.now()) {
+    const nowSetting = (await this.counting()).count_confidence;
+    const rooms = zones.filter((z) => z.location !== "entrance" && z.location !== "queue" && z.is_running);
+    if (!rooms.length) return null;
+    const live = await this.get("live", {});
+    const bands = rooms.map((z) => {
+      const l = live[z.camera_id] || {};
+      return { name: z.zone_name || z.camera_name, now: z.current || 0,
+               sensitive: l.at_sensitive || 0, careful: l.at_careful || 0 };
+    });
+    const seeingNow = bands.reduce((n, b) => n + b.now, 0);
+    const wouldSee = bands.reduce((n, b) => n + b.sensitive, 0);
+    const ifCareful = bands.reduce((n, b) => n + b.careful, 0);
+
+    /**
+     * Counting too many is the one Kyro can be sure of without a doorway:
+     * more different people than the building has seats cannot be right,
+     * whoever is counting. seatsInBuilding() is entered numbers only.
+     */
+    const seats = await this.seatsInBuilding();
+    if (seats > 0 && seeingNow > seats && nowSetting < CAREFUL_CONFIDENCE) {
+      return { setting: CAREFUL_CONFIDENCE, name: "Careful",
+               why: `the cameras can see ${seeingNow} people in a building with ${seats} seats`,
+               then: `Careful would make it ${ifCareful}` };
+    }
+    // Everything below needs the door's figure to compare against.
+    if (!doorPeople) return null;
+    const short = doorPeople - seeingNow;
+    if (short <= SUGGEST_SHORT_BY) {
+      // Counting MORE than walked in, by a margin a doorway cannot explain.
+      if (-short > SUGGEST_SHORT_BY && nowSetting < CAREFUL_CONFIDENCE) {
+        return { setting: CAREFUL_CONFIDENCE, name: "Careful",
+                 why: `the cameras can see ${seeingNow} people but only ${doorPeople} have come through the door`,
+                 then: `Careful would make it ${ifCareful}` };
+      }
+      return null;
+    }
+    if (nowSetting <= SENSITIVE_CONFIDENCE) return null;    // already as low as it goes
+    const wouldGain = wouldSee - seeingNow;
+    /**
+     * …and only if moving the bar actually closes a worthwhile part of the
+     * gap. Otherwise the people are not in shot, and a setting cannot help.
+     */
+    if (wouldGain < SUGGEST_GAIN_AT_LEAST || wouldGain < short * SUGGEST_GAIN_SHARE) {
+      return { setting: null, name: null,
+               why: `${bands.map((b) => b.name).join(" and ")} can see ${seeingNow} of the ${doorPeople} who have come in, and being less fussy would only find ${wouldGain} more`,
+               then: "The rest are not in shot — this is what the camera is pointed at, not how sure it is" };
+    }
+    return { setting: SENSITIVE_CONFIDENCE, name: "Sensitive",
+             why: `${doorPeople} have come through the door and the cameras can see ${seeingNow}, while dropping about ${wouldGain} more that they are nearly sure about`,
+             then: `Sensitive would make it ${wouldSee}` };
+  }
 
   async counting() {
     return await this.get("counting", { count_confidence: DEFAULT_COUNT_CONFIDENCE });
