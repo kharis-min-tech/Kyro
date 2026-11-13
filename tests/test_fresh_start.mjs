@@ -183,8 +183,11 @@ const day = [[...morning, ...afternoon]];
      && /Start again from nobody/.test(card));
 
   const services = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
+  // "the came in / went out figures" until "Entries" became a heading on
+  // that same card meaning something else — different people, not
+  // crossings. Two figures a hair apart in name is how they get confused.
   ok("the Services page asks too", /setConfirmFresh\(true\)/.test(services)
-     && /Start the came in \/ went out figures from zero\?/.test(services));
+     && /Start the arrivals and departures from zero\?/.test(services));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good");

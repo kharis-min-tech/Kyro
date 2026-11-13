@@ -240,7 +240,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * is deliberately NOT changed by it.
    */
   /**
-   * The figure to put under "Came in": the attendance every other page
+   * The figure to put under "Entries": the attendance every other page
    * shows, or the most seen at once as an honest floor — never the cameras'
    * tally of crossings, which counts one person over and over.
    */
@@ -682,7 +682,11 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               * session began is a figure nobody can check. The whole day is
               * still one click away, as it always was.
               */}
-            <StatTile label={`${showingSession && sessionFrom ? `Came in, since ${fmtTime(sessionFrom)}` : showingSession ? "Came in, this session" : "Came in, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
+            {/* One word for one figure, everywhere. The service card called
+                this "Came in" and the Sessions card called the same idea
+                "Entries": "this is meant to be the session structure [...]
+                so i dont know why its like this". */}
+            <StatTile label={`${showingSession && sessionFrom ? `Entries, since ${fmtTime(sessionFrom)}` : showingSession ? "Entries, this session" : "Entries, all day"}${unverified ? " (unverified)" : ""}`} swatch={ARRIVE}
               value={(held ?? attendanceShown ?? summary.totalArrived).toLocaleString()}
               sub={held != null
                 ? `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(attendance ?? summary.totalArrived).toLocaleString()}`

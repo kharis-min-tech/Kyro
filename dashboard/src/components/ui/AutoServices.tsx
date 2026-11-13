@@ -148,29 +148,29 @@ export function AutoServices() {
             </div>
             {nameBox(live)}
             {/**
-              * Four figures that answer four different questions.
+              * Four figures, under the same four headings as everywhere else.
               *
-              * "this structure needs to change, i dont know why at times but
-              * many times, the numbers are just all very different not the
-              * same etc."
+              * "this is meant to be the session structure [...] so i dont
+              * know why its like this" — this card and the Sessions page's
+              * card describe the same service, and described it in two
+              * different vocabularies: Here now / Busiest / Came in / Seats
+              * against Now / Peak / Entries / Capacity. Two structures for
+              * one thing is two things to learn, and it reads as two
+              * disagreeing answers rather than one answer in two places.
               *
-              * They are different because they are answers to different
-              * questions, and the card never said which. "Here now" is what
-              * the cameras can see this second; "Busiest" is the most ever
-              * seen at one moment; "Came in" is how many DIFFERENT people
-              * have been here all service, which only ever climbs; "Seats"
-              * is a fact about the building. Four numbers under four nouns,
-              * with nothing to say they were not four attempts at the same
-              * thing.
+              * So: the words the rest of Kyro already uses, in that order,
+              * four across.
               *
-              * So each says what it is, under it, in the fewest words that
-              * are true — and the line below says how they fit together,
-              * once, rather than being worked out again every time somebody
-              * looks at the card.
+              * They still answer four different questions — "Now" is this
+              * second, "Peak" is the most ever at one moment, "Entries" is
+              * how many DIFFERENT people have been in all service and only
+              * ever climbs, "Capacity" is a fact about the room — so each
+              * still says what it is underneath, which is what stopped them
+              * being read as four attempts at one number.
               */}
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <div>
-                <p className="text-xs text-gray-500">Here now</p>
+                <p className="text-xs text-gray-500">Now</p>
                 <p className="text-2xl font-bold text-white tabular-nums">{venue?.total_current ?? "–"}</p>
                 {/**
                   * A nought, beside a camera card reading 78.
@@ -197,7 +197,7 @@ export function AutoServices() {
                 )}
               </div>
               <div>
-                <p className="text-xs text-gray-500">Busiest</p>
+                <p className="text-xs text-gray-500">Peak</p>
                 <p className="text-2xl font-bold text-white tabular-nums">{live.peak}</p>
                 {/* "at " with nothing after it was what a peak of nobody
                     looked like: there is no moment to name until somebody
@@ -211,7 +211,7 @@ export function AutoServices() {
                   in needs to be shown too": it was on the AI Count page and
                   nowhere near the service it belongs to. */}
               <div>
-                <p className="text-xs text-gray-500">Came in</p>
+                <p className="text-xs text-gray-500">Entries</p>
                 <p className="text-2xl font-bold text-white tabular-nums">
                   {(venue as unknown as { people_seen_shown?: number; people_seen?: number } | null | undefined)?.people_seen_shown
                     ?? (venue as unknown as { people_seen?: number } | null | undefined)?.people_seen ?? "–"}
@@ -224,7 +224,7 @@ export function AutoServices() {
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500">Seats</p>
+                <p className="text-xs text-gray-500">Capacity</p>
                 <p className="text-2xl font-bold text-white tabular-nums">{venue?.total_capacity || "–"}</p>
                 {/* A dash here is not a missing figure, it is a question
                     nobody has answered — and without it "space left", "how
@@ -257,9 +257,9 @@ export function AutoServices() {
                 third is about the whole service, the fourth is about the
                 room. */}
             <p className="text-xs text-gray-500 leading-relaxed">
-              <strong className="text-gray-400">Here now</strong> and <strong className="text-gray-400">Busiest</strong> are
+              <strong className="text-gray-400">Now</strong> and <strong className="text-gray-400">Peak</strong> are
               moments — how many were in shot just now, and the most ever at once.{" "}
-              <strong className="text-gray-400">Came in</strong> is the whole service: different people, counted once each,
+              <strong className="text-gray-400">Entries</strong> is the whole service: different people, counted once each,
               so it only ever goes up. They are meant to differ.
             </p>
             {live.quiet_since && <p className="text-xs text-gray-400">The hall has been nearly empty since {time(live.quiet_since)} — the service ends by itself 15 minutes after that.</p>}
@@ -271,7 +271,7 @@ export function AutoServices() {
               <div className="rounded-xl px-3 py-2.5 flex flex-col gap-2"
                 style={{ background: "var(--bg-hover)", border: "1px solid var(--border-subtle)" }}>
                 <p className="text-xs font-semibold" style={{ color: "var(--text-primary)" }}>
-                  Start the came in / went out figures from zero?
+                  Start the arrivals and departures from zero?
                 </p>
                 <p className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
                   For a new session. <strong>Nothing is deleted</strong> — everything counted so far is kept, and
@@ -298,7 +298,7 @@ export function AutoServices() {
                 </button>
                 <button onClick={() => setConfirmFresh(true)} disabled={busy === "fresh" || confirmFresh}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-gray-700 hover:bg-gray-600 disabled:opacity-50"
-                  title="The came in / went out figures start again from zero. Every reading is kept.">
+                  title="The arrivals and departures start again from zero. Every reading is kept.">
                   <RotateCcw size={11} /> {busy === "fresh" ? "Starting fresh…" : "Start the in / out counts fresh"}
                 </button>
               </div>
@@ -321,7 +321,7 @@ export function AutoServices() {
                     the morning's are still there to look at. */}
                 <p className="text-xs text-gray-500">
                   Starts recording straight away, without waiting for the room to fill, and starts this session&apos;s
-                  <strong className="text-gray-400"> came in / went out</strong> figures from zero. Nothing already counted
+                  <strong className="text-gray-400"> arrivals and departures</strong> from zero. Nothing already counted
                   is deleted — the whole day is still on Analytics.
                 </p>
               </>

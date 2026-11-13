@@ -93,8 +93,9 @@ const day = [
   // The tiles carry the label too. They now also say WHICH stretch they
   // cover — "all day", or "this session" after a fresh start — so the check is
   // that both parts are there, not one fixed sentence.
+  // "Came in" until one figure was given one name across the pages.
   ok("the tiles say so as well",
-     /Came in, this session/.test(card) && /Came in, all day/.test(card)
+     /Entries, this session/.test(card) && /Entries, all day/.test(card)
      && /unverified \? " \(unverified\)" : ""/.test(card));
 
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");

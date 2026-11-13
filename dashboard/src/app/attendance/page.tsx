@@ -1572,7 +1572,7 @@ export default function AttendancePage() {
                 /* The attendance figure every other page shows, so this
                    card cannot disagree with them — and the most seen at
                    once as an honest floor when nothing can answer it. See
-                   the note on the Came in tile. */
+                   the note on the Entries tile. */
                 attendance={edge && isToday
                   ? (venueTotal as unknown as { people_seen_shown?: number; people_seen?: number } | null)?.people_seen_shown
                     ?? (venueTotal as unknown as { people_seen?: number } | null)?.people_seen ?? null

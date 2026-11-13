@@ -158,8 +158,10 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
 // ── The service card says what is missing, and what it costs ───────────────
 {
   const svc = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
+  // "Came in" until the two cards were made to speak one language — see
+  // test_one_structure_for_a_service.mjs.
   ok("the service shows how many different people came in",
-     /<p className="text-xs text-gray-500">Came in<\/p>/.test(svc)
+     /<p className="text-xs text-gray-500">Entries<\/p>/.test(svc)
      && /people_seen/.test(svc));
   ok("and a missing seat count says where to set it",
      /set it on Cameras/.test(svc));
