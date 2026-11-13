@@ -115,7 +115,9 @@ export default function NotificationsPage() {
     if (!API_URL) {
       // Cloudflare build: the Worker keeps per-device thresholds so count
       // alerts arrive as warning / critical at the right fullness.
-      if (await updateEdgeThresholds(warn, crit)) {
+      // …including the camera-offline switch, which until now was saved in
+      // this browser and governed nothing. See `offline` in worker/index.js.
+      if (await updateEdgeThresholds(warn, crit, offline)) {
         setSavedMsg("Saved");
         setTimeout(() => setSavedMsg(null), 2000);
       }

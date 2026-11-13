@@ -28,14 +28,18 @@ function deviceContext() {
   };
 }
 
-function storedThresholds(): { warn: number; crit: number } {
+function storedThresholds(): { warn: number; crit: number; offline: boolean } {
   try {
     const p = JSON.parse(localStorage.getItem(PREFS_KEY) ?? "{}");
     return {
       warn: typeof p.warn === "number" ? p.warn : 0.8,
       crit: typeof p.crit === "number" ? p.crit : 0.9,
+      // The "camera went offline" switch. It used to live only in this
+      // browser, governing an alert that had no sender — see `offline` in
+      // worker/index.js.
+      offline: typeof p.offline === "boolean" ? p.offline : true,
     };
-  } catch { return { warn: 0.8, crit: 0.9 }; }
+  } catch { return { warn: 0.8, crit: 0.9, offline: true }; }
 }
 
 async function currentSubscription(): Promise<PushSubscription | null> {
@@ -47,12 +51,16 @@ async function currentSubscription(): Promise<PushSubscription | null> {
 }
 
 /** Save this device in the Worker's list so it receives count alerts. */
-export async function registerEdgeDevice(sub: PushSubscription, thresholds = storedThresholds()): Promise<boolean> {
+export async function registerEdgeDevice(
+  sub: PushSubscription,
+  thresholds: { warn: number; crit: number; offline?: boolean } = storedThresholds(),
+): Promise<boolean> {
   try {
     const res = await fetch("/api/push/register", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscription: sub.toJSON(), warn: thresholds.warn, crit: thresholds.crit, ...deviceContext() }),
+      body: JSON.stringify({ subscription: sub.toJSON(), warn: thresholds.warn, crit: thresholds.crit,
+        offline: thresholds.offline ?? storedThresholds().offline, ...deviceContext() }),
     });
     return res.ok;
   } catch { return false; }
@@ -81,9 +89,9 @@ export async function setDemoAuto(choice: DemoAuto): Promise<boolean> {
 }
 
 /** Re-save this device with new thresholds (Notifications page sliders). */
-export async function updateEdgeThresholds(warn: number, crit: number): Promise<boolean> {
+export async function updateEdgeThresholds(warn: number, crit: number, offline?: boolean): Promise<boolean> {
   const sub = await currentSubscription();
-  return sub ? registerEdgeDevice(sub, { warn, crit }) : false;
+  return sub ? registerEdgeDevice(sub, { warn, crit, offline: offline ?? storedThresholds().offline }) : false;
 }
 
 /** This device's push endpoint, so the server can skip alerting the sender. */

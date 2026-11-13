@@ -422,6 +422,17 @@ async function pushRegister(request, env) {
     mode: body.mode === "live" || body.mode === "demo" ? body.mode : (prev.mode ?? "live"),
     tz: validTimeZone(body.tz) ? body.tz : (prev.tz ?? "UTC"),
     demo_auto: DEMO_AUTO_CHOICES.includes(body.demo_auto) ? body.demo_auto : (prev.demo_auto ?? "15"),
+    /**
+     * Whether this phone wants to be told a camera has stopped.
+     *
+     * The switch for it has been on the Notifications page all along,
+     * writing to the browser it was pressed in and governing nothing — a
+     * switch for an alert that had no sender. Now that the alert exists, the
+     * switch has something to govern, and it has to reach the server to do
+     * it: the choice belongs to the phone, and the phone is not there when
+     * the camera stops.
+     */
+    offline: typeof body.offline === "boolean" ? body.offline : (prev.offline ?? true),
     updated_at: Date.now(),
   };
   await env.SUBS.put(key, JSON.stringify(record), { expirationTtl: SUB_TTL_SECONDS });
@@ -466,6 +477,43 @@ function levelFor(fraction, warn, crit) {
 
 export function buildCountMessage(ev, sub) {
   const pct = ev.fraction === null ? "" : ` (${Math.round(ev.fraction * 100)}% full)`;
+  /**
+   * Two alerts the Notifications page has always listed and nothing has ever
+   * sent.
+   *
+   * ── What that page was promising ─────────────────────────────────────────
+   *
+   * "this page is not even working at all."
+   *
+   * It lists four rules. "Overcrowding" and "Filling up" are real, and were
+   * silent for a different reason — the thing that raises them was never
+   * called from anywhere. "AI review question" and "Camera went offline" had
+   * no sender at all, anywhere in Kyro, and the offline one even had a
+   * switch beside it that wrote to the browser and governed nothing.
+   *
+   * A page of switches for things that cannot happen is worse than a page
+   * with fewer switches.
+   */
+  if (ev.kind === "question") {
+    return {
+      title: "❓ Kyro needs a second opinion",
+      body: ev.zone ? `Something on ${ev.zone} it isn't sure about` : "Kyro has guessed, and wants it checked",
+      level: "info",
+      // One tag for all of them: five questions should light a phone once,
+      // not five times.
+      tag: "kyro-question",
+      url: "/attendance",
+    };
+  }
+  if (ev.kind === "offline") {
+    return {
+      title: "📷 A camera stopped",
+      body: `${ev.zone || "A camera"} is no longer sending anything to Kyro — nothing from it is being counted`,
+      level: "warning",
+      tag: `kyro-offline-${(ev.zone || "camera").toLowerCase()}`,
+      url: "/cameras",
+    };
+  }
   if (ev.kind === "approved") {
     return {
       title: "✅ Final count approved",
@@ -496,8 +544,10 @@ export function buildCountMessage(ev, sub) {
  */
 export async function notifyCount(env, body) {
   if (!pushReady(env)) return;
-  const kind = body.kind === "approved" ? "approved" : body.kind === "camera" ? "camera" : "count";
-  const count = Math.round(Number(body.count));
+  const kind = ["approved", "camera", "question", "offline"].includes(body.kind) ? body.kind : "count";
+  // A question and a stopped camera are not about a number of people, so
+  // they are not held to one.
+  const count = kind === "question" || kind === "offline" ? 0 : Math.round(Number(body.count));
   if (!Number.isFinite(count) || count < 0) return;
   const capRaw = Math.round(Number(body.capacity));
   const capacity = Number.isFinite(capRaw) && capRaw > 0 && capRaw <= 1_000_000 ? capRaw : null;
@@ -508,6 +558,8 @@ export async function notifyCount(env, body) {
   };
   const senderKey = typeof body.sender_endpoint === "string" ? await subKey(body.sender_endpoint) : null;
   let subs = (await allSubscriptions(env)).filter((s) => s.key !== senderKey && s.mode !== "demo");
+  // A phone that has switched the offline alert off does not get it.
+  if (kind === "offline") subs = subs.filter((s) => s.offline !== false);
   if (kind === "camera") {
     // Camera counts change all the time: only tell a phone when the room has
     // just reached that phone's own "filling up" or "almost full" level.

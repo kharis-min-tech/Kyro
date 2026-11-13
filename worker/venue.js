@@ -33,7 +33,9 @@ const num = (v, min, max) => {
 const OFFLINE_AFTER_MS = 45_000;  // no report for this long → camera shown offline
 const SAMPLE_EVERY_MS = 60_000;   // one history row per camera per minute
 const MAX_SNAPSHOT_BYTES = 120_000;   // a stored value is capped at 128 KB
-const ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
+const ALERT_GAP_MS = 10 * 60_000;
+/** …and between "Kyro has a question" alerts, for the same reason. */
+const ASK_ALERT_GAP_MS = 10 * 60_000; // per room, between "filling up" phone alerts
 const JOB_TTL_MS = 2 * 60_000;    // "Find cameras" / "Add this camera" requests (and any login in them) expire
 
 const MAX_SEATS = 900;            // per camera: a stored value is capped at 128 KB
@@ -1161,6 +1163,24 @@ export class VenueHub extends DurableObject {
       // picture is thrown away — a camera that is off has no picture of now,
       // and keeping yesterday's is how a page lies to somebody.
       if (c.status === "offline") {
+        /**
+         * …and tell the phones, which the Notifications page has promised
+         * since it was written.
+         *
+         * It lists "Camera went offline — a camera stopped sending data",
+         * with a switch beside it. Nothing anywhere has ever sent one. A
+         * camera stopping mid-service is the most useful thing a phone
+         * could say, and it was the one thing it could not.
+         *
+         * Only when it was actually counting a moment ago: a camera that is
+         * already off does not go off again, and a report full of offline
+         * cameras at the end of a service is somebody pressing stop.
+         */
+        if (live[camera_id] && live[camera_id].status !== "offline" && this.isOnline(live[camera_id])) {
+          this.ctx.waitUntil(notifyCount(this.env, {
+            kind: "offline", zone: cams[camera_id]?.zone_name || cams[camera_id]?.name || "A camera", count: 0,
+          }).catch(() => {}));
+        }
         live[camera_id] = { ...(live[camera_id] ?? {}), current: 0, status: "offline", updated_at: now };
         await this.ctx.storage.delete(`snap:${camera_id}`);
         // It is not failing: it is off. Nothing is left to report that it is
@@ -3829,6 +3849,23 @@ export class VenueHub extends DurableObject {
         }
       }
       await this.ctx.storage.put("questions", qs);
+      /**
+       * …and tell the phones there is something to answer.
+       *
+       * "AI review question — AI is unsure and needs your answer" has been
+       * on the Notifications page since it was written, with nothing
+       * anywhere to send it. Kyro asking a question nobody is told about is
+       * Kyro not asking.
+       *
+       * At most one in ten minutes, and one tag for all of them: five
+       * questions should light a phone once, not five times.
+       */
+      if (live > 0 && now - (this.toldAboutQuestions ?? 0) > ASK_ALERT_GAP_MS) {
+        this.toldAboutQuestions = now;
+        this.ctx.waitUntil(notifyCount(this.env, {
+          kind: "question", zone: "", count: 0,
+        }).catch(() => {}));
+      }
       this.wantPictures = wanted;
       this.wantPicturesAt = now;
     }
