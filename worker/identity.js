@@ -864,6 +864,41 @@ export class IdentityRegistry {
       if (best.look + help >= this.lookSame && clear) {
         this.stats.matchedByLook++;
         if (best.sameSeat) this.stats.helpedBySeat++;
+        /**
+         * Matched on a coat, in somebody else's chair: ask.
+         *
+         * ── What the measurement says ──────────────────────────────────────
+         *
+         * A hundred and fourteen people, a fifth of them dressed alike,
+         * three hundred and forty sightings. Of the register's sixty-three
+         * identity mistakes, FORTY-EIGHT came through this one line — a
+         * match made on appearance where the person had also apparently
+         * changed seat — and not one of them was ever asked about.
+         *
+         *   matched on look, same seat .... 126 sightings,  0% wrong
+         *   matched on look, moved seat ....  88 sightings, 55% wrong
+         *
+         * The seat is the difference, and it is not a small one. The whole
+         * of this file's reasoning is that appearance is weak evidence;
+         * sitting where they were sitting is the thing that corroborates
+         * it. Take that away and a "clear" appearance match is a coin
+         * toss — which is precisely what a question is for.
+         *
+         * Refusing the match instead would be no better: 48 wrong against
+         * 40 wrong. There is no right answer to be had from the pixels, and
+         * pretending otherwise is how the figure drifts in silence. So the
+         * match stands, as before, and somebody is asked.
+         *
+         * Only when they really have moved: p.seatKey is where this person
+         * was last sitting, and a first sighting has none.
+         */
+        const movingSeat = !!(o.seat && best.p.seatKey && best.p.seatKey !== `${cameraId}#${o.seat}`);
+        if (movingSeat && !faceReads.length) {
+          askAbout("same", best.p, {
+            score: Math.round(best.look * 1000) / 1000, had_face: false,
+            reason: "they look alike, but this is a different seat from the one they were in",
+          });
+        }
         return matched(this.touch(best.p.id, cameraId, o, now, w).id);
       }
       // Good, but not good enough to be sure. Attached and flagged rather
