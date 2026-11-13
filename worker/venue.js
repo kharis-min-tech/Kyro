@@ -165,14 +165,23 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  */
 export const VENUE_CODE = "venue-d5b379d2bd9b";
 /**
- * How many seats the main hall has, as the church has stated.
+ * A fixed seat count for this church used to live here.
  *
- * Here so that the one fact every sanity check depends on is never missing
- * again. Entered on the church's behalf at startup when nothing else has
- * answered the question — see the note beside that code — and overridden by
- * anybody who sets a seat count on the Cameras page, for good.
+ * "remove the idea of there being 114 seats now, like remove it completely."
+ *
+ * It was put in because the number had nowhere else to live: the field that
+ * should have held it was on a settings page nobody could find, then on a
+ * card a browser was too old to show, then behind a permission. None of that
+ * is true any more — it can be set from beside the figure it corrects — so a
+ * building's seat count has no business being written into the program that
+ * counts for every building.
+ *
+ * Seats are now only ever a number somebody entered. No number, no seat
+ * count: "Seats —", no hold, no "spaces left", and nothing pretending to
+ * know how full a room is. That is the honest answer to a question nobody
+ * has answered, and it is what the rest of this file already does
+ * everywhere else.
  */
-const SEATS_IN_THE_HALL = 114;
 // A browser says "still here" every 10 seconds and says goodbye when it is
 // closed or put away, so this only has to cover an ungraceful exit — a crash,
 // a flat battery, Wi-Fi dropping. Three missed hellos and it is treated as gone.
@@ -546,57 +555,25 @@ export class VenueHub extends DurableObject {
           changed = true;
         }
         /**
-         * The seats in the hall, put in on the church's behalf.
+         * …and taking any trace of it back off the cameras.
          *
-         * ── Why this is in the code and not in a form ───────────────────────
-         *
-         * "just cHANGE IT To 114."
-         *
-         * She told Kyro how many seats this room has six separate times, in
-         * the only channel she had, while the figure on her screen climbed
-         * from 110 to 270. Every version of the hold needs this one number
-         * and none of them ever got it: the field was on a settings page she
-         * could not find, then on a card her browser was too old to show,
-         * then behind a permission her login may not have had. The number was
-         * never in doubt. The form was the only thing standing between her
-         * and a figure that stopped lying to her congregation.
-         *
-         * So it is entered here, once, as though she had typed it — which is
-         * what should have happened an hour earlier.
-         *
-         * It is not a default and it is not a guess:
-         *   - it only ever runs when NO room camera has a capacity at all, so
-         *     the moment anybody sets one, by any route, this never fires
-         *     again;
-         *   - it never invents a room. With no camera on a room there is
-         *     nothing to seat, and nothing happens;
-         *   - it is marked "admin", because it IS somebody's answer, and the
-         *     Cameras page shows it as 114 where she can change it in a
-         *     second if the hall is ever re-chaired.
+         * A fixed seat count was once written onto every room camera, which
+         * doubled the building when two cameras watched one hall under two
+         * names. It is gone from the code; this takes it off the cameras of
+         * anybody who ran that version, once, and never touches a number
+         * somebody typed themselves — a capacity with a layout behind it, or
+         * one that does not match what was written, is theirs.
          */
-        /**
-         * …and taking it back off the cameras again.
-         *
-         * Writing 114 to every room camera was the wrong shape, and it broke
-         * in exactly the way everything else in this file breaks: two
-         * cameras watching one hall, under two different room names, each
-         * holding 114 seats — so Kyro decided the building seats 228, and
-         * the hold it was supposed to enable let 228 through.
-         *
-         * The seats are a fact about the BUILDING, so they live in one place
-         * (SEATS_IN_THE_HALL, read by seatsInBuilding) and are not copied
-         * onto anything that can be duplicated. Cleared once, so a number
-         * somebody types later is kept for good.
-         */
-        if (!(await ctx.storage.get("seats_off_cameras"))) {
+        if (!(await ctx.storage.get("seats_off_cameras_v2"))) {
+          const was = await ctx.storage.get("seats_once_written");
           for (const c of Object.values(cams)) {
             if (!c || c.capacity_from !== "admin") continue;
-            if (c.zone_capacity !== SEATS_IN_THE_HALL) continue;   // somebody's own number: leave it
+            if (!was || c.zone_capacity !== was) continue;
             c.zone_capacity = 0;
             c.capacity_from = null;
             changed = true;
           }
-          await ctx.storage.put("seats_off_cameras", true);
+          await ctx.storage.put("seats_off_cameras_v2", true);
         }
         if (changed) await ctx.storage.put("cameras", cams);
       }
@@ -614,11 +591,11 @@ export class VenueHub extends DurableObject {
    * "Average attendance" on the next page over both read 302, which is the
    * same number saying two different things on two screens.
    *
-   * Entered capacities first, a room at a time: two cameras on one hall take
+   * Entered capacities only, a room at a time: two cameras on one hall take
    * the fullest view of it, never the sum, and separate rooms add up. When
-   * nothing has been entered — which is every building whose cameras are all
-   * on doorways, since seats hang off a room camera — it falls back to what
-   * the church has stated. See SEATS_IN_THE_HALL.
+   * nothing has been entered, the answer is nothing — a room nobody has
+   * given a capacity cannot be checked against one, and "Seats —" is the
+   * honest answer to a question nobody has answered.
    */
   async seatsInBuilding() {
     const cams = await this.get("cameras", {});
@@ -630,8 +607,9 @@ export class VenueHub extends DurableObject {
       const room = (c.zone_name || c.name || c.camera_id).trim().toLowerCase();
       byRoom.set(room, Math.max(byRoom.get(room) ?? 0, c.zone_capacity));
     }
-    const entered = [...byRoom.values()].reduce((n, v) => n + v, 0);
-    return entered > 0 ? entered : SEATS_IN_THE_HALL;
+    // No number, no seat count. A room nobody has given a capacity cannot be
+    // checked against one, and saying so is the honest answer.
+    return [...byRoom.values()].reduce((n, v) => n + v, 0);
   }
 
   // Seat layouts and live seat states are kept one key PER CAMERA. A single
@@ -2594,24 +2572,17 @@ export class VenueHub extends DurableObject {
     const attendanceFrom = doorPeople > 0 ? "door" : this.register ? "rooms" : "cameras";
     const entered = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
     /**
-     * …and the seats the church has stated, when a room is being watched and
-     * nobody has typed a number.
+     * Seats are only ever a number somebody entered.
      *
-     * "so how do you fix it" — asked of a card reading Here now 0, Busiest 0,
-     * Came in 0, Seats —.
-     *
-     * The dash was the odd one out. Kyro already knew the hall holds 114: it
-     * has been checking the attendance against that number for a day. The
-     * Seats tile asked a narrower question — "has somebody typed a capacity
-     * against a room camera" — and answered honestly, which left one screen
-     * saying 114 and another saying nothing, about the same hall. That is
-     * the inconsistency she keeps finding, in its smallest possible form.
-     *
-     * Still only when a camera is actually watching a room. A building whose
-     * cameras are all on doorways has no room to seat, cannot say how full
-     * it is, and must not pretend otherwise — see the note on seatsHere.
+     * A fixed count for one church used to stand in when nothing had been
+     * entered — "remove the idea of there being 114 seats now, like remove
+     * it completely". With it gone, no number means no seat count: "Seats
+     * —", no hold at the seats, no "spaces left", and nothing claiming to
+     * know how full a room is. That is the honest answer to a question
+     * nobody has answered, and the control to answer it sits beside the
+     * figure it corrects.
      */
-    const cap = entered > 0 ? entered : rooms.length ? SEATS_IN_THE_HALL : 0;
+    const cap = entered;
     /**
      * The seats in the building, for checking the attendance figure against.
      *

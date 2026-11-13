@@ -261,18 +261,21 @@ function chairsChangeHands({ freeForReports, alike }) {
   ok("built from capacities somebody entered, never ones Kyro guessed",
      /const entered = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
   /**
-   * …and when nobody has typed one, the seats the church has STATED — but
-   * only while a camera is actually watching a room.
+   * …and when nobody has typed one, there is no seat count.
    *
-   * The Seats tile used to ask a narrower question than every other figure:
-   * "has somebody typed a capacity against a room camera". So one screen
-   * said 114 and another said nothing, about the same hall, which is the
-   * inconsistency she keeps finding in its smallest form.
+   * "remove the idea of there being 114 seats now, like remove it
+   * completely."
+   *
+   * A fixed count for one church used to stand in. It was put there because
+   * the number had nowhere else to live — the field was on a settings page
+   * nobody could find, then on a card a browser was too old to show, then
+   * behind a permission. None of that is true now, so one building's seat
+   * count has no business being written into the program that counts for
+   * every building.
    */
-  ok("and falls back to the seats the church has stated",
-     /const cap = entered > 0 \? entered : rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker));
-  ok("but never when no camera is watching a room",
-     /rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker));
+  ok("seats are only ever a number somebody entered", /const cap = entered;/.test(worker));
+  ok("and no church's seat count is written into the code",
+     !/SEATS_IN_THE_HALL/.test(worker));
   ok("the figure is never quietly capped at the seat count",
      !/people_seen: Math\.min/.test(worker));
   /**
@@ -303,8 +306,8 @@ function chairsChangeHands({ freeForReports, alike }) {
    * against a capacity of zero and let it through. Six rounds of "114 is
    * still not there", and the number had nowhere to live.
    */
-  ok("the seats fall back to what the church has stated about the building",
-     /const entered = \[\.\.\.byRoom\.values\(\)\]\.reduce\(\(n, v\) => n \+ v, 0\);\s*\n\s*return entered > 0 \? entered : SEATS_IN_THE_HALL;/.test(worker));
+  ok("no number entered means no seat count, rather than a guess",
+     /return \[\.\.\.byRoom\.values\(\)\]\.reduce\(\(n, v\) => n \+ v, 0\);/.test(worker));
   ok("and the hold is checked against that, not against a camera's capacity",
      /attendance_over_seats: seatsHere > 0 && attendance > seatsHere/.test(worker));
   // But NOT "spaces left" or "how full": a building with no camera on a room
@@ -483,41 +486,38 @@ function chairsChangeHands({ freeForReports, alike }) {
 // ── The number is in, without a form ────────────────────────────────────────
 
 /**
- * "just cHANGE IT To 114."
+ * "remove the idea of there being 114 seats now, like remove it completely."
  *
- * She told Kyro how many seats this room has six separate times, in the only
- * channel she had, while the figure on her screen climbed from 110 to 270.
- * Every version of the hold needs that one number and none of them ever got
- * it — the field was on a settings page she could not find, then on a card
- * her browser was too old to show, then behind a permission her login may not
+ * A fixed seat count for one church lived in the code for a day. It was put
+ * there because the number had nowhere else to live: the field that should
+ * have held it was on a settings page she could not find, then on a card her
+ * browser was too old to show, then behind a permission her login may not
  * have had. The number was never in doubt. The form was.
+ *
+ * All of that is fixed — it can be set from beside the figure it corrects —
+ * so the number goes back where it belongs, and the code goes back to
+ * knowing nothing about any particular building.
  */
 {
   const worker = fs.readFileSync(new URL("../worker/venue.js", import.meta.url), "utf8");
-  ok("the seats in the hall are written down where nothing can lose them",
-     /const SEATS_IN_THE_HALL = 114;/.test(worker));
+  ok("no seat count is written into the code", !/SEATS_IN_THE_HALL/.test(worker));
+  // Clearing one to zero is the fix; writing a number onto a camera is the
+  // bug, because two cameras on one hall then double the building.
+  ok("and no number is written onto a camera either",
+     !/c\.zone_capacity = [1-9]/.test(worker));
   /**
-   * …and it is NOT copied onto the cameras.
-   *
-   * Writing 114 to every room camera was the wrong shape, and it broke in
-   * exactly the way everything else here breaks: two cameras watching one
-   * hall, under two different room names, each holding 114 — so Kyro decided
-   * the building seats 228 and the hold let 228 through. A fact about the
-   * building lives in one place and is never copied onto anything that can
-   * be duplicated.
+   * Any copy already written onto somebody's cameras is taken back off —
+   * once, and never touching a number they typed themselves.
    */
-  ok("and it is never written onto a camera, where it would double",
-     !/c\.zone_capacity = SEATS_IN_THE_HALL/.test(worker));
-  ok("any copy that was already made is taken back off",
-     /if \(c\.zone_capacity !== SEATS_IN_THE_HALL\) continue;   \/\/ somebody's own number: leave it/.test(worker)
+  ok("a copy already written is taken back off",
+     /await ctx\.storage\.get\("seats_off_cameras_v2"\)/.test(worker)
      && /c\.zone_capacity = 0;/.test(worker));
-  ok("once only, so a number somebody types later is kept for good",
-     /if \(!\(await ctx\.storage\.get\("seats_off_cameras"\)\)\) \{/.test(worker)
-     && /await ctx\.storage\.put\("seats_off_cameras", true\);/.test(worker));
-  ok("and it is hers to change, for good, the moment she sets one",
-     /overridden by\s*\n \* anybody who sets a seat count on the Cameras page, for good\./.test(worker));
-  // The whole point: once it is in, the hold has something to hold against.
-  ok("so the hold finally has a number to answer to",
+  ok("…never touching a number somebody typed themselves",
+     /if \(!was \|\| c\.zone_capacity !== was\) continue;/.test(worker));
+  ok("once only, so a number typed later is kept for good",
+     /await ctx\.storage\.put\("seats_off_cameras_v2", true\);/.test(worker));
+  // And the hold still works the moment somebody gives it a number.
+  ok("the hold answers to a seat count as soon as there is one",
      /attendance_over_seats: seatsHere > 0 && attendance > seatsHere/.test(worker));
 }
 
