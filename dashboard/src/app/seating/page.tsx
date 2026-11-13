@@ -12,10 +12,22 @@ import { reservedApi, authApi, seatsResetApi, camerasApi, zonesApi, type ZoneDef
 import { SeatManager } from "@/components/ui/SeatManager";
 import { DEMO_MODE } from "@/lib/demo";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
-import { useEdgeVenue, useEdgeSeatStates, edgeVenueApi } from "@/lib/edgeVenue";
+import { useEdgeVenue, useEdgeSeatStates, useEdgeSnapshot, edgeVenueApi } from "@/lib/edgeVenue";
+import { closeUp, usableBox } from "@/lib/seatCloseUp";
 
 function isLiveMode(): boolean { if (typeof window === "undefined") return false; return localStorage.getItem("kyro_mode") === "live"; }
-const inDemoMode = () => typeof window !== "undefined" && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
+/**
+ * Demo mode — which is not the same thing as "there is no FastAPI backend".
+ *
+ * This read `!NEXT_PUBLIC_API_URL` as demo, and that variable is unset on
+ * every build that runs on Cloudflare — which is the live church one. So on
+ * the real site, running real cameras, this said demo, and the seat panel
+ * drew a diagram of coloured dots labelled SCHEMATIC instead of showing the
+ * camera: "i should be able to see the actual person and them on the seat
+ * not just a UI design".
+ */
+const inDemoMode = () => typeof window !== "undefined" && !isEdgeLive()
+  && (localStorage.getItem("kyro_mode") === "demo" || !process.env.NEXT_PUBLIC_API_URL);
 const userChoseDemo = () => typeof window !== "undefined" && localStorage.getItem("kyro_mode") === "demo";
 import { Sidebar } from "@/components/layout/Sidebar";
 import type { Camera, SeatState } from "@/types";
@@ -27,6 +39,12 @@ const CARD   = "var(--bg-card)";
 const CARD2  = "var(--bg-card)";
 const BORDER = "var(--border-subtle)";
 const GREEN  = "#00ff88";
+/**
+ * The picture every seat box is measured in.
+ *
+ * Not the camera's own size — the one the AI is given, which the seat finder
+ * works in and the worker stores boxes in. See SEAT_W in seatFinder.ts.
+ */
 
 const DOT_COLOURS: Record<string, string> = {
   occupied:           "#ff4d6d",  // red
@@ -508,6 +526,73 @@ function MiniSeatSchematic({ seat, allSeats }: { seat: SeatState; allSeats: Seat
   );
 }
 
+/**
+ * One seat, in the camera's own picture, with the person in it.
+ *
+ * "as i press one of the seats from the seat map, i should be able to see a
+ * live view/section, i should be able to see the actual person and them on
+ * the seat, not just a UI design."
+ *
+ * The panel showed the WHOLE camera view, which on a hall camera is a
+ * hundred and fourteen chairs in one small rectangle, and on the live site
+ * it showed neither — a diagram of coloured dots labelled SCHEMATIC, because
+ * of what inDemoMode() thought the live site was.
+ *
+ * Kyro already knows where every seat is in its camera's picture: that box
+ * is how it decides the seat is taken at all. So the picture is zoomed to
+ * that box and nothing else — the seat, its neighbours either side for
+ * bearings, and whoever is in it.
+ *
+ * The box is in the 1280×720 picture the AI is given, the same space the
+ * seat finder works in, so it is used as fractions and the real size of the
+ * photograph never comes into it. The sums are in lib/seatCloseUp.ts, where
+ * they can be checked.
+ */
+function SeatCloseUp({ src, bbox, state, height = 120 }: {
+  src: string;
+  bbox: [number, number, number, number];
+  state: string;
+  height?: number;
+}) {
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+  const hold = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = hold.current;
+    if (!el) return;
+    const read = () => setSize({ w: el.clientWidth, h: el.clientHeight });
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const v = size ? closeUp(bbox, size.w, size.h) : null;
+
+  return (
+    <div ref={hold} className="relative overflow-hidden w-full" style={{ height }}>
+      {v && (
+        <>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={src} alt="This seat" style={{
+            position: "absolute", maxWidth: "none",
+            width: v.picW, height: v.picH, left: v.left, top: v.top,
+          }} />
+          {/* The seat itself, drawn where Kyro believes it is — so a box in
+              the wrong place is visible rather than invisible. */}
+          <div style={{
+            position: "absolute",
+            left: v.boxLeft, top: v.boxTop, width: v.boxW, height: v.boxH,
+            border: `1.5px solid ${state === "occupied" ? "#ff4d6d" : GREEN}`,
+            borderRadius: 3,
+            boxShadow: "0 0 0 9999px rgba(0,0,0,0.45)",
+          }} />
+        </>
+      )}
+      {!v && <div style={{ width: "100%", height: "100%", background: "var(--bg-inset)" }} />}
+    </div>
+  );
+}
+
 // ─── Seat detail panel ────────────────────────────────────────────────────────
 function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClose }: {
   seat: SeatState;
@@ -523,6 +608,16 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
   const [snapshotSrc, setSnapshotSrc] = useState<string | null>(null);
   const [feedErrored, setFeedErrored] = useState(false);
   const [useSnapshotFallback, setUseSnapshotFallback] = useState(false);
+  /**
+   * On the live site the picture comes from the counting server — live video
+   * while the camera computer can send it, the latest photo otherwise. The
+   * two effects below talk to a FastAPI backend that the church's build does
+   * not have, which is why this panel has never shown a picture there.
+   */
+  const edge = isEdgeLive();
+  const { url: edgeUrl, live: edgeLive } = useEdgeSnapshot(edge ? cameraId : null, edge, 2000);
+  const shown = edge ? edgeUrl : snapshotSrc;
+  const noPicture = edge ? !edgeUrl : feedErrored;
 
   useEffect(() => { setName(seat.reserved_for ?? ""); setReserving(false); }, [seat.seat_id]);
 
@@ -530,14 +625,14 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
   // If it errors (backend down, wrong URL), fall back to the /snapshot
   // endpoint, refreshed every 2 seconds.
   useEffect(() => {
-    if (inDemoMode()) { setSnapshotSrc(null); return; }
+    if (inDemoMode() || edge) { setSnapshotSrc(null); return; }
     setFeedErrored(false);
     setUseSnapshotFallback(false);
     camerasApi.streamUrl(cameraId).then(setSnapshotSrc).catch(() => {});
-  }, [cameraId, seat.seat_id]);
+  }, [cameraId, seat.seat_id, edge]);
 
   useEffect(() => {
-    if (inDemoMode() || !useSnapshotFallback) return;
+    if (inDemoMode() || edge || !useSnapshotFallback) return;
     // A short-lived, watch-only token rather than the session token, which
     // used to be put in this URL and from there into every access log.
     const bust = async () => setSnapshotSrc(
@@ -562,13 +657,16 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
 
       {/* Camera feed — compact height */}
       <div className="mx-3 mt-3 rounded-lg overflow-hidden relative shrink-0"
-        style={{ height: 120, background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
-        {inDemoMode() || feedErrored ? (
+        style={{ height: 150, background: "var(--bg-inset)", border: `1px solid ${BORDER}` }}>
+        {inDemoMode() || noPicture ? (
           <MiniSeatSchematic seat={seat} allSeats={allSeats} />
-        ) : snapshotSrc ? (
+        ) : shown && edge && usableBox(seat.bbox) ? (
+          // The seat, not the whole hall. See SeatCloseUp.
+          <SeatCloseUp src={shown} bbox={seat.bbox} state={seat.state} height={150} />
+        ) : shown ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={snapshotSrc}
+            src={shown}
             alt="Live feed"
             className="w-full h-full object-cover"
             onError={() => {
@@ -584,11 +682,13 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
         <div className="absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded"
           style={{ background: "rgba(0,0,0,0.7)" }}>
           <span
-            className={inDemoMode() || feedErrored ? "" : "animate-pulse"}
-            style={{ width: 6, height: 6, borderRadius: "50%", background: inDemoMode() || feedErrored ? "#f59e0b" : GREEN, display: "inline-block" }}
+            className={inDemoMode() || noPicture ? "" : "animate-pulse"}
+            style={{ width: 6, height: 6, borderRadius: "50%", background: inDemoMode() || noPicture ? "#f59e0b" : GREEN, display: "inline-block" }}
           />
-          <span style={{ fontSize: 8, color: inDemoMode() || feedErrored ? "#f59e0b" : GREEN, fontWeight: 700 }}>
-            {inDemoMode() ? "SCHEMATIC" : feedErrored ? "OFFLINE" : "LIVE"}
+          <span style={{ fontSize: 8, color: inDemoMode() || noPicture ? "#f59e0b" : GREEN, fontWeight: 700 }}>
+            {/* "LIVE" means moving pictures are arriving. A photograph every
+                couple of seconds is honest about being a photograph. */}
+            {inDemoMode() ? "SCHEMATIC" : noPicture ? "CAMERA OFF" : edge && !edgeLive ? "PHOTO" : "LIVE"}
           </span>
         </div>
       </div>
