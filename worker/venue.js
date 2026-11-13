@@ -205,7 +205,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-a5b4044b802b";
+export const VENUE_CODE = "venue-7835e3392169";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -2212,9 +2212,13 @@ export class VenueHub extends DurableObject {
       // answered from a cache made before this.
       this.movementCache = null;
     } catch (e) {
-      this.wrong("Register of people",
+      // waitUntil, not a floating promise: this function cannot await, and
+      // a promise left running loose after the reply has gone may simply be
+      // cancelled — so the one line that says the figures are now too high
+      // might never be written anywhere at all.
+      this.ctx.waitUntil(this.wrong("Register of people",
         "Corrected who was here, but couldn't take the old entries out of the day's figures — those will read too high until this clears",
-        e && e.message).catch(() => {});
+        e && e.message).catch(() => {}));
     }
     return n;
   }
@@ -2259,7 +2263,7 @@ export class VenueHub extends DurableObject {
     } catch (e) {
       // Attendance quietly reverting to counting flicker is exactly the
       // failure this is here to end, so it is never swallowed.
-      this.wrong("Register of people", "Couldn't write down who was seen — attendance will fall back to the cameras' own tallies", e && e.message).catch(() => {});
+      this.ctx.waitUntil(this.wrong("Register of people", "Couldn't write down who was seen — attendance will fall back to the cameras' own tallies", e && e.message).catch(() => {}));
     }
   }
 
@@ -2354,7 +2358,7 @@ export class VenueHub extends DurableObject {
     } catch (e) {
       // Failing to delete biometric data is not something to carry on quietly
       // past. It goes where it will be seen, like everything else.
-      this.wrong("Face data", "Couldn't delete the face codes for a finished service", e && e.message).catch(() => {});
+      this.ctx.waitUntil(this.wrong("Face data", "Couldn't delete the face codes for a finished service", e && e.message).catch(() => {}));
     }
   }
 
@@ -3872,6 +3876,64 @@ export class VenueHub extends DurableObject {
   // "is this a seat?"). Questions wait here for an admin / operator; the answer
   // goes back to that camera computer on its next report.
 
+  /**
+   * Questions that are over, taken out of the way.
+   *
+   * ── Why this had to exist ──────────────────────────────────────────────
+   *
+   * "questions not working."
+   *
+   * Kyro asks at most twelve "is this the same person?" questions at a
+   * time, which is right: five questions should not become fifty. The
+   * count was of every unanswered question in storage — and nothing ever
+   * took one out of storage. A question stops being SHOWN after ten
+   * minutes; it was never removed.
+   *
+   * So twelve questions nobody happened to answer in their ten minutes sat
+   * there for the rest of the day, invisible, holding the gate shut. The
+   * thirteenth was never asked, nor any after it, and the panel was empty
+   * for the plainest possible reason: there was nothing in it, and there
+   * never would be again.
+   *
+   * Simulated over a morning: forty chances to ask, twelve questions made,
+   * none of them on screen, and the last twenty-eight never put at all.
+   *
+   * ── What goes ──────────────────────────────────────────────────────────
+   *
+   * A question past its time with no answer, and its pictures with it —
+   * those are crops of people, kept only to be looked at once, and keeping
+   * them past the question that justified them is the thing the face rules
+   * exist to prevent. An answered one goes too: what was learned from it
+   * is already written down elsewhere (see learnFromAnswer), and the
+   * question itself is spent.
+   */
+  async tidyQuestions(qs, now = Date.now()) {
+    const nowS = now / 1000;
+    let changed = false;
+    for (const [id, q] of Object.entries(qs)) {
+      const ttl = q.review_type === "same_chair_question" ? CHAIR_QUESTION_TTL_MS : QUESTION_TTL_MS;
+      const over = nowS - (q.created_at ?? 0) > ttl / 1000;
+      if (!q.answer && !over) continue;
+      // An answered one is kept just long enough for the page that answered
+      // it to stop showing it.
+      if (q.answer && now - (q.answered_at ?? 0) < 60_000) continue;
+      delete qs[id];
+      changed = true;
+      await this.ctx.storage.delete(`qsnap:${id}`);
+      await this.ctx.storage.delete(`qsnap:${id}:a`);
+      await this.ctx.storage.delete(`qsnap:${id}:b`);
+    }
+    return changed;
+  }
+
+  /** How many questions of one kind are actually waiting for somebody. */
+  waitingQuestions(qs, type, now = Date.now()) {
+    const nowS = now / 1000;
+    const ttl = type === "same_chair_question" ? CHAIR_QUESTION_TTL_MS : QUESTION_TTL_MS;
+    return Object.values(qs).filter((q) =>
+      q.review_type === type && !q.answer && nowS - (q.created_at ?? 0) <= ttl / 1000).length;
+  }
+
   async addQuestions(list) {
     const qs = await this.get("questions", {});
     for (const q of list) qs[q.review_id] = q;
@@ -3918,7 +3980,10 @@ export class VenueHub extends DurableObject {
     const asks = this.register?.takeAsks?.() ?? [];
     if (asks.length) {
       const qs = await this.get("questions", {});
-      let live = Object.values(qs).filter((q) => q.review_type === "same_person_question" && !q.answer).length;
+      // The ones that are over, out of the way first — or they hold the
+      // gate below shut for the rest of the day. See tidyQuestions.
+      await this.tidyQuestions(qs, now);     // written with the block below
+      let live = this.waitingQuestions(qs, "same_person_question", now);
       for (const a of asks) {
         if (live >= MOST_ASKS) break;
         const id = `${a.kind === "person" ? "isperson" : "same"}-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
@@ -4067,6 +4132,7 @@ export class VenueHub extends DurableObject {
       }
     }
     const qs = await this.get("questions", {});
+    await this.tidyQuestions(qs, now);
     const asked = await this.get("chairs_asked", {});
     /**
      * Only ever ask for a picture that is still wanted.
@@ -4081,7 +4147,7 @@ export class VenueHub extends DurableObject {
     const stillWanted = () => (this.chairWants ?? [])
       .filter((w) => qs[w.id] && !qs[w.id].answer && !qs[w.id].sides?.[w.side]);
     if (!pairs.length) return stillWanted();
-    let live = Object.values(qs).filter((q) => q.review_type === "same_chair_question" && !q.answer).length;
+    let live = this.waitingQuestions(qs, "same_chair_question", now);
     const want = [];
     for (const p of pairs) {
       if (live >= 2) break;                    // two at a time, never a list
@@ -4155,6 +4221,7 @@ export class VenueHub extends DurableObject {
    */
   async askAboutSeats(asks, cams, now) {
     const qs = await this.get("questions", {});
+    await this.tidyQuestions(qs, now);
     const asked = await this.get("seats_asked", {});
     const want = [];
     let added = 0;
@@ -4192,7 +4259,11 @@ export class VenueHub extends DurableObject {
 
   async listQuestions(role) {
     const now = Date.now() / 1000;
-    return Object.values(await this.get("questions", {}))
+    const qs = await this.get("questions", {});
+    // Reading the list is the commonest thing that happens to it, so it is
+    // also the surest moment to take out what is over.
+    if (await this.tidyQuestions(qs)) await this.ctx.storage.put("questions", qs);
+    return Object.values(qs)
       .filter((q) => !q.answer && (role === "admin" || q.target_role !== "admin")
         && now - q.created_at < (q.review_type === "same_chair_question" ? CHAIR_QUESTION_TTL_MS : QUESTION_TTL_MS) / 1000)
       // "Is this the same person?" without the two pictures is two names and
