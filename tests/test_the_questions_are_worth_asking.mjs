@@ -224,6 +224,35 @@ for (const [name, r] of scenes) {
   ok("6. and nothing is left stranded", reg.asks.length === 0, `${reg.asks.length} left`);
 }
 
+// ── 7. A question is never shown after it has stopped mattering ──────────
+//
+// "when i answer the questions, it brings no value to the system."
+//
+// The flattest version of that was true by arithmetic. A question was shown
+// for ten minutes; the link it corrects — a camera's track, back to the
+// person it was filed under — is forgotten after five. So for the whole
+// second half of every question's life, answering it did nothing, and the
+// page said "Noted." exactly as it does when something happens.
+{
+  const identity = fs.readFileSync(path.join(root, "worker/identity.js"), "utf8");
+  const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
+  const trackLink = /export const TRACK_LINK_MS = (\d+) \* 60_000;/.exec(identity);
+  const shown = /const QUESTION_TTL_MS = (\d+) \* 60_000;/.exec(worker);
+  ok("7. both times are written down", !!trackLink && !!shown,
+     `${trackLink?.[1]} / ${shown?.[1]}`);
+  const canAct = Number(trackLink[1]), onScreen = Number(shown[1]);
+  ok("7. a question is not shown longer than it can be acted on",
+     onScreen < canAct, `shown ${onScreen} min, can be acted on for ${canAct} min`);
+  ok("7. with a minute in hand for the answer to make the trip",
+     canAct - onScreen >= 1, `${canAct - onScreen} min of margin`);
+  // …and when one does arrive too late, it is told so.
+  ok("7. an answer that changed nothing says so",
+     /stale: true/.test(worker));
+  const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/SamePerson.tsx"), "utf8");
+  ok("7. and the page passes that on rather than thanking her",
+     /r\.stale \? "That one had already moved on/.test(card));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} failed` : "\nAll good");
 process.exit(fails ? 1 : 0);

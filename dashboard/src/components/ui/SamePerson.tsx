@@ -134,14 +134,18 @@ export function SamePerson() {
   const answer = useCallback(async (q: Ask, a: string) => {
     setBusy(q.review_id); setErr(null);
     try {
-      const r = await edgeFetch<{ action?: string; people?: number; agreed?: boolean }>(
+      const r = await edgeFetch<{ action?: string; people?: number; agreed?: boolean; stale?: boolean }>(
         `/api/live/questions/${encodeURIComponent(q.review_id)}/answer`,
         { method: "POST", body: JSON.stringify({ answer: a }) });
       // Say what the answer actually did. "Thanks" tells nobody anything; the
       // point of answering is that the figure changes, so the figure is what
       // is reported back.
       setSaid(
-        r.agreed ? "Kyro had that right already — nothing changed."
+        // An answer that arrived too late to be acted on is told the truth
+        // rather than thanked. See QUESTION_TTL_MS in worker/venue.js for
+        // why this should now be rare.
+        r.stale ? "That one had already moved on — nothing was changed. Kyro will ask again if it comes up."
+          : r.agreed ? "Kyro had that right already — nothing changed."
           : r.action === "merged" ? `Taken off: counted as one person. ${r.people} different people this service.`
           : r.action === "split" ? `Counted as two. ${r.people} different people this service.`
           : r.action === "removed" ? `Taken off the count, and off today's figures. ${r.people} different people this service — and anything that looks like it won't be counted again.`

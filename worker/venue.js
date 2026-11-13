@@ -87,7 +87,30 @@ function serviceName(ms) {
   const date = new Intl.DateTimeFormat("en-GB", { timeZone: tz, day: "numeric", month: "short" }).format(new Date(ms));
   return `${day} ${part} service · ${date}`;
 }
-const QUESTION_TTL_MS = 10 * 60_000;  // unanswered AI questions stay listed this long
+/**
+ * How long an unanswered question stays on the page.
+ *
+ * ── Why it is four minutes and not ten ─────────────────────────────────────
+ *
+ * "when i answer the questions, it brings no value to the system."
+ *
+ * It was ten. The thing a same-person answer CORRECTS is the link between a
+ * camera's track and the person it was filed under, and the register forgets
+ * that link after five minutes (TRACK_LINK_MS in worker/identity.js). So for
+ * the whole second half of every question's life, answering it did nothing
+ * whatever — answerAsk could not find the track, changed nothing, and the
+ * page said "Noted." exactly as it does when something happened.
+ *
+ * Half of every question on that panel was a dead button, and there was no
+ * way to tell which half.
+ *
+ * So a question is shown only while the answer can still be acted on, with a
+ * minute in hand for the answer to make the trip. Fewer questions are put,
+ * and the ones that are put do something — and since the doubts behind them
+ * now queue rather than being discarded, the next is asked the moment this
+ * one goes.
+ */
+const QUESTION_TTL_MS = 4 * 60_000;
 /**
  * …except "is this the same chair?", which is not perishable.
  *
@@ -4432,6 +4455,17 @@ export class VenueHub extends DurableObject {
       await this.ctx.storage.delete(`qsnap:${id}:a`);
       await this.ctx.storage.delete(`qsnap:${id}:b`);
       await this.ctx.storage.delete(`qsnap:${id}`);
+      /**
+       * …and if it could not be acted on, say so.
+       *
+       * An answer that arrives after the register has forgotten the track it
+       * was about changes nothing. That used to come back indistinguishable
+       * from an answer that worked, which is the worst possible way to treat
+       * somebody who has just done what was asked of them.
+       */
+      if (said !== null && result && !result.changed && !result.agreed) {
+        return json({ ok: true, ...result, stale: true });
+      }
       return json({ ok: true, ...(result ?? {}) });
     }
 
