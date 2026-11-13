@@ -1354,11 +1354,9 @@ export default function LiveCamerasPage() {
           <div className="rounded-2xl p-8 text-center" style={{ background: CARD_BG, border: `1px solid ${BORDER}` }}>
             <Video size={32} className="text-gray-700 mx-auto mb-3" />
             <p className="text-sm text-gray-400">{edge ? "No cameras connected yet." : "No cameras registered yet."}</p>
-            <p className="text-xs text-gray-600 mt-1">
-              {edge
-                ? "Pair your camera computer on the Cameras page — cameras plugged into it appear here by themselves."
-                : "Go to the Cameras page to add your first camera."}
-            </p>
+            {!edge && (
+              <p className="text-xs text-gray-600 mt-1">Go to the Cameras page to add your first camera.</p>
+            )}
           </div>
         )}
 

@@ -522,13 +522,6 @@ export default function ManualCountPage() {
           </div>
         )}
 
-        <p className="text-xs" style={{ color: "var(--text-faint)" }}>
-          Drafts are saved as you enter them but only approved counts count toward
-          the service total.{" "}
-          {shared
-            ? "In Live mode counts are shared: every usher's phone adds to the same list, and it refreshes every 10 seconds."
-            : "In Demo mode counts stay on this device."}
-        </p>
       </main>
 
       {/* Approve-all modal — the end-of-service sign-off that locks today's

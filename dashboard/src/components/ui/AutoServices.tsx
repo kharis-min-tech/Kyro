@@ -316,14 +316,6 @@ export function AutoServices() {
                   className="self-start flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50">
                   <Play size={11} /> {busy === "start" ? "Starting…" : "Start a session now"}
                 </button>
-                {/* Said plainly, because it changes the figures on Analytics:
-                    the session's arrivals and departures begin at zero, and
-                    the morning's are still there to look at. */}
-                <p className="text-xs text-gray-500">
-                  Starts recording straight away, without waiting for the room to fill, and starts this session&apos;s
-                  <strong className="text-gray-400"> arrivals and departures</strong> from zero. Nothing already counted
-                  is deleted — the whole day is still on Analytics.
-                </p>
               </>
             )}
           </div>

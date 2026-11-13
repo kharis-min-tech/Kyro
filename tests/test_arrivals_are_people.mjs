@@ -228,15 +228,26 @@ const at = (h, m = 0) => day + h * HOUR + m * 60_000;
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");
   ok("the card prefers it over the cameras' tallies",
      /const usingRegister = !!movement && movement\.arrived\.length > 0 && !unverified;/.test(card));
-  // Said in four words rather than three sentences — "too much writing" —
-  // with the full version on hover. It still has to be SAID: the two figures
-  // can be very far apart (one person at a desk counted as eleven), so which
-  // one is on screen is not optional.
-  ok("and says plainly which one it is showing",
-     /\{usingRegister \? "Each person counted once" : "Camera tallies — crossings, not people"\}/.test(card));
+  /**
+   * It says so when it is counting people, and says nothing when it is not.
+   *
+   * It used to say "Camera tallies — crossings, not people" the rest of the
+   * time, with the long version on hover. Asked for, and then asked to be
+   * taken off again — a caveat printed every time anybody looks at a figure
+   * stops being read and starts being furniture.
+   *
+   * What made it worth printing has gone anyway: the attendance tile no
+   * longer falls back to crossings at all (see the note on it), so the
+   * figure it was warning about is not on that card to be misread.
+   */
+  ok("and says so when each person is counted once",
+     /\{usingRegister && \(/.test(card) && /Each person counted once/.test(card));
   ok("with the long version kept where it costs nothing",
-     /From the register of people: each person counted once/.test(card)
-     && /which count crossings rather than people/.test(card));
+     /From the register of people: each person counted once/.test(card));
+  ok("and nothing printed about crossings every time somebody looks",
+     // What is on the screen, not the note beside it saying what was.
+     !/Camera tallies — crossings, not people/.test(
+       card.replace(/\{\/\*[\s\S]*?\*\/\}/g, "").replace(/\/\*[\s\S]*?\*\//g, "")));
   const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
   ok("the page hands it over", /movement=\{edge && isToday \?/.test(page));
 }

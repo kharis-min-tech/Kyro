@@ -310,12 +310,17 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               words rather than three sentences. They can be very far apart
               (one person at a desk counted as eleven), so it still has to be
               said; it does not have to be explained every time. */}
-          <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3 }}
-            title={usingRegister
-              ? "From the register of people: each person counted once, however often a camera becomes sure of them again."
-              : "From the cameras' own tallies, which count crossings rather than people — somebody who steps out and comes back counts again. The register takes over once a service is running."}>
-            {usingRegister ? "Each person counted once" : "Camera tallies — crossings, not people"}
-          </p>
+          {/* "Camera tallies — crossings, not people" was here when the
+              register had nothing to say. Taken off: it was a caveat about
+              where a figure came from, every time anybody looked at it. The
+              figure is still the cameras' tally and the hover still says so
+              where it matters. */}
+          {usingRegister && (
+            <p style={{ fontSize: 12, color: "var(--text-tertiary)", marginTop: 3 }}
+              title="From the register of people: each person counted once, however often a camera becomes sure of them again.">
+              Each person counted once
+            </p>
+          )}
           {/* Which stretch of the day these figures cover. Said out loud, so a
               session's figures are never mistaken for the day's. */}
           {sessionFrom && (
@@ -488,9 +493,7 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
 
       {!hasData ? (
         <p className="px-5 py-8 text-center" style={{ fontSize: 13, color: "var(--text-faint)" }}>
-          {showingSession
-            ? `Nobody counted in or out since this session started at ${fmtTime(sessionFrom!)}. New arrivals appear here within a minute or two.`
-            : emptyMessage}
+          {emptyMessage}
         </p>
       ) : (
         <div className="p-5 flex flex-col gap-4">

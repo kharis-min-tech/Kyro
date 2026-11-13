@@ -74,15 +74,14 @@ export function FaceMatching() {
           <ScanFace size={18} className={p.face_matching ? "text-green-400 shrink-0 mt-0.5" : "text-gray-500 shrink-0 mt-0.5"} />
           <div className="flex-1 min-w-0">
             <p className="text-sm text-white font-medium">{p.face_matching ? "On" : "Off"}</p>
-            <p className="text-xs text-gray-400 leading-relaxed mt-0.5">
-              Stops the same person being counted twice: once if they step out and come back (so they aren&apos;t a new arrival),
-              and once if two cameras both see them. Kyro keeps no photos of faces and doesn&apos;t know who anyone is — each face
-              becomes a list of numbers. Those numbers are kept for the length of the service and deleted when it ends, so that
-              Kyro can still recognise people after a restart; before, a restart lost them and people already counted were
-              counted again. They are deleted when the service ends, when a different service starts, the moment face matching
-              is switched off, and in any case within twelve hours — whether or not a service ever ended properly.
-              Adds a 10 MB download the first time.
-            </p>
+            {/* Eight lines explaining what face matching does and what
+                becomes of the face codes used to be here. Taken off.
+
+                What it does is not news by the twentieth time of reading,
+                and the one fact worth keeping in front of somebody — that
+                the codes go when the service ends — is on the service card
+                itself while face matching is on, which is where anybody
+                would look for it. See AutoServices.tsx. */}
             {p.face_matching && (
               <p className="text-xs text-gray-500 mt-1.5">
                 Switched on by {p.switched_on_by} · {when(p.switched_on_at)} · right now {twice} {twice === 1 ? "person is" : "people are"} seen
