@@ -1,7 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, Play, Square, Users } from "lucide-react";
 import { useCounting } from "@/lib/CountingContext";
+import { setAsideCameras, useThisCamera } from "@/lib/cameraMode";
 import { CameraPreview } from "@/components/ui/CameraPreview";
 
 /**
@@ -18,6 +20,21 @@ export function CountingCard() {
   const { phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, seenTwice, secondsPerCount, start, stop, demo, streamFor } = c;
   const on = phase === "running";
   const busy = phase === "starting";
+  /** Cameras plugged in that Kyro is not using, going by their names — see
+   *  setAsideCameras. Looked for alongside the usual scan. */
+  const [setAside, setSetAside] = useState<{ device: MediaDeviceInfo; why: string }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    const look = () => { setAsideCameras().then((l) => { if (alive) setSetAside(l); }).catch(() => {}); };
+    look();
+    const t = setInterval(look, 10_000);
+    navigator.mediaDevices?.addEventListener?.("devicechange", look);
+    return () => { alive = false; clearInterval(t); navigator.mediaDevices?.removeEventListener?.("devicechange", look); };
+  }, []);
+  const useThisOne = (deviceId: string) => {
+    useThisCamera(deviceId);
+    setSetAside((l) => l.filter((x) => x.device.deviceId !== deviceId));
+  };
   const live = views.filter((v) => v.streaming);
   /**
    * Slow is a judgement about the JOB, not a number.
@@ -123,6 +140,40 @@ export function CountingCard() {
           <div className="flex items-start gap-2 rounded-lg px-3 py-2" style={{ background: "rgba(239,68,68,0.08)" }}>
             <AlertTriangle size={13} className="text-red-400 shrink-0 mt-0.5" />
             <p className="text-xs text-red-300 leading-relaxed">{error}</p>
+          </div>
+        )}
+
+        {/**
+          * Cameras Kyro has set aside, and a way to use one anyway.
+          *
+          * "not working" — about a wireless transmitter. Kyro drops a camera
+          * whose NAME looks like a laptop lid, a phone or a virtual camera,
+          * which is right nearly always. It did it silently, and that is the
+          * problem: a receiver named "… Virtual …", which several capture
+          * devices and transmitter receivers are, simply never appeared,
+          * with nothing anywhere to say one had been set aside or why.
+          *
+          * Kyro guessing wrong about a name should cost one click.
+          */}
+        {setAside.length > 0 && (
+          <div className="rounded-xl px-3 py-2.5 flex flex-col gap-1.5"
+            style={{ background: "var(--bg-inset)", border: "1px solid var(--border-subtle)" }}>
+            <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+              {setAside.length === 1 ? "One camera is" : `${setAside.length} cameras are`} plugged in that Kyro is
+              not using, going by {setAside.length === 1 ? "its name" : "their names"}:
+            </p>
+            {setAside.map((c) => (
+              <div key={c.device.deviceId} className="flex items-center justify-between gap-2">
+                <span className="text-xs min-w-0 truncate" style={{ color: "var(--text-tertiary)" }}>
+                  {c.device.label || "Unnamed camera"} — {c.why}
+                </span>
+                <button type="button" onClick={() => useThisOne(c.device.deviceId)}
+                  className="shrink-0 px-2 py-1 rounded-md text-xs font-medium"
+                  style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                  Use this one
+                </button>
+              </div>
+            ))}
           </div>
         )}
 

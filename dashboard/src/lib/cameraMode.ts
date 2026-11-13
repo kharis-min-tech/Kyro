@@ -361,11 +361,58 @@ export async function openCameraAnySize(deviceId: string): Promise<MediaStream> 
 }
 
 const NOT_A_ROOM_CAMERA = /facetime|integrated|built-?in|truevision|iphone|ipad|desk view|virtual|obs/i;
+/** Cameras somebody has said to use anyway, in spite of their name. */
+const USE_ANYWAY_KEY = "kyro_use_camera_anyway";
+
+function useAnyway(): string[] {
+  try { return JSON.parse(localStorage.getItem(USE_ANYWAY_KEY) ?? "[]"); } catch { return []; }
+}
+/** "Use this one anyway" — see setAsideCameras for why this exists. */
+export function useThisCamera(deviceId: string): void {
+  try {
+    const now = useAnyway();
+    if (!now.includes(deviceId)) localStorage.setItem(USE_ANYWAY_KEY, JSON.stringify([...now, deviceId].slice(-8)));
+  } catch { /* fine without it */ }
+}
 
 export async function listCameras(): Promise<MediaDeviceInfo[]> {
   const all = await navigator.mediaDevices.enumerateDevices();
+  const allowed = useAnyway();
   // Never the computer's own built-in camera, a phone, or a virtual camera — only cameras plugged in for counting.
-  return all.filter((d) => d.kind === "videoinput" && d.deviceId && !NOT_A_ROOM_CAMERA.test(d.label));
+  return all.filter((d) => d.kind === "videoinput" && d.deviceId
+    && (!NOT_A_ROOM_CAMERA.test(d.label) || allowed.includes(d.deviceId)));
+}
+
+/**
+ * The cameras Kyro has set aside, and why.
+ *
+ * ── Why hiding them silently was wrong ─────────────────────────────────────
+ *
+ * "not working" — about a wireless transmitter.
+ *
+ * Kyro drops a camera whose NAME looks like a laptop lid, a phone or a
+ * virtual camera, which is right nearly always: nobody counts a
+ * congregation on a FaceTime camera. It did it silently, and that is the
+ * problem. A receiver named "... Virtual ..." — and several capture devices
+ * and transmitter receivers are — simply never appeared, with nothing
+ * anywhere to say a camera had been set aside or why.
+ *
+ * So they are listed, with the reason, and with a way to say "use this one
+ * anyway". Kyro guessing wrong about a name should cost one click, not an
+ * evening.
+ */
+export async function setAsideCameras(): Promise<{ device: MediaDeviceInfo; why: string }[]> {
+  const all = await navigator.mediaDevices.enumerateDevices();
+  const allowed = useAnyway();
+  return all
+    .filter((d) => d.kind === "videoinput" && d.deviceId
+      && NOT_A_ROOM_CAMERA.test(d.label) && !allowed.includes(d.deviceId))
+    .map((d) => ({
+      device: d,
+      why: /facetime|integrated|built-?in|truevision|desk view/i.test(d.label) ? "built into this computer"
+        : /iphone|ipad/i.test(d.label) ? "a phone or tablet"
+        : "a virtual camera, not a real one",
+    }));
 }
 
 /** A stable short key for a camera on this browser (the device id is long and private). */
