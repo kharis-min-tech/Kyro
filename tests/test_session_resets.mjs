@@ -162,8 +162,11 @@ function herEvening({ trips, cams = ["cam1"], oneRoom = true, stay = 5 }) {
 {
   ok("there is one place that ends a session", /async endSession\(now = Date\.now\(\)\) \{/.test(worker));
   ok("it writes the service into the record", /if \(live\) await this\.finishService\(live, now\);/.test(worker));
+  // The window widened when ending a service also made the doorways forget
+  // who they had counted — those entries hold face codes, and face data
+  // lives for one service.
   ok("and moves the starting line, so 'this session' starts at nothing",
-     /async endSession\(now = Date\.now\(\)\) \{[\s\S]{0,400}?await this\.freshStart\(now, false\);/.test(worker));
+     /async endSession\(now = Date\.now\(\)\) \{[\s\S]{0,1200}?await this\.freshStart\(now, false\);/.test(worker));
   ok("ending a service by hand goes through it",
      /if \(!live \|\| live\.id !== id\) return json\(\{ error: "That service isn't running" \}, 404\);\s*\n\s*await this\.endSession\(Date\.now\(\)\);/.test(worker));
   ok("and so does the last camera being switched off",

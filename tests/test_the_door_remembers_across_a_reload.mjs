@@ -124,7 +124,11 @@ const cross = (tr, who, t, from, to) => {
 // ── Kept with the service, and only ever sent when it is needed ────────────
 {
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
-  ok("the website keeps it against the service", /const key = `door_known:\$\{camera_id\}`;/.test(worker)
+  // It is written in parts now — one value stopped at about three hundred
+  // people with faces on, and threw, taking the whole report with it. See
+  // test_the_door_remembers_everybody.mjs.
+  ok("the website keeps it against the service",
+     /const had = await this\.doorKnown\(camera_id\);/.test(worker)
      && /had\.service === service \? had\.people : \[\]/.test(worker));
   // faceOn is report()'s own name for it; faceOk is the same question asked
   // in rememberPeople, and using that name here was a ReferenceError on
@@ -132,13 +136,17 @@ const cross = (tr, who, t, from, to) => {
   ok("a face is only kept while face matching is on",
      /f: faceOn && typeof k\.f === "string" \? k\.f : null,/.test(worker));
   ok("…and only handed back while it still is",
-     /had\.people\.map\(\(k\) => \(\{ \.\.\.k, f: null \}\)\)/.test(worker));
+     /fits\.map\(\(k\) => \(\{ \.\.\.k, f: null \}\)\)/.test(worker));
   ok("it is handed back when a browser has started again, not on every report",
      /handBackRemembered\.add\(camera_id\);/.test(worker)
      && /for \(const camera_id of handBackRemembered\)/.test(worker));
   ok("and only to the computer whose camera it is",
      /if \(!camera_id\.startsWith\(`\$\{device\.id\}:`\)\) continue;/.test(worker));
-  ok("it cannot grow without limit", /const MOST_DOOR_REMEMBERED = 800;/.test(worker));
+  // The ceiling is about people now rather than bytes, and is set where a
+  // cathedral would not reach it. What is handed BACK is still 800, which
+  // is all the browser keeps.
+  ok("it cannot grow without limit", /const MOST_DOOR_REMEMBERED = 20_000;/.test(worker)
+     && /const MOST_HANDED_BACK = 800;/.test(worker));
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   ok("only a doorway sends one", /\.\.\.\(c\.isDoor \? \{ remembered: c\.tracker\.takeNewlyRemembered\(\)/.test(ctx));
   ok("and only the people it has newly learned", /takeNewlyRemembered\(\)\.slice\(0, 25\)/.test(ctx));

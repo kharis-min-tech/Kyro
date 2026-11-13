@@ -55,7 +55,34 @@ const DOORWAY_LIFE_S = 25;
  * The same ceiling the browser keeps, so everything handed back fits where
  * it is going. Eight hundred is more than any one door sees in a morning.
  */
-const MOST_DOOR_REMEMBERED = 800;
+const MOST_DOOR_REMEMBERED = 20_000;
+/**
+ * …and how many of them fit in one part of it.
+ *
+ * ── The ceiling this replaces ──────────────────────────────────────────────
+ *
+ * The note above used to say eight hundred was more than any one door sees
+ * in a morning, and that it was "the same ceiling the browser keeps, so
+ * everything handed back fits where it is going". Neither was the dangerous
+ * part. The dangerous part was arithmetic: with face matching ON a single
+ * remembered person costs about 427 bytes, so eight hundred of them is
+ * 334 KB — and one stored value holds 128.
+ *
+ *     200 people .....  83 KB ✓        400 people ..... 167 KB ✗
+ *                                      800 people ..... 334 KB ✗
+ *
+ * So at roughly three hundred people through a door, with faces on, the
+ * write threw. It is not inside a try, so it took the WHOLE report down
+ * with it — "counts are not reaching Kyro" — and every camera on that
+ * computer stopped being counted until the service changed.
+ *
+ * Split into parts, the ceiling is about people rather than bytes, and it
+ * is set where a cathedral would not reach it.
+ */
+const DOOR_PART = 200;
+/** What a restarting browser is handed back — it keeps MOST_REMEMBERED
+ *  (800) and throws the rest away, so more than that is a wasted megabyte. */
+const MOST_HANDED_BACK = 800;
 const SERVICE_START_PEOPLE = 5;   // this many people in the venue …
 const SERVICE_START_MS = 2 * 60_000;   // … for this long = a service has started
 const SERVICE_END_PEOPLE = 3;     // fewer than this …
@@ -228,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-7835e3392169";
+export const VENUE_CODE = "venue-88b89dde0f39";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -1375,8 +1402,7 @@ export class VenueHub extends DurableObject {
        * service, like the faces, and goes when the service does.
        */
       if (service && Array.isArray(c.remembered) && c.remembered.length) {
-        const key = `door_known:${camera_id}`;
-        const had = (await this.get(key, null)) ?? { service, people: [] };
+        const had = await this.doorKnown(camera_id);
         // A different service is a different congregation; nothing carries.
         const list = had.service === service ? had.people : [];
         for (const k of c.remembered.slice(0, 25)) {
@@ -1392,9 +1418,22 @@ export class VenueHub extends DurableObject {
             at: num(k.at, 0, Date.now() + 60_000) || now,
           });
         }
-        // The same ceiling the browser keeps, so what comes back always fits.
         if (list.length > MOST_DOOR_REMEMBERED) list.splice(0, list.length - MOST_DOOR_REMEMBERED);
-        await this.ctx.storage.put(key, { service, people: list });
+        /**
+         * Written in parts, and never allowed to take the report down.
+         *
+         * It is not in anybody's interest for a door's memory to stop a
+         * camera being counted: the worst a failure here can do on its own
+         * is count somebody twice, and that is a far smaller thing than
+         * counting nobody at all.
+         */
+        try {
+          await this.saveDoorKnown(camera_id, service, list);
+        } catch (e) {
+          await this.wrong("Doorway",
+            "Couldn't write down who the door has already counted, so somebody who goes out and comes back may be counted twice",
+            e && e.message);
+        }
       }
       /**
        * Chairs Kyro has found and cannot settle, turned into questions.
@@ -1718,13 +1757,22 @@ export class VenueHub extends DurableObject {
         const out = {};
         for (const camera_id of handBackRemembered) {
           if (!camera_id.startsWith(`${device.id}:`)) continue;
-          const had = await this.get(`door_known:${camera_id}`, null);
+          const had = await this.doorKnown(camera_id);
           if (!had || had.service !== service || !had.people?.length) continue;
+          /**
+           * The newest ones, as many as the browser will actually keep.
+           *
+           * It holds MOST_REMEMBERED of them and splices the oldest off the
+           * front, so sending more than that is a megabyte of faces over
+           * the wire to be dropped on arrival — and the ones that WOULD be
+           * dropped are the oldest, which is what this sends last.
+           */
+          const fits = had.people.slice(-MOST_HANDED_BACK);
           out[camera_id.slice(device.id.length + 1)] = faceOn
-            ? had.people
+            ? fits
             // Face matching switched off since: the coats may come back, the
             // faces may not.
-            : had.people.map((k) => ({ ...k, f: null }));
+            : fits.map((k) => ({ ...k, f: null }));
         }
         return out;
       })(),
@@ -2474,6 +2522,35 @@ export class VenueHub extends DurableObject {
     const head = await this.get("register", null);
     for (let i = 0; i < (head?.parts ?? 0); i++) await this.ctx.storage.delete(`register:${i}`);
     await this.ctx.storage.delete("register");
+  }
+
+  /** The doorway's record of who it has counted, however many that is. */
+  async doorKnown(camera_id) {
+    const head = await this.get(`door_known:${camera_id}`, null);
+    if (!head) return { service: null, people: [] };
+    if (!head.parts) return head;                      // written before this was split up
+    const people = [];
+    for (let i = 0; i < head.parts; i++) {
+      const part = await this.get(`door_known:${camera_id}:${i}`, null);
+      if (Array.isArray(part)) people.push(...part);
+    }
+    return { service: head.service, people };
+  }
+
+  async saveDoorKnown(camera_id, service, people) {
+    const was = (await this.get(`door_known:${camera_id}`, null))?.parts ?? 0;
+    const parts = Math.ceil(people.length / DOOR_PART);
+    for (let i = 0; i < parts; i++) {
+      await this.ctx.storage.put(`door_known:${camera_id}:${i}`, people.slice(i * DOOR_PART, (i + 1) * DOOR_PART));
+    }
+    await this.ctx.storage.put(`door_known:${camera_id}`, { service, parts, people: [] });
+    for (let i = parts; i < was; i++) await this.ctx.storage.delete(`door_known:${camera_id}:${i}`);
+  }
+
+  async forgetDoorKnown(camera_id) {
+    const head = await this.get(`door_known:${camera_id}`, null);
+    for (let i = 0; i < (head?.parts ?? 0); i++) await this.ctx.storage.delete(`door_known:${camera_id}:${i}`);
+    await this.ctx.storage.delete(`door_known:${camera_id}`);
   }
 
   async theBuilding() {
@@ -5176,6 +5253,19 @@ export class VenueHub extends DurableObject {
   async endSession(now = Date.now()) {
     const live = await this.get("service_live", null);
     if (live) await this.finishService(live, now);
+    /**
+     * …and the doorways forget who they counted.
+     *
+     * Those entries hold face codes. The rule for face data is that it is
+     * kept for the length of a service and deleted when it ends, and the
+     * register's copy has always gone at this moment — the door's had no
+     * such moment at all. It was simply ignored once the service id stopped
+     * matching, and sat in storage, faces and all, until a later service
+     * happened to write over it.
+     */
+    for (const c of Object.values(await this.get("cameras", {}))) {
+      if (c?.camera_id) await this.forgetDoorKnown(c.camera_id).catch(() => {});
+    }
     await this.ctx.storage.put("service_state", { busy_since: null, quiet_since: null });
     await this.freshStart(now, false);
     this.recentTotals = [];
