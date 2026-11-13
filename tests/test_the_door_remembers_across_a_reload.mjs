@@ -148,8 +148,14 @@ const cross = (tr, who, t, from, to) => {
   ok("it cannot grow without limit", /const MOST_DOOR_REMEMBERED = 20_000;/.test(worker)
      && /const MOST_HANDED_BACK = 800;/.test(worker));
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
-  ok("only a doorway sends one", /\.\.\.\(c\.isDoor \? \{ remembered: c\.tracker\.takeNewlyRemembered\(\)/.test(ctx));
-  ok("and only the people it has newly learned", /takeNewlyRemembered\(\)\.slice\(0, 25\)/.test(ctx));
+  ok("only a doorway sends one", /\.\.\.\(c\.isDoor \? \{ remembered: c\.tracker\.takeNewlyRemembered\(25\)/.test(ctx));
+  // It used to drain the whole queue and send the first twenty-five, and
+  // the rest were dropped with their tracks already flagged as kept — so a
+  // busy minute at a door vanished from the website's record for good. It
+  // asks for twenty-five now and the rest wait. See
+  // test_nothing_is_taken_and_dropped.mjs.
+  ok("and only the people it has newly learned, with the rest left waiting",
+     /takeNewlyRemembered\(25\)\.map/.test(ctx) && !/takeNewlyRemembered\(\)\.slice/.test(ctx));
   ok("the browser takes it back exactly once", /if \(!back\?\.length \|\| c\.gotRemembered\) continue;/.test(ctx));
 }
 

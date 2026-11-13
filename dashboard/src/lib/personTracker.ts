@@ -859,10 +859,28 @@ export class PersonTracker {
    * Drained rather than read, so each person travels once.
    */
   private freshlyKnown: Known[] = [];
-  takeNewlyRemembered(): Known[] {
-    const out = this.freshlyKnown;
-    this.freshlyKnown = [];
-    return out;
+  /**
+   * The people this doorway has newly counted, for the website to keep.
+   *
+   * Takes AT MOST `limit` of them and leaves the rest where they are.
+   *
+   * It used to empty the list and hand back all of it — and the caller sent
+   * the first twenty-five. Everything past the twenty-fifth was dropped on
+   * the floor, and `kept` had already been set on those tracks so they were
+   * never offered again. A busy minute at a door therefore lost people from
+   * the website's record of who it had already counted, and every one of
+   * them was counted afresh after the next reload.
+   *
+   * The same shape of mistake as the asks that were taken and discarded,
+   * and as the thirteenth question that waited for nobody.
+   */
+  takeNewlyRemembered(limit = Infinity): Known[] {
+    if (!Number.isFinite(limit) || this.freshlyKnown.length <= limit) {
+      const all = this.freshlyKnown;
+      this.freshlyKnown = [];
+      return all;
+    }
+    return this.freshlyKnown.splice(0, limit);
   }
   /** Put back what was kept, after a reload. Added to whatever this tracker
    *  has already learned since it started, never replacing it. */

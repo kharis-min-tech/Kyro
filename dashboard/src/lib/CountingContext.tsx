@@ -1262,7 +1262,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
          * the only camera that keeps one. A face travels as numbers, the
          * same as everywhere else here, and only while face matching is on.
          */
-        ...(c.isDoor ? { remembered: c.tracker.takeNewlyRemembered().slice(0, 25).map((k) => ({
+        // Twenty-five at a time, and the rest WAIT — they used to be drained
+        // and thrown away. See takeNewlyRemembered.
+        ...(c.isDoor ? { remembered: c.tracker.takeNewlyRemembered(25).map((k) => ({
           l: k.look ? [k.look.top[0], k.look.top[1], k.look.top[2],
                        k.look.bottom[0], k.look.bottom[1], k.look.bottom[2],
                        k.look.shape, k.look.height].map((v) => Math.round(v * 1000) / 1000) : null,
