@@ -610,13 +610,43 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
           </p>
           {gridBlocks.length > 0 && (
             <div className="flex flex-col gap-1">
-              <p className="text-xs font-medium text-gray-400">Blocks added ({gridSeatCount} seats total):</p>
+              <p className="text-xs font-medium text-gray-400">
+                Blocks added ({gridSeatCount} seats total) — change any of these and press Save:
+              </p>
+              {/**
+                * A block you have already drawn can be CHANGED.
+                *
+                * "when i chang try and change the number from the grid, it
+                * dosent save."
+                *
+                * Exactly right, and not in the way it looked. The Rows and
+                * Seats per row boxes at the top are settings for the NEXT
+                * block drawn; a block already on the canvas took no notice
+                * of them, and the only thing that could be done to one was
+                * delete it and draw it again. So changing 20 to 18 changed
+                * nothing, and nothing said why.
+                *
+                * The numbers live on the block now, where the block is.
+                */}
               {gridBlocks.map((b, i) => (
-                <div key={i} className="flex items-center justify-between bg-gray-800 rounded-lg px-3 py-2 text-xs">
-                  <span className="text-white">{b.section}</span>
-                  <span className="text-gray-400">{b.rows} rows × {b.seatsPerRow} seats = <strong className="text-indigo-300">{b.rows * b.seatsPerRow}</strong></span>
+                <div key={i} className="flex items-center justify-between gap-2 bg-gray-800 rounded-lg px-3 py-2 text-xs">
+                  <input value={b.section}
+                    onChange={(e) => setGridBlocks((prev) => prev.map((x, j) => j === i ? { ...x, section: e.target.value } : x))}
+                    className="bg-gray-900 border border-gray-700 text-white rounded px-2 py-1 w-28 min-w-0" />
+                  <span className="flex items-center gap-1 text-gray-400 shrink-0">
+                    <input type="number" min={1} max={200} value={b.rows}
+                      onChange={(e) => setGridBlocks((prev) => prev.map((x, j) => j === i
+                        ? { ...x, rows: Math.max(1, Math.min(200, Number(e.target.value) || 1)) } : x))}
+                      className="bg-gray-900 border border-gray-700 text-white rounded px-2 py-1 w-14 tabular-nums" />
+                    rows ×
+                    <input type="number" min={1} max={200} value={b.seatsPerRow}
+                      onChange={(e) => setGridBlocks((prev) => prev.map((x, j) => j === i
+                        ? { ...x, seatsPerRow: Math.max(1, Math.min(200, Number(e.target.value) || 1)) } : x))}
+                      className="bg-gray-900 border border-gray-700 text-white rounded px-2 py-1 w-14 tabular-nums" />
+                    = <strong className="text-indigo-300">{b.rows * b.seatsPerRow}</strong>
+                  </span>
                   <button onClick={() => setGridBlocks((prev) => prev.filter((_, j) => j !== i))}
-                    className="text-red-400 hover:text-red-300 ml-2"><Trash2 size={12} /></button>
+                    className="text-red-400 hover:text-red-300 shrink-0"><Trash2 size={12} /></button>
                 </div>
               ))}
             </div>

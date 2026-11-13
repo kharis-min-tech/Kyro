@@ -80,5 +80,27 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
      !/api\/v1\/seats/.test(auto.slice(0, 900)));
 }
 
+// ── …and a block already drawn can be changed ─────────────────────────────
+//
+// "when i chang try and change the number from the grid, it dosent save."
+//
+// Exactly right, and not in the way it looked. The Rows and Seats per row
+// boxes at the top are settings for the NEXT block drawn. A block already on
+// the canvas took no notice of them, and the only thing that could be done to
+// one was delete it and draw it again — so changing 20 to 18 changed nothing,
+// and nothing said why.
+{
+  ok("a drawn block's rows can be changed where the block is",
+     /\{ \.\.\.x, rows: Math\.max\(1, Math\.min\(200, Number\(e\.target\.value\) \|\| 1\)\) \}/.test(editor));
+  ok("and its seats per row", /\{ \.\.\.x, seatsPerRow: Math\.max\(1/.test(editor));
+  ok("and its name", /\{ \.\.\.x, section: e\.target\.value \}/.test(editor));
+  ok("the total follows what is typed", /= <strong className="text-indigo-300">\{b\.rows \* b\.seatsPerRow\}/.test(editor));
+  ok("and it says a change needs saving", /change any of these and press Save/.test(editor));
+  // The seats are generated from the blocks at save time, so an edited block
+  // really does change what is stored.
+  ok("what is saved is built from the blocks",
+     /generateGridSeats\(gridBlocks, 0\)/.test(editor));
+}
+
 console.log(fails ? `\n${fails} FAILED` : "\nAll good. Save means saved, where Kyro reads it.");
 process.exit(fails ? 1 : 0);
