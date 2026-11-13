@@ -1837,6 +1837,16 @@ export class VenueHub extends DurableObject {
         // Kyro enough of them. See askLearning() and ANSWERS_BEFORE_LEARNING.
         lookSame: (await this.get("look_same", null))?.value ?? LOOK_SAME,
       });
+      /**
+       * What somebody has already said is NOT a person.
+       *
+       * Kept under its own key, on purpose. A cushion on a chair is a fact
+       * about the building, not about this morning's congregation — and the
+       * register's own snapshot is deleted every time the service changes,
+       * which would throw the answers away with it. See startService() in
+       * worker/identity.js.
+       */
+      this.register.notPeople = await this.get("not_people", []);
       const saved = await this.get("register", null);
       if (saved && saved.service === service) {
         this.register.restore(saved);
@@ -4339,6 +4349,16 @@ export class VenueHub extends DurableObject {
       // the same cushion is not counted again this service.
       if (/^no/i.test(q.answer) && this.register && q.ask) {
         result = this.register.notAPerson(q.ask.camera, q.ask.track) ?? { changed: false };
+        /**
+         * …and remembered for good, which is the point of being asked.
+         *
+         * "when i answer the questions, it brings no value to the system
+         * nor is it making the system become better." This is where that
+         * was truest: the answer took the cushion off this morning's count
+         * and was then forgotten, so the same cushion in the same chair was
+         * counted again next Sunday and asked about again.
+         */
+        await this.ctx.storage.put("not_people", this.register.notPeople.slice(-40));
         if (result.removed) {
           result = { changed: true, action: "removed", people: result.people };
           this.forgetPeopleRows(this.register.service);

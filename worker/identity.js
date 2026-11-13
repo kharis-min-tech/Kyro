@@ -577,6 +577,26 @@ export class IdentityRegistry {
    */
   startService(id) {
     this.service = id ?? null;
+    /**
+     * …except the things somebody has told Kyro are NOT people.
+     *
+     * "when i answer the questions, it brings no value to the system nor is
+     * it making the system become better."
+     *
+     * This is where that was truest. A cushion on a chair, a coat over a
+     * seat back, a poster of a face — somebody looks at the picture, says
+     * "no, not a person", and it is taken off the count. Then the service
+     * ends, this clears it, and the same cushion in the same chair is
+     * counted again next Sunday, and asked about again, for ever. The
+     * answer was worth one morning.
+     *
+     * A congregation is a service's; the furniture is the building's. These
+     * are appearance readings of things that are not people — no face, no
+     * identity, nothing about anybody — so they are kept, and the worker
+     * writes them down under their own key rather than inside the
+     * register's snapshot, which is DELETED whenever the service changes.
+     * See not_people in worker/venue.js.
+     */
     this.people.clear();
     this.byTrack.clear();
     this.seats.clear();
@@ -584,7 +604,6 @@ export class IdentityRegistry {
     this.asks = [];
     this.ruled.clear();
     this.gone = [];
-    this.notPeople = [];
     this.nextId = 1;
     this.stats = { created: 0, matchedByTrack: 0, matchedByFace: 0, matchedByLook: 0, uncertain: 0, rejectedImpossible: 0, vetoedByFace: 0, uniformed: 0, helpedBySeat: 0, movedSeat: 0, waiting: 0, mergedLookAlikes: 0 };
   }
