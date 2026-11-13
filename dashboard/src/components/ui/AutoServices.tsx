@@ -138,9 +138,43 @@ export function AutoServices() {
               <span className="text-xs text-gray-500">since {time(live.started_at)} · {minutes(live.started_at)}</span>
             </div>
             {nameBox(live)}
+            {/**
+              * Four figures that answer four different questions.
+              *
+              * "this structure needs to change, i dont know why at times but
+              * many times, the numbers are just all very different not the
+              * same etc."
+              *
+              * They are different because they are answers to different
+              * questions, and the card never said which. "Here now" is what
+              * the cameras can see this second; "Busiest" is the most ever
+              * seen at one moment; "Came in" is how many DIFFERENT people
+              * have been here all service, which only ever climbs; "Seats"
+              * is a fact about the building. Four numbers under four nouns,
+              * with nothing to say they were not four attempts at the same
+              * thing.
+              *
+              * So each says what it is, under it, in the fewest words that
+              * are true — and the line below says how they fit together,
+              * once, rather than being worked out again every time somebody
+              * looks at the card.
+              */}
             <div className="grid grid-cols-3 gap-3">
-              <div><p className="text-xs text-gray-500">Here now</p><p className="text-2xl font-bold text-white tabular-nums">{venue?.total_current ?? "–"}</p></div>
-              <div><p className="text-xs text-gray-500">Busiest</p><p className="text-2xl font-bold text-white tabular-nums">{live.peak}</p><p className="text-xs text-gray-500">at {time(live.peak_at)}</p></div>
+              <div>
+                <p className="text-xs text-gray-500">Here now</p>
+                <p className="text-2xl font-bold text-white tabular-nums">{venue?.total_current ?? "–"}</p>
+                <p className="text-xs text-gray-500">the cameras can see</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-500">Busiest</p>
+                <p className="text-2xl font-bold text-white tabular-nums">{live.peak}</p>
+                {/* "at " with nothing after it was what a peak of nobody
+                    looked like: there is no moment to name until somebody
+                    has been seen. */}
+                <p className="text-xs text-gray-500">
+                  {live.peak > 0 && live.peak_at ? `most at once, at ${time(live.peak_at)}` : "most at once"}
+                </p>
+              </div>
               {/* Different people this service — the attendance figure, which
                   is what a church actually writes down. "the people that came
                   in needs to be shown too": it was on the AI Count page and
@@ -155,7 +189,7 @@ export function AutoServices() {
                     people than the room holds, and said so rather than
                     silently. See people_seen_shown in worker/venue.js. */}
                 <p className="text-xs text-gray-500">
-                  {over ? `held at the seats · counted ${over.counted.toLocaleString()}` : "different people"}
+                  {over ? `held at the seats · counted ${over.counted.toLocaleString()}` : "different people, all service"}
                 </p>
               </div>
               <div>
@@ -170,6 +204,16 @@ export function AutoServices() {
                 )}
               </div>
             </div>
+            {/* How the four fit together, said once. They are not four
+                attempts at one number: the first two are about a moment, the
+                third is about the whole service, the fourth is about the
+                room. */}
+            <p className="text-xs text-gray-500 leading-relaxed">
+              <strong className="text-gray-400">Here now</strong> and <strong className="text-gray-400">Busiest</strong> are
+              moments — how many were in shot just now, and the most ever at once.{" "}
+              <strong className="text-gray-400">Came in</strong> is the whole service: different people, counted once each,
+              so it only ever goes up. They are meant to differ.
+            </p>
             {live.quiet_since && <p className="text-xs text-gray-400">The hall has been nearly empty since {time(live.quiet_since)} — the service ends by itself 15 minutes after that.</p>}
             {data?.face_matching_now && (
               <p className="text-xs text-gray-400 flex items-center gap-1.5"><ScanFace size={13} className="text-green-400" />

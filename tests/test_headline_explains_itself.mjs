@@ -110,5 +110,30 @@ const flat = page.replace(/\s+/g, " ");
      /r\.current = take\(r\.current, z\.current\)/.test(worker) || /Cameras that share a zone name are views of ONE room/.test(worker));
 }
 
+// ── Four figures, four questions ───────────────────────────────────────────
+//
+// "this structure needs to change, i dont know why at times but many times,
+// the numbers are just all very different not the same etc."
+//
+// They are different because they answer different questions, and the card
+// never said which. Here now is this second; Busiest is the fullest moment;
+// Came in is the whole service and only ever climbs; Seats is a fact about
+// the building. Four numbers under four nouns, with nothing to say they were
+// not four attempts at the same thing.
+{
+  const svc = fs.readFileSync(path.join(root, "dashboard/src/components/ui/AutoServices.tsx"), "utf8");
+  ok("each figure says what it answers", /the cameras can see<\/p>/.test(svc)
+     && /most at once/.test(svc) && /different people, all service/.test(svc));
+  ok("and the card says once how they fit together",
+     /are\s*\n?\s*moments/.test(svc) && /They are meant to differ\./.test(svc));
+  /**
+   * "Busiest 0 at " — a dangling "at" with no time after it, which is what a
+   * peak of nobody looked like. There is no moment to name until somebody
+   * has been seen.
+   */
+  ok("a busiest of nobody does not promise a time",
+     /live\.peak > 0 && live\.peak_at \? `most at once, at \$\{time\(live\.peak_at\)\}` : "most at once"/.test(svc));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. The figure says how it was reached.");
 process.exit(fails ? 1 : 0);
