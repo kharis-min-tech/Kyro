@@ -162,7 +162,8 @@ for (const [name, r] of scenes) {
      first >= byDoubt, `first ${first}/12, by doubt ${byDoubt}/12`);
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("4. so nothing sorts them before they are put",
-     /for \(const a of asks\) \{\s*\n\s*if \(live >= MOST_ASKS\) break;/.test(worker));
+     /for \(const a of asks\) \{\s*\n\s*if \(live >= MOST_ASKS\) \{ waitTheirTurn\.push\(a\); continue; \}/.test(worker)
+     && !/asks\.sort\(/.test(worker));
 }
 
 // ── 5. A quiet room is not interrogated ───────────────────────────────────
@@ -173,6 +174,54 @@ for (const [name, r] of scenes) {
   const r = service(40, 0, 2, 7);
   ok("5. with nobody dressed alike there are no mistakes", r.mistakes === 0, `${r.mistakes}`);
   ok("5. and barely any questions", r.asks.length <= 3, `${r.asks.length} asks for ${r.people} people`);
+}
+
+// ── 6. What happens after the twelfth ─────────────────────────────────────
+//
+// "what about after the 12 questions, what happens after that?"
+//
+// Until now: nothing, and worse than nothing. Twelve questions wait for an
+// answer at a time, which is right — nobody can be handed fifty. But the
+// register's ask list was emptied whether or not the worker could use what
+// it took, so every doubt past the twelfth was dropped on the floor. And
+// raising it had already written the pair down as "put to somebody", so it
+// was never raised again either. On a full church that is most of the
+// morning's doubts: discarded, then permanently silenced.
+{
+  const { VenueHub } = await import(path.join(tmp, "venue.js"));
+  const store = new Map();
+  const h = Object.create(VenueHub.prototype);
+  h.ctx = { storage: { get: async (k) => store.get(k), put: async (k, v) => { store.set(k, v); }, delete: async (k) => { store.delete(k); } }, waitUntil: () => {} };
+  h.env = {};
+  const reg = new IdentityRegistry({ zoneOf: () => "Hall" });
+  reg.startService("m");
+  h.register = reg;
+  const cams = { "box:a": { camera_id: "box:a", name: "Hall", zone_name: "Hall" } };
+  let n = 0;
+  for (let i = 0; i < 100; i++) {
+    reg.asks.push({ pair: `p${++n}`, at: Date.now(), guess: "same", score: 0.86, reason: "x",
+      camera: "box:a", track: n, person: n, other_camera: "box:a", other_track: n + 500 });
+  }
+  let t = Date.now();
+  const first = await h.makeAsks(cams, t);
+  ok("6. twelve are put at once, not a hundred", first.length / 2 === 12, `${first.length / 2}`);
+  ok("6. and the other doubts are kept, not thrown away",
+     reg.asks.length > 0, `${reg.asks.length} waiting`);
+  ok("6. oldest first, because the early mistakes poison the rest",
+     reg.asks[0].pair === "p13", reg.asks[0]?.pair);
+
+  // A morning: a report every couple of minutes, somebody answering now and
+  // then, questions timing out and freeing their place.
+  let put = 12;
+  for (let step = 0; step < 60; step++) {
+    t += 2 * 60_000;
+    put += (await h.makeAsks(cams, t)).length / 2;
+    const waiting = Object.values(store.get("questions") ?? {}).filter((q) => !q.answer);
+    if (waiting.length && step % 3 === 0) { waiting[0].answer = "Same person"; waiting[0].answered_at = t; }
+  }
+  ok("6. over a service the queue is worked through, not stuck at twelve",
+     put >= 40, `${Math.round(put)} questions put over two hours`);
+  ok("6. and nothing is left stranded", reg.asks.length === 0, `${reg.asks.length} left`);
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

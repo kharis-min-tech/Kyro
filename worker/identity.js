@@ -1637,6 +1637,33 @@ export class IdentityRegistry {
   }
 
   /**
+   * Asks the worker could not turn into questions yet, back on the queue.
+   *
+   * ── Why this had to exist ──────────────────────────────────────────────
+   *
+   * "what about after the 12 questions, what happens after that?"
+   *
+   * Nothing good. Only twelve questions wait for an answer at a time, which
+   * is right — nobody can be handed fifty. But takeAsks() empties this list
+   * whether or not the worker can use what it takes, so everything past the
+   * twelfth was dropped on the floor. And askAbout() has already written
+   * the pair into `ruled`, meaning "this one has been put to somebody", so
+   * it was never raised again either.
+   *
+   * On a full church that is most of the morning's doubts: asked for
+   * internally, silently discarded, and then permanently marked as asked.
+   *
+   * They wait their turn now. Put back at the FRONT, because the earliest
+   * doubts are the ones that matter most — a wrong merge early poisons
+   * everything that comes after it — and that is measured, not assumed.
+   */
+  putBackAsks(list) {
+    if (!list?.length) return;
+    this.asks = [...list, ...this.asks];
+    if (this.asks.length > 40) this.asks.length = 40;
+  }
+
+  /**
    * Somebody has looked at two pictures and said.
    *
    * This is where an answer becomes an attendance figure. Kyro's guess was

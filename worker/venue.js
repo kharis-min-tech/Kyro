@@ -3994,8 +3994,10 @@ export class VenueHub extends DurableObject {
       // gate below shut for the rest of the day. See tidyQuestions.
       await this.tidyQuestions(qs, now);     // written with the block below
       let live = this.waitingQuestions(qs, "same_person_question", now);
+      /** Doubts there was no room to put yet. They wait, they are not lost. */
+      const waitTheirTurn = [];
       for (const a of asks) {
-        if (live >= MOST_ASKS) break;
+        if (live >= MOST_ASKS) { waitTheirTurn.push(a); continue; }
         const id = `${a.kind === "person" ? "isperson" : "same"}-${b64url(crypto.getRandomValues(new Uint8Array(6)))}`;
         const cam = cams[a.camera];
         const otherCam = cams[a.other_camera] ?? cam;
@@ -4056,6 +4058,10 @@ export class VenueHub extends DurableObject {
           wanted.push({ id, side: "b", camera_id: a.other_camera, track: a.other_track });
         }
       }
+      // Whatever there was no room for goes back on the register's queue,
+      // in front, so it is put as soon as a question is answered or times
+      // out. See putBackAsks in worker/identity.js.
+      this.register?.putBackAsks?.(waitTheirTurn);
       await this.ctx.storage.put("questions", qs);
       /**
        * …and tell the phones there is something to answer.
