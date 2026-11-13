@@ -528,7 +528,10 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                   : "Kyro does not know, so this figure has nothing to answer to — it cannot tell a big congregation from a counting mistake. Tell it once, and anything above that is held and flagged instead of shown as fact."}
               </p>
               <div className="flex items-center gap-2 mt-2">
-                <input type="number" min={1} max={100000} inputMode="numeric" placeholder="114"
+                {/* No number suggested. One church's seat count has no
+                    business being the example every church is shown — see
+                    the note on `cap` in worker/venue.js. */}
+                <input type="number" min={1} max={100000} inputMode="numeric" placeholder="How many?"
                   value={seatDraft} onChange={(e) => { setSeatDraft(e.target.value); setSeatErr(null); }}
                   className="rounded-lg px-2 py-1 w-24 tabular-nums"
                   style={{ fontSize: 13, background: "var(--bg-card)", border: `1px solid ${BORDER}`, color: "var(--text-primary)" }} />
@@ -659,7 +662,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 : "Nobody counted yet"}
               action={onSetSeats && !seats && usingRegister
                 ? { label: "Kyro doesn't know how many seats this room has. Set it \u2192",
-                    onClick: () => { setSeatDraft("114"); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                    // Opened empty, not filled in with somebody else's hall.
+                    onClick: () => { setSeatDraft(""); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
                 : held != null && onSetSeats
                 ? { label: "Change the number of seats \u2192",
                     onClick: () => { setSeatDraft(String(held)); seatBox.current?.scrollIntoView({ behavior: "smooth", block: "center" }); } }
