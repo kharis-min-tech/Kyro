@@ -117,7 +117,8 @@ export function SamePerson() {
 
   const load = useCallback(() => {
     edgeFetch<Ask[]>("/api/live/questions")
-      .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question" || q.review_type === "is_this_a_person")))
+      .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question"
+        || q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat")))
       .catch(() => {});
     // The learning figures are no longer read out here — see the note by the
     // card's footer — so they are not fetched either. "How the counting is
@@ -206,7 +207,10 @@ export function SamePerson() {
         <p className="px-5 py-2" style={{ fontSize: 12, color: "#f87171", borderBottom: `1px solid ${BORDER}` }}>{err}</p>
       )}
 
-      {asks.map((q) => q.review_type === "is_this_a_person" ? (
+      {/* "Is this a seat?" shows the same way as "is this a person?": one
+          picture, two answers. The chair is cropped where it stands — it
+          does not move, so there is nothing to have kept. */}
+      {asks.map((q) => q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat" ? (
         /* One picture, one thing to decide. The AI is asked where the people
            are and answers honestly — a cushion is person-shaped, and so is a
            photograph of somebody. Nothing in a single frame settles it. What

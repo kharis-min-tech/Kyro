@@ -27,7 +27,7 @@ import { countOrder } from "@/lib/countOrder";
 import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
 import { lookOf } from "@/lib/appearance";
 import { PictureWatch } from "@/lib/pictureCheck";
-import { SeatFinder } from "@/lib/seatFinder";
+import { SeatFinder, SEAT_W, SEAT_H } from "@/lib/seatFinder";
 import { loadFaceEngine, type FaceEngine } from "@/lib/faceEngine";
 import { loadOrt } from "@/lib/countEngine";
 import { isEdgeLive, edgeTokenPayload } from "@/lib/edgeAuth";
@@ -1003,6 +1003,26 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           const mine = wantPics.current.filter((w) => w.key === c.key);
           if (!mine.length) continue;
           for (const want of mine) {
+            /**
+             * A seat is cropped where it is, now — not from the kept
+             * pictures, which are of people.
+             *
+             * A chair does not move, so there is no need to have kept one:
+             * the place it is in is the place it will still be in. Its box
+             * is in the seat finder's own space, so it is scaled back to
+             * the picture the crop is taken from.
+             */
+            if (want.seat) {
+              const pl = c.seatFinder.uncertain().find((x) => x.id === want.seat);
+              if (!pl || !c.grabCanvas.width) continue;
+              const sx = c.grabCanvas.width / SEAT_W, sy = c.grabCanvas.height / SEAT_H;
+              const shot = cropOf(c.grabCanvas,
+                [pl.box[0] * sx, pl.box[1] * sy, pl.box[2] * sx, pl.box[3] * sy], CROP_WIDTH);
+              if (!shot) continue;
+              sendPersonPicture(want.id, want.side, shot).catch(() => {});
+              wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
+              continue;
+            }
             const kept = c.crops.get(want.track);
             if (!kept) continue;     // never had a picture of them; the website asks again
             sendPersonPicture(want.id, want.side, kept.crop)
@@ -1046,6 +1066,34 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         // Which of this camera's seats are taken. A seat id and a person id
         // are different things: somebody who sits in five chairs during a
         // service is five seats and one person in the attendance register.
+        /**
+         * Chairs Kyro has found and is NOT sure about.
+         *
+         * "kyro should be able to recognise what a chair is though and when
+         * people are sitting down and where a chair is, thats why it should
+         * ask questions, which has not been doing completely."
+         *
+         * It does recognise them — chairs, benches and sofas come out of the
+         * same AI run that finds people, costing nothing extra — and it
+         * already marks the ones it cannot settle: somebody standing very
+         * upright, or a seat nowhere near any other seat. The note beside
+         * that code says they are "for an administrator to confirm or
+         * reject", and on a camera computer a photograph was sent and the
+         * question asked.
+         *
+         * In Camera Mode nothing ever asked. The uncertain seats sat in the
+         * seat map waiting to be noticed, which is not the same as being
+         * asked about, and is why she has never once been shown one.
+         *
+         * A few at a time, so a hall full of chairs cannot turn into a hall
+         * full of questions.
+         */
+        ...(c.isDoor ? {} : { seat_asks: c.seatFinder.uncertain().slice(0, 4).map((pl) => ({
+          id: pl.id,
+          // In the seat finder's own space; the crop converts it back when a
+          // picture is asked for. See SEAT_W.
+          b: pl.box.map((v) => Math.round(v)),
+        })) }),
         ...(c.isDoor ? {} : { seats: c.seatFinder.occupancy(
           c.people.map((p) => p.box as [number, number, number, number]),
           frameW, frameH, Date.now()) }),
@@ -1142,13 +1190,29 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           "Close other tabs and programs on this computer, or count on fewer cameras from it.");
       }
       try {
-        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people, remembered } =
+        const { disabled, zones, countConfidence, faceMatching, doorways, countFrom, service, doorMode, seenTwice: twice, wantPictures, people, remembered, answers } =
           await sendReport(reports, { error: faceErr.current, ready: !!faceEngine.current }, problems.current, well);
         // Merged rather than replaced: the website keeps asking until the
         // pictures arrive, and one that is already on its way must not be
         // dropped because the next reply happened to leave it out.
         for (const w of wantPictures) {
           if (!wantPics.current.some((x) => x.id === w.id && x.side === w.side)) wantPics.current.push(w);
+        }
+        /**
+         * Answers coming back the other way.
+         *
+         * A seat question is settled on the website, and the camera is the
+         * only thing that knows where its seats are — so the answer has to
+         * travel back. Without this the question could be answered all day
+         * and the seat map would never change, which is worse than not
+         * asking.
+         */
+        for (const ans of answers ?? []) {
+          if (ans.kind !== "is_this_a_seat" || !ans.seat) continue;
+          const cam = [...cams.current.values()].find((x) => x.key === ans.key);
+          if (!cam) continue;
+          if (/yes|seat/i.test(String(ans.answer))) cam.seatFinder.confirm(ans.seat);
+          else cam.seatFinder.reject(ans.seat);
         }
         wantPics.current = wantPics.current.slice(-24);
         setSeenTwice(twice);

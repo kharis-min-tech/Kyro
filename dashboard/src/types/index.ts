@@ -62,7 +62,7 @@ export interface ReviewRequest {
    * at all. See LiveSnapshot in ReviewPanel.tsx.
    */
   review_type: "stage_question" | "front_rush_question" | "absence_question" | "zone_proposal" | "altar_call_question"
-    | "same_person_question" | "is_this_a_person";
+    | "same_person_question" | "is_this_a_person" | "is_this_a_seat";
   /** Which role should see this question — "admin" for spatial, "operator" for people */
   target_role: "admin" | "operator";
   question: string;

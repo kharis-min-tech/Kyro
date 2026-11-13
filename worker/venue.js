@@ -1069,6 +1069,8 @@ export class VenueHub extends DurableObject {
     /** Cameras whose browser has just started again, so they have forgotten
      *  who they already counted and need it back. See door_known. */
     const handBackRemembered = new Set();
+    /** Chairs a camera has found and cannot settle. See seat_asks. */
+    const seatAsks = [];
 
     for (const c of Array.isArray(body.cameras) ? body.cameras.slice(0, 32) : []) {
       const key = clean(c.key, 80);
@@ -1240,6 +1242,31 @@ export class VenueHub extends DurableObject {
         // The same ceiling the browser keeps, so what comes back always fits.
         if (list.length > MOST_DOOR_REMEMBERED) list.splice(0, list.length - MOST_DOOR_REMEMBERED);
         await this.ctx.storage.put(key, { service, people: list });
+      }
+      /**
+       * Chairs Kyro has found and cannot settle, turned into questions.
+       *
+       * "kyro should be able to recognise what a chair is though and when
+       * people are sitting down and where a chair is, thats why it should
+       * ask questions, which has not been doing completely."
+       *
+       * It does recognise them — chairs, benches and sofas come out of the
+       * same AI run that finds people — and it already marks the ones it
+       * cannot settle. On a camera computer those were asked about with a
+       * photograph. In Camera Mode nothing ever asked: they sat in the seat
+       * map waiting to be noticed, which is not the same thing, and is why
+       * she has never once been shown one.
+       *
+       * One question per seat, never asked twice, and the answer travels
+       * back to the camera that found it — the camera is the only thing
+       * that knows where its seats are.
+       */
+      if (service && Array.isArray(c.seat_asks) && c.seat_asks.length) {
+        for (const a of c.seat_asks.slice(0, 4)) {
+          const seat = num(a?.id, 1, 100000);
+          if (!seat) continue;
+          seatAsks.push({ camera_id, key, seat });
+        }
       }
       if (Array.isArray(c.questions) && c.questions.length) newQuestions.push(...c.questions.slice(0, 10).map((q) => cleanQuestion(q, camera_id)).filter(Boolean));
       if (Array.isArray(c.faces) && faceOn) {
@@ -1483,6 +1510,8 @@ export class VenueHub extends DurableObject {
     // questions somebody can answer from two pictures. See askAbout in
     // worker/identity.js and makeAsks below.
     const wantPictures = await this.makeAsks(cams, now);
+    // …and the chairs, which ask the same way and want the same picture.
+    if (seatAsks.length) wantPictures.push(...(await this.askAboutSeats(seatAsks, cams, now)));
     // Answers to the AI's questions, for this computer's cameras (delivered once).
     const answers = await this.takeAnswers(device.id);
     // Rota holds and stage / ignore areas, per camera (small; sent every time).
@@ -1538,7 +1567,8 @@ export class VenueHub extends DurableObject {
         return out;
       })(),
       want_pictures: wantPictures.filter((w) => w.camera_id.startsWith(`${device.id}:`))
-        .map((w) => ({ id: w.id, side: w.side, key: w.camera_id.slice(device.id.length + 1), track: w.track })),
+        .map((w) => ({ id: w.id, side: w.side, key: w.camera_id.slice(device.id.length + 1),
+          track: w.track, ...(w.seat ? { seat: w.seat } : {}) })),
       face_matching: faceOn, count_confidence: (await this.counting()).count_confidence,
       // When a fresh start was last asked for. A counter that hasn't applied
       // this one yet puts its arrivals and departures back to zero — so "Start
@@ -3717,6 +3747,57 @@ export class VenueHub extends DurableObject {
     return wanted;
   }
 
+  /**
+   * "Is this a seat?" — one question per chair Kyro cannot settle.
+   *
+   * The seat finder already decides this for itself wherever it can: a place
+   * people sit in again and again is a seat, and so is a chair the AI sees
+   * plainly. What it will not decide alone is somebody standing very upright
+   * in one spot, or a seat nowhere near any other seat in a hall full of
+   * rows — because both are as likely to be a person who stood still as a
+   * chair nobody uses.
+   *
+   * Asked once each. A hall of a hundred chairs must not become a hall of a
+   * hundred questions, so the camera offers a few at a time and this
+   * remembers which have already been put.
+   */
+  async askAboutSeats(asks, cams, now) {
+    const qs = await this.get("questions", {});
+    const asked = await this.get("seats_asked", {});
+    const want = [];
+    let added = 0;
+    for (const a of asks) {
+      const mark = `${a.camera_id}#${a.seat}`;
+      if (asked[mark]) continue;
+      if (added >= 3) break;                      // a few at a time, never a flood
+      added++;
+      asked[mark] = now;
+      const id = `seat-${a.camera_id.replace(/[^\w-]/g, "")}-${a.seat}`;
+      const cam = cams[a.camera_id];
+      qs[id] = {
+        type: "review_request", review_id: id, camera_id: a.camera_id,
+        review_type: "is_this_a_seat", target_role: "operator",
+        question: "Is this a seat?",
+        guess: "seat", score: null, had_face: false,
+        why: "somebody was in this spot again and again, but it does not look like the other seats",
+        where: clean(cam?.zone_name || cam?.name || "", 60), other_where: "",
+        ask: { kind: "seat", camera: a.camera_id, seat: a.seat },
+        track_id: null, position: [0, 0], bbox_hint: null,
+        confidence: 0, best_guess: "A seat",
+        options: ["Yes, a seat", "No, not a seat"],
+        created_at: now / 1000,
+        pictures: 0,
+      };
+      want.push({ id, side: "a", camera_id: a.camera_id, seat: a.seat });
+    }
+    if (!want.length) return [];
+    await this.ctx.storage.put("questions", qs);
+    // Tidied with the service: a seat asked about in one morning is a seat
+    // asked about, and a new building is a new set of chairs.
+    await this.ctx.storage.put("seats_asked", asked);
+    return want;
+  }
+
   async listQuestions(role) {
     const now = Date.now() / 1000;
     return Object.values(await this.get("questions", {}))
@@ -3725,7 +3806,7 @@ export class VenueHub extends DurableObject {
       // a number. Nobody can answer that, so it is not asked.
       .filter((q) => q.review_type !== "same_person_question" || (q.pictures ?? 0) >= 2)
       // …and one for "is this a person?", which has only one thing to show.
-      .filter((q) => q.review_type !== "is_this_a_person" || (q.pictures ?? 0) >= 1)
+      .filter((q) => !["is_this_a_person", "is_this_a_seat"].includes(q.review_type) || (q.pictures ?? 0) >= 1)
       .sort((a, b) => a.created_at - b.created_at)
       .map(({ answer, answered_by, answered_at, ...q }) => q);
   }
@@ -3833,7 +3914,11 @@ export class VenueHub extends DurableObject {
 
     await this.ctx.storage.put("questions", qs);
     const pending = await this.get("answers", []);
-    pending.push({ device_id: q.camera_id.split(":")[0], key: q.camera_id.slice(q.camera_id.indexOf(":") + 1), review_id: id, answer: q.answer, kind: q.review_type });
+    pending.push({ device_id: q.camera_id.split(":")[0], key: q.camera_id.slice(q.camera_id.indexOf(":") + 1),
+      review_id: id, answer: q.answer, kind: q.review_type,
+      // Which seat it was about. The camera is the only thing that knows
+      // where its seats are, so an answer without this changes nothing.
+      ...(q.ask?.kind === "seat" ? { seat: q.ask.seat } : {}) });
     await this.ctx.storage.put("answers", pending.slice(-200));
     await this.ctx.storage.delete(`qsnap:${id}`);
     return json({ ok: true });

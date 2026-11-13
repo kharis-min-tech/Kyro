@@ -422,7 +422,11 @@ export interface CameraReport {
 export type Zone = [number, number, number, number];
 
 /** A crop of one person that Kyro wants, for a question somebody will answer. */
-export interface WantedPicture { id: string; side: "a" | "b"; key: string; track: number }
+export interface WantedPicture {
+  id: string; side: "a" | "b"; key: string; track: number;
+  /** A seat rather than a person: crop this seat's box instead of a track. */
+  seat?: number;
+}
 
 /** Sends this browser's counts. Returns the cameras switched off on the website,
  *  each camera's "don't count this area" rectangles (0–1 fractions), and how sure
@@ -451,7 +455,15 @@ export async function sendReport(
    * handed back when a browser has just started again and forgotten.
    * See door_known in worker/venue.js.
    */
-  remembered: Record<string, { l: number[] | null; f: string | null; i: number; o: number; u: number; at: number }[]> }> {
+  remembered: Record<string, { l: number[] | null; f: string | null; i: number; o: number; u: number; at: number }[]>;
+  /**
+   * Questions somebody has answered, coming back to the camera that asked.
+   *
+   * A seat question is settled on the website, and the camera is the only
+   * thing that knows where its seats are — so the answer has to travel back
+   * or the seat map never changes.
+   */
+  answers: { key: string; review_id: string; answer: string; kind: string; seat?: number }[] }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",
@@ -497,12 +509,13 @@ export async function sendReport(
     people: body.people && typeof body.people === "object" ? body.people : {},
     // Who this doorway had already counted before its browser restarted.
     remembered: body.remembered && typeof body.remembered === "object" ? body.remembered : {},
+    answers: Array.isArray(body.answers) ? body.answers : [],
     // People Kyro wants a human to look at. See sendPersonPicture.
     wantPictures: (Array.isArray(body.want_pictures) ? body.want_pictures : [])
       .filter((w: unknown): w is WantedPicture => {
         const x = w as WantedPicture;
         return !!x && typeof x.id === "string" && (x.side === "a" || x.side === "b")
-          && typeof x.key === "string" && Number.isFinite(x.track);
+          && typeof x.key === "string" && (Number.isFinite(x.track) || Number.isFinite(x.seat));
       })
       .slice(0, 24),
   };
