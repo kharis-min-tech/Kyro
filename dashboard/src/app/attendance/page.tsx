@@ -1578,6 +1578,11 @@ export default function AttendancePage() {
                     ?? (venueTotal as unknown as { people_seen?: number } | null)?.people_seen ?? null
                   : null}
                 seenAtOnce={edge && isToday ? venueTotal?.total_peak ?? null : null}
+                /* What Kyro has counted for itself, offered rather than
+                   used — see seats_found in worker/venue.js. */
+                seatsFound={edge && isToday
+                  ? (venueTotal as unknown as { seats_found?: number } | null)?.seats_found ?? null
+                  : null}
                 seats={roomSeats}
                 /* An operator may set it too. How many chairs are in the hall
                    is an operational fact known by whoever is standing in it,

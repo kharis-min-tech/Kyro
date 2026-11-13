@@ -2989,6 +2989,31 @@ export class VenueHub extends DurableObject {
       // as arriving twice, and the page should not pretend otherwise.
       face_matching: faceOn,
       total_capacity: cap, venue_occupancy_pct: cap ? Math.round((hereNow / cap) * 1000) / 10 : 0,
+      /**
+       * How many seats Kyro has FOUND by itself, when nobody has entered one.
+       *
+       * ── Why it is offered rather than used ───────────────────────────────
+       *
+       * "its not possible, its AI, Kyro should be able to detect it i dont
+       * understand."
+       *
+       * She is right that it can. The seat finder counts chairs out of the
+       * same AI run that finds people, and has been doing so all along.
+       * What it must not do is quietly become the number everything is
+       * checked against — that is the fault she caught a day earlier, when a
+       * guess of 21 and 16 seats appeared from a camera that had seen
+       * nothing: "the system should not even guess ... dont assume
+       * anything".
+       *
+       * Both are right, and the way to keep both is to OFFER it. Kyro does
+       * the counting, says what it found, and one press makes it the
+       * answer — at which point it is a number somebody entered, which is
+       * what every check here has always required.
+       *
+       * The fullest view of a room, never the sum, like every other room
+       * figure.
+       */
+      seats_found: cap > 0 ? 0 : rooms.reduce((n, r) => n + (r.capacity_from === "found" ? r.capacity || 0 : 0), 0),
       zones, cameras_running: zones.filter((z) => z.is_counting).length, cameras_total: zones.length,
       // How many rooms those cameras add up to, so the page can say when two
       // of them are watching the same one.

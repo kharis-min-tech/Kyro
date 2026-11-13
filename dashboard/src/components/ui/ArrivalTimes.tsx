@@ -86,7 +86,7 @@ function StatTile({ label, value, sub, swatch, action, note }: {
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce, seatsFound }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -154,6 +154,12 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   seats?: number | null;
   /** Write a new seat count, from here. See the note on the field below. */
   onSetSeats?: (n: number) => Promise<void>;
+  /**
+   * How many seats Kyro has found by itself, when nobody has entered one.
+   * Offered rather than used: Kyro does the counting, one press makes it the
+   * answer. See seats_found in worker/venue.js.
+   */
+  seatsFound?: number | null;
   /**
    * How many DIFFERENT people Kyro has counted this service — the attendance
    * figure, from the doorway if one is counting and from the rooms if not.
@@ -525,8 +531,35 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
                 <strong>How many seats are in this room?</strong>{" "}
                 {seats
                   ? `Kyro has ${seats.toLocaleString()}. Put the right number in and it will use that instead.`
+                  : seatsFound
+                  ? `Kyro has counted ${seatsFound.toLocaleString()} chairs in this room by itself. Say that is right and it becomes the seat count — or put your own number in.`
                   : "Kyro does not know, so this figure has nothing to answer to — it cannot tell a big congregation from a counting mistake. Tell it once, and anything above that is held and flagged instead of shown as fact."}
               </p>
+              {/**
+                * Kyro counted the chairs; one press makes that the answer.
+                *
+                * "its not possible, its AI, Kyro should be able to detect it
+                * i dont understand." It can, and it has been — the chairs
+                * come out of the same AI run that finds people. What it must
+                * not do is quietly make its own count the thing everything
+                * else is checked against, which is the fault she caught a
+                * day earlier when 21 and 16 seats appeared out of nowhere.
+                * Offering it keeps both: the AI does the work, and a person
+                * says yes.
+                */}
+              {!seats && !!seatsFound && (
+                <button type="button" disabled={savingSeats}
+                  onClick={async () => {
+                    setSavingSeats(true); setSeatErr(null);
+                    try { await onSetSeats!(seatsFound); }
+                    catch (e) { setSeatErr(e instanceof Error ? e.message : "That didn't save."); }
+                    finally { setSavingSeats(false); }
+                  }}
+                  className="rounded-lg px-3 py-1.5 font-medium mt-2 self-start"
+                  style={{ fontSize: 13, background: "#4f46e5", color: "#fff" }}>
+                  {savingSeats ? "Saving…" : `Yes — use the ${seatsFound.toLocaleString()} chairs Kyro found`}
+                </button>
+              )}
               <div className="flex items-center gap-2 mt-2">
                 {/* No number suggested. One church's seat count has no
                     business being the example every church is shown — see
