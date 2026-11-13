@@ -58,7 +58,7 @@ export function MovementCalendar({ dates }: { dates: string[] }) {
                 <button key={d} onClick={() => setDate(d)}
                   className="px-2.5 py-1 rounded-lg text-xs"
                   style={d === date
-                    ? { background: "rgba(99,102,241,0.18)", color: "#a5b4fc", border: "1px solid #6366f1" }
+                    ? { background: "rgba(99,102,241,0.18)", color: "var(--accent-indigo)", border: "1px solid #6366f1" }
                     : { background: "var(--bg-hover)", color: "var(--text-secondary)", border: "1px solid transparent" }}>
                   {pretty(d)}
                 </button>

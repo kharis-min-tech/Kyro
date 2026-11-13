@@ -310,7 +310,7 @@ export default function LoginPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <p className="text-base font-semibold text-white">Demo mode</p>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }}>
+                    style={{ background: "rgba(99,102,241,0.2)", color: "var(--accent-indigo)" }}>
                     No setup needed
                   </span>
                 </div>
@@ -336,7 +336,7 @@ export default function LoginPage() {
                 <div className="flex items-center gap-2 mb-1">
                   <p className="text-base font-semibold text-white">Live mode</p>
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: "rgba(34,197,94,0.12)", color: "#86efac" }}>
+                    style={{ background: "rgba(34,197,94,0.12)", color: "var(--accent-green)" }}>
                     Real data
                   </span>
                 </div>

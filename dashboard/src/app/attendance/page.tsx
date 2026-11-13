@@ -291,7 +291,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
           style={{ background: "rgba(0,0,0,0.6)" }}
           title={err ? (z?.error_reason ?? "Camera error") : undefined}>
           <span className={`w-1.5 h-1.5 rounded-full ${err ? "bg-amber-500" : live ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
-          <span style={{ fontSize: 10, color: err ? "#fcd34d" : live ? "#4ade80" : "#9ca3af", fontWeight: 600 }}>
+          <span style={{ fontSize: 10, color: err ? "var(--accent-amber)" : live ? "#4ade80" : "#9ca3af", fontWeight: 600 }}>
             {err ? "CAMERA ERROR" : live ? "LIVE" : "OFFLINE"}
           </span>
         </div>
@@ -349,7 +349,7 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
         style={{ background: "rgba(0,0,0,0.6)" }}
         title={isError ? (health?.error_reason ?? "Camera error") : undefined}>
         <span className={`w-1.5 h-1.5 rounded-full ${isError ? "bg-amber-500" : isLive ? "bg-green-500 animate-pulse" : "bg-gray-600"}`} />
-        <span style={{ fontSize: 10, color: isError ? "#fcd34d" : isLive ? "#4ade80" : "#6b7280", fontWeight: 600 }}>
+        <span style={{ fontSize: 10, color: isError ? "var(--accent-amber)" : isLive ? "#4ade80" : "#6b7280", fontWeight: 600 }}>
           {isError ? "CAMERA ERROR" : isLive ? "LIVE" : "OFFLINE"}
         </span>
       </div>
@@ -1320,7 +1320,7 @@ export default function AttendancePage() {
                         onClick={() => { setSelectedDate(opt.date); setShowDatePicker(false); }}
                         className="w-full text-left px-3 py-2 rounded-lg text-xs transition-colors"
                         style={{ background: isSelected ? "rgba(99,102,241,0.15)" : "transparent",
-                                 color: isSelected ? "#a5b4fc" : "#9ca3af" }}
+                                 color: isSelected ? "var(--accent-indigo)" : "#9ca3af" }}
                         onMouseEnter={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "var(--gold-soft)"; }}
                         onMouseLeave={(e) => { if (!isSelected) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
                         <span className="font-medium">{opt.label}</span>

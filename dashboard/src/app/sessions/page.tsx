@@ -155,7 +155,7 @@ function LiveCameraCard({
           <p className="text-sm font-semibold text-white truncate">{camera.zone_name ?? camera.name}</p>
           {hasActive && (
             <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc" }}>
+              style={{ background: "rgba(99,102,241,0.2)", color: "var(--accent-indigo)" }}>
               ● Session live · {formatDuration(existingSession.started_at, null)}
             </span>
           )}

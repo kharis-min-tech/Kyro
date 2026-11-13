@@ -196,7 +196,7 @@ export function AutoServices() {
                   * what to do about it.
                   */}
                 {noRoom ? (
-                  <p className="text-xs" style={{ color: "#fcd34d" }}>
+                  <p className="text-xs" style={{ color: "var(--accent-amber)" }}>
                     {venue?.why_nothing?.cameras_seeing
                       ? `cameras see ${venue.why_nothing.cameras_seeing} — but every camera is set as a doorway`
                       : "every camera is set as a doorway"}
@@ -252,7 +252,7 @@ export function AutoServices() {
                    * a guess and drives nothing. Either way the card now says
                    * which rather than asking for it again.
                    */
-                  <p className="text-xs" style={{ color: "#fcd34d" }}>
+                  <p className="text-xs" style={{ color: "var(--accent-amber)" }}>
                     {unused?.because === "doorway"
                       ? `${unused.seats} set on ${unused.camera}, which is a doorway`
                       : unused?.because === "guess"
@@ -285,9 +285,9 @@ export function AutoServices() {
             {sens && (
               <div className="rounded-xl px-3 py-2.5 flex items-start gap-2"
                 style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.4)" }}>
-                <SlidersHorizontal size={13} className="shrink-0 mt-0.5" style={{ color: "#a5b4fc" }} />
+                <SlidersHorizontal size={13} className="shrink-0 mt-0.5" style={{ color: "var(--accent-indigo)" }} />
                 <div className="flex-1 min-w-0 flex flex-col gap-1">
-                  <p className="text-xs" style={{ color: "#c7d2fe" }}>
+                  <p className="text-xs" style={{ color: "var(--accent-indigo)" }}>
                     Kyro set the counting to <strong>{sens.name}</strong> at {time(new Date(sens.at).toISOString())} — {sens.why}.
                   </p>
                   {admin && (
@@ -587,7 +587,7 @@ export function ServiceEndedPrompt() {
         {ask.name}: {time(ask.started_at)}–{time(ask.ended_at)}, {ask.peak} people at the busiest. Any face matching data was wiped when it ended.
       </p>
       {confirmDelete && (
-        <p className="text-xs mt-2 rounded-lg px-2.5 py-2" style={{ background: "rgba(239,68,68,0.12)", color: "#fca5a5" }}>
+        <p className="text-xs mt-2 rounded-lg px-2.5 py-2" style={{ background: "rgba(239,68,68,0.12)", color: "var(--accent-red)" }}>
           Remove this service from the list? The day&apos;s attendance figures stay on Analytics and the calendar — only this
           service entry goes. Press Delete again to confirm.
         </p>

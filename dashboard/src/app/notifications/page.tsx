@@ -258,7 +258,7 @@ export default function NotificationsPage() {
                   className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all disabled:opacity-50"
                   style={{
                     background: isEnabled ? "rgba(239,68,68,0.15)" : "rgba(99,102,241,0.8)",
-                    color:      isEnabled ? "#fca5a5" : "#fff",
+                    color:      isEnabled ? "var(--accent-red)" : "#fff",
                     border:     isEnabled ? "1px solid rgba(239,68,68,0.3)" : "none",
                   }}
                 >
@@ -445,7 +445,7 @@ export default function NotificationsPage() {
             </div>
             <button onClick={handleTest} disabled={push.loading}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
-              style={{ background: "rgba(99,102,241,0.2)", color: "#a5b4fc", border: "1px solid rgba(99,102,241,0.3)" }}>
+              style={{ background: "rgba(99,102,241,0.2)", color: "var(--accent-indigo)", border: "1px solid rgba(99,102,241,0.3)" }}>
               {push.loading ? <Loader2 size={14} className="animate-spin" />
                 : testSent ? <CheckCircle size={14} className="text-green-400" /> : <Send size={14} />}
               {testSent ? "Sent!" : "Test"}

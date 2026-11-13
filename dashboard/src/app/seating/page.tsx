@@ -703,7 +703,7 @@ function SeatDetailPanel({ seat, cameraId, allSeats, zoneLabels, onAction, onClo
       {zoneLabels && zoneLabels.length > 0 && (
         <div className="mx-3 mt-2 px-2.5 py-1.5 rounded-lg" style={{ background: "rgba(155,93,229,0.12)", border: "1px solid rgba(155,93,229,0.35)" }}>
           <p style={{ fontSize: 9, color: "#c4b5fd", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" }}>Zone rule</p>
-          <p style={{ fontSize: 10, color: "#a5b4fc" }}>
+          <p style={{ fontSize: 10, color: "var(--accent-indigo)" }}>
             In zone{zoneLabels.length > 1 ? "s" : ""}: {zoneLabels.join(", ")}
           </p>
         </div>

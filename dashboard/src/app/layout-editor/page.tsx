@@ -171,7 +171,7 @@ export default function LayoutEditorPage() {
             are ignored. Saying so costs one line and saves an afternoon. */}
         {doorway && (
           <div className="rounded-xl px-4 py-3 mb-4" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)" }}>
-            <p className="text-xs leading-relaxed" style={{ color: "#fcd34d" }}>
+            <p className="text-xs leading-relaxed" style={{ color: "var(--accent-amber)" }}>
               <strong>{doorway.name}</strong> is set as a {doorway.location === "queue" ? "queue" : "doorway"} camera, so it
               has no seats — it counts people crossing, not sitting. Anything drawn here is kept but never used. Pick a
               room camera above, or change this one&apos;s type with the pencil on the Cameras page.

@@ -488,7 +488,7 @@ function VenueOverview({
             <span className="text-xs text-gray-500 uppercase tracking-widest">Outside queue</span>
             {queueSize > 0 && (
               <span className="text-xs px-1.5 py-0.5 rounded-full"
-                style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>
+                style={{ background: "rgba(245,158,11,0.15)", color: "var(--accent-amber)" }}>
                 ● live
               </span>
             )}
@@ -690,17 +690,17 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                       style={{ background: "rgba(75,85,99,0.3)", color: "var(--text-tertiary)" }}>Offline</span>
                   ) : zone.status === "error" || !counting ? (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}
+                      style={{ background: "rgba(245,158,11,0.15)", color: "var(--accent-amber)" }}
                       title={zone.error_reason ?? undefined}>Camera error</span>
                   ) : status === "critical" ? (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>Full</span>
+                      style={{ background: "rgba(239,68,68,0.15)", color: "var(--accent-red)" }}>Full</span>
                   ) : status === "warning" ? (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>Filling</span>
+                      style={{ background: "rgba(245,158,11,0.15)", color: "var(--accent-amber)" }}>Filling</span>
                   ) : (
                     <span className="text-xs px-2.5 py-1 rounded-full font-medium"
-                      style={{ background: "rgba(34,197,94,0.12)", color: "#86efac" }}>Open</span>
+                      style={{ background: "rgba(34,197,94,0.12)", color: "var(--accent-green)" }}>Open</span>
                   )}
                 </div>
               </div>
@@ -829,7 +829,7 @@ function CameraTile({
               <p className="text-xs mt-0.5" style={{ color: "#f59e0b" }}>Outdoor queue</p>
             </div>
             <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-              style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>No seats</span>
+              style={{ background: "rgba(245,158,11,0.15)", color: "var(--accent-amber)" }}>No seats</span>
           </div>
           <div className="flex items-center gap-4 pt-0.5">
             <div className="flex items-center gap-1.5">
@@ -922,9 +922,9 @@ function CameraTile({
           {seatsLeft !== null && (
             <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1"
               style={{ background: "rgba(0,0,0,0.65)", backdropFilter: "blur(4px)" }}>
-              <Armchair size={11} style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }} />
+              <Armchair size={11} style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "var(--accent-green)" }} />
               <span className="text-xs font-medium tabular-nums"
-                style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }}>
+                style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "var(--accent-green)" }}>
                 {seatsLeft === 0 ? "At capacity" : `${seatsLeft.toLocaleString()} space${seatsLeft === 1 ? "" : "s"} left`}
               </span>
             </div>
@@ -956,11 +956,11 @@ function CameraTile({
           </div>
           {level === "critical" && (
             <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5"
-              style={{ background: "rgba(239,68,68,0.15)", color: "#fca5a5" }}>Full</span>
+              style={{ background: "rgba(239,68,68,0.15)", color: "var(--accent-red)" }}>Full</span>
           )}
           {level === "warning" && (
             <span className="text-xs px-2 py-0.5 rounded-full font-medium shrink-0 mt-0.5"
-              style={{ background: "rgba(245,158,11,0.15)", color: "#fcd34d" }}>Filling</span>
+              style={{ background: "rgba(245,158,11,0.15)", color: "var(--accent-amber)" }}>Filling</span>
           )}
         </div>
 
@@ -1113,9 +1113,9 @@ function ExpandedModal({ camera, role, onClose }: { camera: Camera; role: string
           {seatsLeft !== null && (
             <div className="absolute bottom-4 right-4 flex items-center gap-2 rounded-xl px-4 py-2.5"
               style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}>
-              <Armchair size={14} style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }} />
+              <Armchair size={14} style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "var(--accent-green)" }} />
               <span className="text-lg font-bold tabular-nums"
-                style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "#86efac" }}>
+                style={{ color: seatsLeft === 0 ? "#ef4444" : seatsLeft < 10 ? "#f59e0b" : "var(--accent-green)" }}>
                 {seatsLeft === 0 ? "Full" : `${seatsLeft} left`}
               </span>
             </div>
@@ -1171,7 +1171,7 @@ function FloorGroup({ zoneName, cameras, role, expandedId, onExpand, onCountRepo
       <div className="flex items-center gap-3 mb-4">
         <h2 className="text-sm font-semibold text-white">{zoneName}</h2>
         <span className="text-xs px-2 py-0.5 rounded-full"
-          style={{ background: "rgba(99,102,241,0.15)", color: "#a5b4fc" }}>
+          style={{ background: "rgba(99,102,241,0.15)", color: "var(--accent-indigo)" }}>
           {cameras.length} {cameras.length === 1 ? "camera" : "cameras"}
         </span>
         <div className="flex-1 h-px" style={{ background: BORDER }} />

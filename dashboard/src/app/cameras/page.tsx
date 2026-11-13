@@ -551,7 +551,7 @@ function DetectedDeviceCard({ device, onPick, picked, onReject, action, isNew, a
             <span className="truncate">{device.label}</span>
             {isNew && (
               <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide"
-                style={{ background: "rgba(99,102,241,0.18)", color: "#a5b4fc" }}>Just plugged in</span>
+                style={{ background: "rgba(99,102,241,0.18)", color: "var(--accent-indigo)" }}>Just plugged in</span>
             )}
           </p>
           <p className="text-xs" style={{ color: "var(--text-muted)" }}>
@@ -1227,7 +1227,7 @@ function AddCameraForm({ onAdded, cameraCount }: { onAdded: () => void; cameraCo
                         style={{
                           background: active ? "rgba(99,102,241,0.15)" : "var(--bg-inset)",
                           border: `1px solid ${active ? "#4f46e5" : "var(--border-subtle)"}`,
-                          color: active ? "#a5b4fc" : "var(--text-muted)",
+                          color: active ? "var(--accent-indigo)" : "var(--text-muted)",
                         }}>
                         <Icon size={11} />
                         <span className="truncate">{t.label}</span>
@@ -1776,7 +1776,7 @@ function SameSeatsWarning({ cameras }: { cameras: CameraType[] }) {
   const total = list.reduce((n, r) => n + r.seats, 0);
   return (
     <div className="rounded-xl px-4 py-3 mb-3" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.35)" }}>
-      <p className="text-xs leading-relaxed" style={{ color: "#fcd34d" }}>
+      <p className="text-xs leading-relaxed" style={{ color: "var(--accent-amber)" }}>
         <strong>{same.map((r) => r.name).join(" and ")}</strong> are set as different rooms and both hold{" "}
         <strong>{same[0].seats.toLocaleString()}</strong> seats, so Kyro thinks the building holds{" "}
         <strong>{total.toLocaleString()}</strong>. If they are pointed at the <strong>same room</strong>, give
@@ -1873,8 +1873,10 @@ export default function CamerasPage() {
         {(!error || edge) && !loading && sameRoomWarning && (
           <div className="rounded-xl p-3 mb-4 flex items-start gap-2"
             style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.3)" }}>
-            <AlertCircle size={14} className="text-amber-400 shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-200 leading-relaxed">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" style={{ color: "var(--accent-amber)" }} />
+            {/* Pale yellow on a pale yellow card, on white: "i also cant see
+                this, light mode." The token darkens with the theme. */}
+            <p className="text-xs leading-relaxed" style={{ color: "var(--accent-amber)" }}>
               You have {sameRoomWarning} cameras, each in its own zone, so Kyro counts them as
               {" "}{sameRoomWarning} separate rooms and adds the numbers together.{" "}
               <strong>If they are watching the same room, give them the same Zone name</strong>

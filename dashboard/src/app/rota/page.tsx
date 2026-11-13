@@ -69,7 +69,7 @@ function formatTime(iso: string) {
 
 function confidenceBadge(c: string) {
   if (c === "high")   return { bg: "rgba(16,185,129,0.15)", text: "#6ee7b7", label: "High" };
-  if (c === "medium") return { bg: "rgba(245,158,11,0.15)", text: "#fde68a", label: "Medium" };
+  if (c === "medium") return { bg: "rgba(245,158,11,0.15)", text: "var(--accent-amber)", label: "Medium" };
   return               { bg: "rgba(239,68,68,0.15)",  text: "#fca5a5", label: "Low — review" };
 }
 
@@ -338,7 +338,7 @@ function ActiveRota({ cameraId, entries, onDeleted }: {
                 <span className="text-sm font-medium text-white">{e.label}</span>
                 {live && (
                   <span className="text-xs px-2 py-0.5 rounded-full font-medium"
-                    style={{ background: "rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
+                    style={{ background: "rgba(99,102,241,0.3)", color: "var(--accent-indigo)" }}>
                     ● Live now
                   </span>
                 )}

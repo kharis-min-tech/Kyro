@@ -51,7 +51,7 @@ export function SeatingAreaPicker({ label, sections, value, resolved, onChange, 
       <div className="flex items-start gap-2">
         <MapPin size={13} className={resolved ? "text-emerald-400" : "text-amber-400"} style={{ marginTop: 2 }} />
         <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium" style={{ color: resolved ? "#6ee7b7" : "#fde68a" }}>
+          <p className="text-xs font-medium" style={{ color: resolved ? "var(--accent-green)" : "var(--accent-amber)" }}>
             Which seating area is &ldquo;{label || "this entry"}&rdquo; in?
           </p>
           <p className="text-xs text-gray-500 mt-0.5">
