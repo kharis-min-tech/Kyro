@@ -2592,7 +2592,26 @@ export class VenueHub extends DurableObject {
     const roomPeople = this.register?.size ?? sum("people");
     const attendance = doorPeople > 0 ? doorPeople : roomPeople;
     const attendanceFrom = doorPeople > 0 ? "door" : this.register ? "rooms" : "cameras";
-    const cap = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
+    const entered = rooms.reduce((n, r) => n + (r.capacity_from === "admin" ? r.capacity || 0 : 0), 0);
+    /**
+     * …and the seats the church has stated, when a room is being watched and
+     * nobody has typed a number.
+     *
+     * "so how do you fix it" — asked of a card reading Here now 0, Busiest 0,
+     * Came in 0, Seats —.
+     *
+     * The dash was the odd one out. Kyro already knew the hall holds 114: it
+     * has been checking the attendance against that number for a day. The
+     * Seats tile asked a narrower question — "has somebody typed a capacity
+     * against a room camera" — and answered honestly, which left one screen
+     * saying 114 and another saying nothing, about the same hall. That is
+     * the inconsistency she keeps finding, in its smallest possible form.
+     *
+     * Still only when a camera is actually watching a room. A building whose
+     * cameras are all on doorways has no room to seat, cannot say how full
+     * it is, and must not pretend otherwise — see the note on seatsHere.
+     */
+    const cap = entered > 0 ? entered : rooms.length ? SEATS_IN_THE_HALL : 0;
     /**
      * The seats in the building, for checking the attendance figure against.
      *
@@ -2620,7 +2639,7 @@ export class VenueHub extends DurableObject {
      * question: is the number of DIFFERENT PEOPLE recorded even possible in
      * this building?
      */
-    const seatsHere = await this.seatsInBuilding();
+    const seatsHere = cap > 0 ? cap : await this.seatsInBuilding();
     // Face matching (if switched on): someone seen clearly by two cameras at once is counted once.
     const running = roomZones.filter((z) => z.is_running);
     const serviceNow = await this.get("service_live", null);

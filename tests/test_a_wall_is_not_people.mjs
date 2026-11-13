@@ -117,7 +117,12 @@ fs.rmSync(tmp, { recursive: true, force: true });
   // cap only ever adds up capacities somebody ENTERED — against a seat count
   // Kyro guessed from the picture this would be one guess accusing another.
   ok("and only against a seat count somebody entered",
-     /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
+     /const entered = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker)
+     // …or the seats the church has STATED, when a camera is watching a room
+     // and nobody has typed a number. Still never one Kyro guessed from a
+     // picture, which is the thing this test exists to prevent.
+     && /const cap = entered > 0 \? entered : rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker)
+     && !/capacity_from === "found"/.test(worker.slice(worker.indexOf("const entered = rooms.reduce"), worker.indexOf("const seatsHere"))));
   ok("it is raised where failures are collected",
      /await this\.wrong\("Counting",/.test(worker)
      && /people in a building set to hold/.test(worker));

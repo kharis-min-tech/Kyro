@@ -259,7 +259,20 @@ function chairsChangeHands({ freeForReports, alike }) {
      /\? Math\.max\(0, attendance - Math\.max\(0, doorNet \?\? 0\)\)/.test(worker)
      && /: Math\.max\(0, attendance - \(this\.register\?\.inBuilding\?\.\(\) \?\? 0\)\)/.test(worker));
   ok("built from capacities somebody entered, never ones Kyro guessed",
-     /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
+     /const entered = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
+  /**
+   * …and when nobody has typed one, the seats the church has STATED — but
+   * only while a camera is actually watching a room.
+   *
+   * The Seats tile used to ask a narrower question than every other figure:
+   * "has somebody typed a capacity against a room camera". So one screen
+   * said 114 and another said nothing, about the same hall, which is the
+   * inconsistency she keeps finding in its smallest form.
+   */
+  ok("and falls back to the seats the church has stated",
+     /const cap = entered > 0 \? entered : rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker));
+  ok("but never when no camera is watching a room",
+     /rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker));
   ok("the figure is never quietly capped at the seat count",
      !/people_seen: Math\.min/.test(worker));
   /**
@@ -375,7 +388,8 @@ function chairsChangeHands({ freeForReports, alike }) {
    */
   ok("there is one answer to how many seats this building has",
      /async seatsInBuilding\(\) \{/.test(worker));
-  ok("the live figures use it", /const seatsHere = await this\.seatsInBuilding\(\);/.test(worker));
+  ok("the live figures use it",
+     /const seatsHere = cap > 0 \? cap : await this\.seatsInBuilding\(\);/.test(worker));
   ok("and so does every day in the history", /const seats = await this\.seatsInBuilding\(\);/.test(worker));
   ok("a day is held at the seats, or the most ever seen at once, whichever is larger",
      /const ceiling = Math\.max\(seats, v\.peak \|\| 0\);/.test(worker)

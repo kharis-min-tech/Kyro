@@ -61,7 +61,12 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
   ok("no occupancy percentage from a guessed capacity",
      /occupancy_pct: c\.capacity_from === "admin" && c\.zone_capacity \?/.test(worker));
   ok("the building's capacity only adds up the ones somebody entered",
-     /const cap = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker));
+     /const entered = rooms\.reduce\(\(n, r\) => n \+ \(r\.capacity_from === "admin" \? r\.capacity \|\| 0 : 0\), 0\);/.test(worker)
+     // …or the seats the church has STATED, when a camera is watching a room
+     // and nobody has typed a number. Still never one Kyro guessed from a
+     // picture, which is the thing this test exists to prevent.
+     && /const cap = entered > 0 \? entered : rooms\.length \? SEATS_IN_THE_HALL : 0;/.test(worker)
+     && !/capacity_from === "found"/.test(worker.slice(worker.indexOf("const entered = rooms.reduce"), worker.indexOf("const seatsHere"))));
   ok("a room with two cameras is measured if either one is",
      /if \(z\.capacity_from === "admin"\) r\.capacity_from = "admin";/.test(worker));
   // The one at the end of the chain, and the one that reaches a person.
