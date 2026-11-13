@@ -314,32 +314,69 @@ export class SeatFinder {
     if (!seat) return null;
     let best: number | null = null, bestScore = NEAR_SEAT;
     people.forEach((b, i) => {
-      const person = this.toSeatSpace(b, w, h);
-      // Of the seat, how much this person stands over — and, for somebody
-      // tall who covers it from above, whether their feet are at it.
-      const score = Math.max(covered(seat.bbox, person), covered(seat.bbox, footOf(person)));
-      if (score <= bestScore) return;
-      /**
-       * Somebody WALKING PAST the row is not the person at that seat.
-       *
-       * Standing in front of a chair covers it as thoroughly as sitting in
-       * it — more, usually — so coverage alone cannot tell the two apart.
-       * What tells them apart is that one of them has stopped. A picture of
-       * somebody on their way past, put to a person as "is this the same
-       * person?", gets an honest no, and two cameras looking at one chair
-       * are then told to go on counting it twice.
-       *
-       * So everybody here has to have stood still a moment, seated or not.
-       * Somebody who has only just arrived is simply photographed a few
-       * seconds later: the question waits, and asks again.
-       */
-      if ((stillFor[i] ?? 0) < STOPPED_MS) return;
-      bestScore = score; best = i;
+      const score = this.atScore(seat.bbox, b, w, h, stillFor[i] ?? 0);
+      if (score > bestScore) { bestScore = score; best = i; }
     });
     return best;
   }
 
-  occupancy(people: Box[], w: number, h: number, now: number): [string, SeatState, number, number][] {
+  /**
+   * How much this person is AT this seat: 0 if they are not.
+   *
+   * Somebody WALKING PAST a row covers a chair as thoroughly as the person
+   * sitting in it — more, usually — so coverage alone cannot tell the two
+   * apart. What tells them apart is that one of them has stopped. So
+   * everybody counted here has stood still a moment, seated or not, and
+   * somebody who has only just arrived is simply picked up a few seconds
+   * later.
+   */
+  private atScore(seatBox: Box, personBox: Box, w: number, h: number, stillFor: number): number {
+    if (stillFor < STOPPED_MS) return 0;
+    const person = this.toSeatSpace(personBox, w, h);
+    // Of the seat, how much this person stands over — and, for somebody
+    // tall who covers it from above, whether their feet are at it.
+    return Math.max(covered(seatBox, person), covered(seatBox, footOf(person)));
+  }
+
+  /**
+   * Who is STANDING at each seat — one person to a seat.
+   *
+   * "so what if somone is standing in from of their chair and there like
+   * worshipping for example"
+   *
+   * Then the seat is not free, and until now the map said it was. The rule
+   * that decides whether somebody is SITTING in a chair refuses anybody
+   * standing, and must, or everybody walking a row fills it. A seat they had
+   * stood up from was held for forty-five seconds and then went green. A
+   * church stands up to sing for half an hour, so the seat map emptied the
+   * hall at the exact moment it was fullest.
+   *
+   * Standing at your chair holds your chair. One person cannot hold two, so
+   * the strongest claim wins and that person is then spoken for — otherwise
+   * somebody standing at the end of a row would hold three of them.
+   */
+  whoIsStandingAt(people: Box[], w: number, h: number, stillFor: number[],
+                  spokenFor: Set<number>): Map<string, number> {
+    const seats = this.seats();
+    const pairs: { s: number; p: number; score: number }[] = [];
+    seats.forEach((seat, si) => {
+      people.forEach((b, pi) => {
+        if (spokenFor.has(pi)) return;
+        const score = this.atScore(seat.bbox, b, w, h, stillFor[pi] ?? 0);
+        if (score >= NEAR_SEAT) pairs.push({ s: si, p: pi, score });
+      });
+    });
+    pairs.sort((a, b) => b.score - a.score);
+    const out = new Map<string, number>(), used = new Set<number>();
+    for (const { s, p } of pairs) {
+      if (out.has(seats[s].seat_id) || used.has(p)) continue;
+      out.set(seats[s].seat_id, p); used.add(p);
+    }
+    return out;
+  }
+
+  occupancy(people: Box[], w: number, h: number, now: number,
+            stillFor: number[] = []): [string, SeatState, number, number][] {
     const seats = this.seats();
     const { personOfSeat } = this.whoIsWhere(people, w, h);
     const seatTaken = new Map<number, number>();
@@ -347,8 +384,11 @@ export class SeatFinder {
       const who = personOfSeat.get(seat.seat_id);
       if (who !== undefined) seatTaken.set(si, who);
     });
+    // …and whoever is on their feet at a seat nobody is sitting in. See
+    // whoIsStandingAt: standing to worship does not free your chair.
+    const standing = this.whoIsStandingAt(people, w, h, stillFor, new Set(personOfSeat.values()));
     return seats.map((seat, si) => {
-      const who = seatTaken.get(si);
+      const who = seatTaken.get(si) ?? standing.get(seat.seat_id);
       const held = this.held.get(seat.seat_id);
       if (who !== undefined) {
         const since = held?.since ?? now;

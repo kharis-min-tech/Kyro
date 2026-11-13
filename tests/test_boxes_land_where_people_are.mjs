@@ -80,7 +80,12 @@ const mode = read("dashboard/src/lib/cameraMode.ts");
      /const frameW = c\.grabCanvas\.width \|\| c\.video\?\.videoWidth \|\| 1280;/.test(ctx)
      && /const frameH = c\.grabCanvas\.height \|\| c\.video\?\.videoHeight \|\| 720;/.test(ctx));
   ok("for who is in which seat", /c\.seatFinder\.whoIsWhere\(\s*\n?\s*following\.map[\s\S]{0,120}frameW, frameH\)/.test(ctx));
-  ok("and for which seats are taken", /c\.seatFinder\.occupancy\(\s*\n?[\s\S]{0,160}frameW, frameH, Date\.now\(\)\)/.test(ctx));
+  // …and from the same list of people as the line above it. It read the raw
+  // detections, so the seat map and the register could disagree about where
+  // somebody was sitting — and there was no stillness to tell somebody
+  // standing at their chair from somebody walking past it.
+  ok("and for which seats are taken",
+     /c\.seatFinder\.occupancy\(\s*\n?\s*following\.map[\s\S]{0,160}frameW, frameH, Date\.now\(\), following\.map\(\(x\) => x\.stillFor\)\)/.test(ctx));
   ok("and the position sent to the register is in that picture too",
      /b: \[x\.box\[0\] \/ frameW, x\.box\[1\] \/ frameH, x\.box\[2\] \/ frameW, x\.box\[3\] \/ frameH\]/.test(ctx));
   ok("nothing interprets a box against the camera's own size any more",

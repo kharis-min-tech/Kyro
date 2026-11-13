@@ -103,14 +103,80 @@ const midChair = chairs[seats.findIndex((s) => s.seat_id === mid.seat_id)];
      f.whoIsAt("K9999", [faraway], SEAT_W, SEAT_H, [30_000]) === null);
 }
 
-// ── 6. The camera asks for the person at the seat, not the seat ───────────
+// ── 6. The church stands up to sing ───────────────────────────────────────
+//
+// "so what if somone is standing in from of their chair and there like
+// worshipping for example"
+//
+// Everybody on their feet at their own chair, for half an hour. The rule
+// that decides whether somebody is SITTING in a chair says no to every one
+// of them — rightly, it has to — and the seat the person stood up from was
+// held for forty-five seconds and then went green. So the seat map emptied
+// the hall at the moment it was fullest.
+{
+  const { f: g, chairs: cs } = hall();
+  const row = g.seats();
+  const now = 100_000;
+  const seatedAll = cs.map(seated);
+  const standingAll = cs.map(standing);
+  const still = cs.map(() => 30_000);
+
+  // Sitting down: the hall fills.
+  g.occupancy(seatedAll, SEAT_W, SEAT_H, now, still);
+  const sat = g.occupancy(seatedAll, SEAT_W, SEAT_H, now + 5_000, still);
+  ok("6. with everybody seated, every seat is taken",
+     sat.filter(([, st]) => st === "occupied").length === row.length,
+     JSON.stringify(sat.map(([, st]) => st)));
+
+  // Everybody stands to sing, and stays up well past the forty-five seconds
+  // a seat used to be held for.
+  let up = g.occupancy(standingAll, SEAT_W, SEAT_H, now + 20_000, still);
+  up = g.occupancy(standingAll, SEAT_W, SEAT_H, now + 10 * 60_000, still);
+  ok("6. ten minutes into the singing, the hall is not empty",
+     up.filter(([, st]) => st === "available").length === 0,
+     JSON.stringify(up.map(([, st]) => st)));
+  ok("6. every chair is still its person's",
+     up.filter(([, st]) => st === "occupied").length === row.length,
+     JSON.stringify(up.map(([, st]) => st)));
+
+  // They sit back down. Nothing has been lost.
+  const back = g.occupancy(seatedAll, SEAT_W, SEAT_H, now + 11 * 60_000, still);
+  ok("6. and they are still there when they sit down again",
+     back.filter(([, st]) => st === "occupied").length === row.length);
+}
+
+// ── 7. One person standing does not hold the whole row ────────────────────
+{
+  const { f: g, chairs: cs } = hall();
+  const one = [standing(cs[2])];
+  const now = 100_000;
+  g.occupancy(one, SEAT_W, SEAT_H, now, [30_000]);
+  const st = g.occupancy(one, SEAT_W, SEAT_H, now + 5_000, [30_000]);
+  const held = st.filter(([, x]) => x === "occupied");
+  ok("7. one person standing holds one chair", held.length === 1, JSON.stringify(st.map(([, x]) => x)));
+  ok("7. and the rest of the row is free",
+     st.filter(([, x]) => x === "available").length === g.seats().length - 1);
+}
+
+// ── 8. Somebody walking the row still empties nothing and fills nothing ───
+{
+  const { f: g, chairs: cs } = hall();
+  const now = 100_000;
+  const passer = [standing(cs[1])];
+  g.occupancy(passer, SEAT_W, SEAT_H, now, [100]);
+  const st = g.occupancy(passer, SEAT_W, SEAT_H, now + 5_000, [100]);
+  ok("8. somebody on their way past fills nothing",
+     st.every(([, x]) => x === "available"), JSON.stringify(st.map(([, x]) => x)));
+}
+
+// ── 9. The camera asks for the person at the seat, not the seat ───────────
 {
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
-  ok("6. the chair question crops whoever is at the seat",
+  ok("9. the chair question crops whoever is at the seat",
      /if \(want\.seat && want\.who\)/.test(ctx) && /c\.seatFinder\.whoIsAt\(`K\$\{want\.seat\}`/.test(ctx));
-  ok("6. telling it how long each person has stood still",
+  ok("9. telling it how long each person has stood still",
      /seen\.map\(\(x\) => x\.stillFor\)/.test(ctx));
-  ok("6. and it is a kept picture of a person, not a crop of furniture",
+  ok("9. and it is a kept picture of a person, not a crop of furniture",
      /const kept = c\.crops\.get\(seen\[pi\]\.track\);/.test(ctx));
 }
 

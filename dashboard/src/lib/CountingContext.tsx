@@ -1129,9 +1129,20 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // picture is asked for. See SEAT_W.
           b: pl.box.map((v) => Math.round(v)),
         })) }),
+        /**
+         * Which seats are taken — from the people Kyro is following, the
+         * same list the register uses.
+         *
+         * It read the raw detections instead, so the seat map and the
+         * register could disagree about where somebody was sitting, which
+         * the note by `following` above says must not happen. It also meant
+         * there was no way to know how long anybody had stood still — and
+         * standing still at your chair is what holds it while the church is
+         * on its feet singing. See whoIsStandingAt.
+         */
         ...(c.isDoor ? {} : { seats: c.seatFinder.occupancy(
-          c.people.map((p) => p.box as [number, number, number, number]),
-          frameW, frameH, Date.now()) }),
+          following.map((x) => x.box as [number, number, number, number]),
+          frameW, frameH, Date.now(), following.map((x) => x.stillFor)) }),
         // Everyone this camera is following, for the website's register of
         // people. A look is eight small numbers; a face only travels while
         // face matching is switched on, and is a list of numbers either way —
