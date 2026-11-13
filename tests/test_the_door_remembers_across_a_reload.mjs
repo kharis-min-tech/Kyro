@@ -126,8 +126,11 @@ const cross = (tr, who, t, from, to) => {
   const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("the website keeps it against the service", /const key = `door_known:\$\{camera_id\}`;/.test(worker)
      && /had\.service === service \? had\.people : \[\]/.test(worker));
+  // faceOn is report()'s own name for it; faceOk is the same question asked
+  // in rememberPeople, and using that name here was a ReferenceError on
+  // every report that carried one of these.
   ok("a face is only kept while face matching is on",
-     /f: faceOk && typeof k\.f === "string" \? k\.f : null,/.test(worker));
+     /f: faceOn && typeof k\.f === "string" \? k\.f : null,/.test(worker));
   ok("…and only handed back while it still is",
      /had\.people\.map\(\(k\) => \(\{ \.\.\.k, f: null \}\)\)/.test(worker));
   ok("it is handed back when a browser has started again, not on every report",

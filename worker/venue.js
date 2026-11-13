@@ -357,6 +357,44 @@ function unpackFace(b64) {
     return out;
   } catch { return null; }
 }
+/**
+ * …and back again, for writing one down.
+ *
+ * ── The bug this is ────────────────────────────────────────────────────────
+ *
+ * saveFaces has been calling packFace since the day it was written. Nothing
+ * of that name has ever existed here. Every attempt to write a face threw a
+ * ReferenceError, was swallowed by the try round the register, and reported
+ * as general trouble with "Register of people" — so NO FACE HAS EVER BEEN
+ * WRITTEN DOWN, and the table they were supposedly kept in has always been
+ * empty.
+ *
+ * Which makes a second fault from today worse than it looked: the method for
+ * putting faces back after a restart was never called, and even if it had
+ * been there was nothing for it to read. Face matching could work inside one
+ * running process and never survived anything.
+ *
+ * Exactly the inverse of unpackFace above: 128 numbers as float16, little
+ * endian, base64. The same form the camera sends, so what comes back out
+ * matches what went in.
+ */
+function packFace(v) {
+  if (!v || v.length !== 128) return null;
+  const bytes = new Uint8Array(256);
+  for (let i = 0; i < 128; i++) {
+    const f = new Float32Array([v[i]]);
+    const bits = new Uint32Array(f.buffer)[0];
+    const sign = (bits >>> 16) & 0x8000;
+    const exp = ((bits >>> 23) & 0xff) - 127 + 15;
+    const mant = (bits >>> 13) & 0x3ff;
+    const h = exp <= 0 ? sign : exp >= 31 ? sign | 0x7c00 : sign | (exp << 10) | mant;
+    bytes[2 * i] = h & 0xff;
+    bytes[2 * i + 1] = (h >> 8) & 0xff;
+  }
+  let bin = "";
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
 const SEAT_STATES = ["occupied", "temporarily_vacant", "likely_available", "available", "reserved", "rota_hold", "unknown"];
 /** A seat drawn on the camera's picture (1280×720 coordinates). */
 function cleanSeatDef(s) {
@@ -1056,6 +1094,20 @@ export class VenueHub extends DurableObject {
     // somebody visits a settings page.
     const mayReadFaces = await this.facesAllowed();
     const faceOn = mayReadFaces && !!(await this.get("service_live", null));
+    /**
+     * Which service is being recorded, if one is.
+     *
+     * Two things written here belong to a service and must not outlive one:
+     * the doorway's record of who it has counted, and the questions about
+     * chairs. Both referred to a `service` that was never declared in this
+     * function — a ReferenceError on EVERY report, which the browser saw as
+     * "the website didn't accept the counts (500)" and nothing was saved at
+     * all until it cleared.
+     *
+     * It was three lines below in spirit and nowhere in fact: faceOn above
+     * reads the same value and throws it away.
+     */
+    const service = (await this.get("service_live", null))?.id ?? null;
     if (!faceOn) this.faceCodes.clear();
     // Each camera's arrivals and departures added up over time, rather than
     // whatever its browser's own tally happens to read right now. See below.
@@ -1234,7 +1286,10 @@ export class VenueHub extends DurableObject {
           list.push({
             l: Array.isArray(k.l) && k.l.length === 8 ? k.l.map(Number) : null,
             // A face only ever travels, or is kept, while face matching is on.
-            f: faceOk && typeof k.f === "string" ? k.f : null,
+            // In this function it is faceOn; faceOk is the same question
+            // asked in rememberPeople, and using that name here was a
+            // ReferenceError on every report that carried one of these.
+            f: faceOn && typeof k.f === "string" ? k.f : null,
             i: k.i ? 1 : 0, o: k.o ? 1 : 0, u: k.u ? 1 : 0,
             at: num(k.at, 0, Date.now() + 60_000) || now,
           });
@@ -1558,7 +1613,7 @@ export class VenueHub extends DurableObject {
           if (!camera_id.startsWith(`${device.id}:`)) continue;
           const had = await this.get(`door_known:${camera_id}`, null);
           if (!had || had.service !== service || !had.people?.length) continue;
-          out[camera_id.slice(device.id.length + 1)] = faceOk
+          out[camera_id.slice(device.id.length + 1)] = faceOn
             ? had.people
             // Face matching switched off since: the coats may come back, the
             // faces may not.
