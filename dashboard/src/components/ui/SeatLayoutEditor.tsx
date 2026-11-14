@@ -157,6 +157,8 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   // screenshot upload every time.
   const [loadingBg, setLoadingBg] = useState(true);
   const [bgError, setBgError] = useState(false);
+  /** When the still was taken, so the page can say so. */
+  const [bgTakenAt, setBgTakenAt] = useState<Date | null>(null);
 
   const loadBackgroundFromCamera = useCallback(async () => {
     setLoadingBg(true);
@@ -175,7 +177,7 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const img  = new Image();
-      img.onload = () => setBgImage(img);
+      img.onload = () => { setBgImage(img); setBgTakenAt(new Date()); };
       img.onerror = () => setBgError(true);
       img.src = url;
     } catch {
@@ -185,6 +187,24 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
     }
   }, [cameraId]);
 
+  /**
+   * The picture is taken ONCE and then left alone.
+   *
+   * "seat editor is still broken, the pictures keep changing when its meant
+   * to be fixed, i dont know why."
+   *
+   * Seats are drawn on top of this picture and saved as positions in it. A
+   * picture that moves under the drawing puts every seat somewhere slightly
+   * wrong, and there is no way to tell afterwards which picture a layout was
+   * drawn on. So it is fetched once per camera and never refreshed by
+   * itself — not on a timer, not when the camera list polls, not when
+   * anything else on the page updates.
+   *
+   * It was already meant to work this way, and nothing on the screen said
+   * so, which is its own kind of broken: she had no way to know whether
+   * what she was looking at was live. The line under the canvas now says
+   * when it was taken, and taking a new one is a button somebody presses.
+   */
   useEffect(() => { loadBackgroundFromCamera(); }, [loadBackgroundFromCamera]);
 
   useEffect(() => {
@@ -498,6 +518,28 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
             mode === "zone" ? "bg-purple-600 text-white" : "text-gray-400 hover:text-white"
           }`}>
           <MapPin size={13} /> Mark zones (stage, etc.)
+        </button>
+      </div>
+
+      {/**
+        * What the picture is, and when it was taken.
+        *
+        * Without this there is no way to tell a still from a live view, and
+        * "the pictures keep changing" is impossible to argue with or check.
+        */}
+      <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: "var(--text-muted)" }}>
+        <span>
+          {bgImage && bgTakenAt
+            ? `Still picture, taken at ${bgTakenAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}. It does not move while you draw.`
+            : bgError
+            ? "No picture — the camera is off."
+            : "Taking a picture from the camera…"}
+        </span>
+        <button onClick={loadBackgroundFromCamera} disabled={loadingBg}
+          className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-medium disabled:opacity-50"
+          style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+          <RefreshCw size={11} className={loadingBg ? "animate-spin" : undefined} />
+          {loadingBg ? "Taking…" : "Take a new picture"}
         </button>
       </div>
 

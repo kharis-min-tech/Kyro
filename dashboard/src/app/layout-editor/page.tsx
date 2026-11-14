@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { CameraSwitcher } from "@/components/layout/CameraSwitcher";
 import { SeatLayoutEditor } from "@/components/ui/SeatLayoutEditor";
@@ -102,6 +102,12 @@ export default function LayoutEditorPage() {
   }, [edge, cameras, cameraId]);
 
   /** The camera being edited, when it is one that has no seats to draw. */
+  /**
+   * Has the chosen camera ever been in the list? Sticky on purpose — see
+   * the note on the editor below.
+   */
+  const hadCamera = useRef<string | null>(null);
+  if (cameras.some((c) => c.camera_id === cameraId)) hadCamera.current = cameraId;
   const doorway = cameras.find((c) => c.camera_id === cameraId
     && (c.location === "entrance" || c.location === "queue"));
 
@@ -179,7 +185,21 @@ export default function LayoutEditorPage() {
           </div>
         )}
 
-        {edge !== null && (!edge || cameras.some((c) => c.camera_id === cameraId)) && <>
+        {/**
+          * Once the editor is up it stays up.
+          *
+          * This asked, on every render, whether the chosen camera is still
+          * in the list — and the list is refetched every ten seconds. A
+          * poll that fails, or comes back without a camera for a moment,
+          * took the whole editor off the page: the picture, the seats drawn
+          * on it and not yet saved, all of it, and then it came back blank
+          * with a fresh picture. "the pictures keep changing when its meant
+          * to be fixed."
+          *
+          * Whether the camera is still there is worth saying; it is not
+          * worth throwing somebody's drawing away over.
+          */}
+        {edge !== null && (!edge || hadCamera.current === cameraId) && <>
         {/* Editor */}
         <div className="mb-8">
           <SeatLayoutEditor cameraId={cameraId} onSaved={() => loadLayouts()} />
