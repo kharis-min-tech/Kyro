@@ -713,6 +713,28 @@ export class VenueHub extends DurableObject {
       );
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS visits_in ON visits (in_at)");
       ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_cam_ts ON history (camera_id, ts)");
+      /**
+       * …and one on the time alone.
+       *
+       * Nine of the twelve places that read the history ask for a stretch
+       * of TIME across every camera — the attendance page, the charts, a
+       * service's own record. A (camera_id, ts) index cannot answer those:
+       * SQLite needs the first column fixed to seek with it, so every one
+       * of them was a full scan of the table, plus a temporary sort.
+       *
+       * The table is one row per camera per minute and is never pruned,
+       * because it IS the attendance record. So the scan grows every day
+       * Kyro runs. Measured on a year of two cameras — 1,051,200 rows —
+       * reading one day out of it:
+       *
+       *     SCAN history + TEMP B-TREE ....... 48 ms
+       *     SEARCH history USING history_ts ... 1 ms
+       *
+       * Forty-seven times, and widening. Nothing was ever wrong on the
+       * screen; it simply got slower in a way nobody would report as a bug
+       * until it was unusable.
+       */
+      ctx.storage.sql.exec("CREATE INDEX IF NOT EXISTS history_ts ON history (ts)");
       // Deleting a day marks its rows instead of removing them, so it can be
       // undone. They are only really gone after DELETED_KEPT_DAYS.
       try { ctx.storage.sql.exec("ALTER TABLE history ADD COLUMN deleted_at INTEGER"); } catch { /* already there */ }
