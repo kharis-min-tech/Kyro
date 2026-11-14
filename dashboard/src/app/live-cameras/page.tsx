@@ -233,7 +233,16 @@ function SnapshotImage({ cameraId, streamUrl, zoneName }: { cameraId: string; st
   // A camera that was switched off showed its last picture, in colour, with a
   // green "Live" over it until the next fetch caught up. One source of truth:
   // not running, no picture.
-  const running = !cameraId || !!zonesHere?.[cameraId]?.is_running;
+  /**
+   * Not "is it reporting" — "has it got a picture".
+   *
+   * A camera that has been unplugged goes on reporting for a while: the
+   * computer it was plugged into is still there and still sending, and what
+   * it sends says plainly that this camera has no picture. is_running was
+   * still true, so the tile went on showing the last still, frozen, beside
+   * the words "Unplugged". See is_counting in worker/venue.js.
+   */
+  const running = !cameraId || !!zonesHere?.[cameraId]?.is_counting;
   // Edge Live: the picture endpoint needs the Authorization header → blob URL, refreshed every 20 s.
   const snap = useEdgeSnapshot(cameraId, edge && !liveHere && running, 20_000);
 

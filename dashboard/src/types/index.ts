@@ -110,6 +110,13 @@ export interface ZoneLive {
   capacity: number;
   occupancy_pct: number;
   is_running: boolean;
+  /**
+   * Reporting AND actually producing a picture. A camera that has been
+   * unplugged goes on reporting — the computer it was plugged into is still
+   * sending — and says it has no picture. is_running stays true so the
+   * reason can still be shown; this is what "working" means.
+   */
+  is_counting?: boolean;
   /** "online" | "offline" | "error" — error means frames are flowing but
    *  look blank/frozen (camera physically failed without being detected
    *  as disconnected). */

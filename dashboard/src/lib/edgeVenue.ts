@@ -183,7 +183,20 @@ export function useEdgeSnapshot(cameraId: string | null, enabled: boolean, every
   const [live, setLive] = useState(false);
   const current = useRef<string | null>(null);
   useEffect(() => {
-    if (!enabled || !cameraId) return;
+    /**
+     * Switched off means no picture, not the last picture for ever.
+     *
+     * This returned and left `url` holding whatever it last had. So the
+     * moment a camera stopped being watched — unplugged, switched off — the
+     * tile froze on its final frame and stayed there: a room, in colour,
+     * under a label saying it was gone. "the image should be gone
+     * immediately, straight after i have unplugged it."
+     */
+    if (!enabled || !cameraId) {
+      if (current.current) { URL.revokeObjectURL(current.current); current.current = null; }
+      setUrl(null);
+      return;
+    }
     let alive = true;
     let ws: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;

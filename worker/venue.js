@@ -2687,7 +2687,25 @@ export class VenueHub extends DurableObject {
     const s = await this.ctx.storage.get(`snap:${camera_id}`);
     if (!s) return new Response("No picture yet", { status: 404 });
     const live = await this.get("live", {});
-    const reporting = this.isOnline(live[camera_id]);
+    const l = live[camera_id];
+    /**
+     * Reporting is not the same as having a picture.
+     *
+     * "the image should be gone immediately, straight after i have unplugged
+     * it, why is it still there frozen."
+     *
+     * A camera that is unplugged goes on REPORTING for a while: the browser
+     * it was plugged into is still there, still sending, and what it sends
+     * says plainly "this camera has no picture" (status error, no_picture).
+     * This only asked whether something was reporting, so it went on
+     * handing out the last still — a room, in colour, frozen — while the
+     * tile underneath said Unplugged.
+     *
+     * A picture is the most convincing thing on a screen; a label cannot
+     * argue with it. That is written three lines above this and was only
+     * half enforced.
+     */
+    const reporting = this.isOnline(l) && !(l?.status === "error" && l?.no_picture);
     const age = Date.now() - (s.at || 0);
     if (!reporting || age > SNAPSHOT_STALE_MS) {
       return new Response("That camera isn't on, so there is no picture of now", {

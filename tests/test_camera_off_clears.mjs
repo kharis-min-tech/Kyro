@@ -150,8 +150,12 @@ const view = fs.readFileSync(path.join(root, "dashboard/src/components/ui/System
 
 // ── The page stops showing a picture of a camera that is off ────────────────
 {
-  ok("the tile asks whether the camera is running, not just whether it has a picture",
-     /const running = !cameraId \|\| !!zonesHere\?\.\[cameraId\]\?\.is_running;/.test(page));
+  // It asked is_running, which stays TRUE for a camera that has just been
+  // unplugged: the computer it was plugged into is still reporting, and
+  // what it reports says the camera has no picture. is_counting is that
+  // question. See test_an_unplugged_camera_shows_nothing.mjs.
+  ok("the tile asks whether the camera has a picture, not merely whether it is reporting",
+     /const running = !cameraId \|\| !!zonesHere\?\.\[cameraId\]\?\.is_counting;/.test(page));
   ok("and does not fetch a picture for one that isn't",
      /useEdgeSnapshot\(cameraId, edge && !liveHere && running, 20_000\)/.test(page));
   ok("not running shows 'this camera is off' however fresh the last picture was",

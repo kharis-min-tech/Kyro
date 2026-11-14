@@ -28,8 +28,11 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 // ── The picture ────────────────────────────────────────────────────────────
 {
   const snap = worker.slice(worker.indexOf("async getSnapshot(camera_id)"), worker.indexOf("// ── Live video"));
-  ok("a picture is only served while the camera is reporting",
-     /const reporting = this\.isOnline\(live\[camera_id\]\);/.test(snap));
+  // Reporting is not the same as having a picture: an unplugged camera
+  // goes on reporting through the computer it was plugged into, saying it
+  // has none. Both halves are required now.
+  ok("a picture is only served while the camera is reporting AND can see",
+     /const reporting = this\.isOnline\(l\) && !\(l\?\.status === "error" && l\?\.no_picture\);/.test(snap));
   ok("and only while it is recent", /age > SNAPSHOT_STALE_MS/.test(snap));
   ok("otherwise nothing is served at all", /status: 404/.test(snap));
   ok("but when the last one was is still said", /X-Last-Picture/.test(snap));
