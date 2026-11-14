@@ -33,6 +33,9 @@ export interface DetectOptions {
   size?: number;
   /** false = skip tidy() (only for measuring what tidy() changes; see ai/eval). */
   tidy?: boolean;
+  /** Told what screens the whole-picture pass saw, out of the same run.
+   *  See SCREEN_ROWS — a person inside one of these is a photograph. */
+  onScreens?: (screens: Person[]) => void;
 }
 
 /** A person counts when the model is at least this sure. Chosen on the tuning
@@ -97,6 +100,30 @@ function toTensor(px: Pixels, sx: number, sy: number, sw: number, sh: number, S:
  */
 export const PERSON_ROW = 4;
 export const SEATING_ROWS = [4 + 13, 4 + 56, 4 + 57];   // bench, chair, sofa
+/**
+ * Things with a picture of somebody on them: a television, a laptop, a phone.
+ *
+ * ── Why these rows ─────────────────────────────────────────────────────────
+ *
+ * "Kyro is still counting a picture on my phone as a person, why."
+ *
+ * Because there IS a person in those pixels. A detector asked "is this a
+ * person" answers honestly about a photograph of a baby, and no threshold
+ * will ever separate the two — the picture of somebody is exactly as
+ * person-shaped as somebody.
+ *
+ * There is already a rule for a photograph held up in front of the lens,
+ * and it needs the person HOLDING it to be in shot as a box of their own,
+ * with the picture inside theirs. Held at arm's length, close to the
+ * camera, only a hand is in frame — so nothing contains the baby and the
+ * rule cannot fire.
+ *
+ * What IS in the frame is the phone. The model reports eighty kinds of
+ * object and Kyro already reads three of those rows for the chairs; these
+ * three cost nothing more, out of the same run on the same picture. A
+ * person who is inside a screen is a picture of a person.
+ */
+export const SCREEN_ROWS = [4 + 62, 4 + 63, 4 + 67];   // tv, laptop, mobile phone
 
 /** Raw YOLO output → boxes in picture coordinates, from one row of it. */
 function decodeRow(out: Float32Array, row: number, r: number, ox: number, oy: number, sx: number, sy: number, minScore: number): Person[] {
@@ -131,6 +158,18 @@ function decode(out: Float32Array, r: number, ox: number, oy: number, sx: number
 export function decodeSeating(out: Float32Array, r: number, ox: number, oy: number, sx: number, sy: number, minScore = 0.35): Person[] {
   const all: Person[] = [];
   for (const row of SEATING_ROWS) all.push(...decodeRow(out, row, r, ox, oy, sx, sy, minScore));
+  return nms(all, 0.45);
+}
+
+/**
+ * Screens in the same output — read exactly as the seating is.
+ *
+ * A separate call on a result Kyro already has, so nothing about counting
+ * people changes: the person boxes come from where they always did.
+ */
+export function decodeScreens(out: Float32Array, r: number, ox: number, oy: number, sx: number, sy: number, minScore = 0.3): Person[] {
+  const all: Person[] = [];
+  for (const row of SCREEN_ROWS) all.push(...decodeRow(out, row, r, ox, oy, sx, sy, minScore));
   return nms(all, 0.45);
 }
 
@@ -174,13 +213,16 @@ export async function detectSeating(px: Pixels, run: RunModel, opts: DetectOptio
 export async function detectPeople(px: Pixels, run: RunModel, opts: DetectOptions = {}): Promise<Person[]> {
   const minScore = opts.minScore ?? 0.1;
   const size = opts.size ?? MODEL_SIZE;
-  const pass = async (sx: number, sy: number, sw: number, sh: number) => {
+  const pass = async (sx: number, sy: number, sw: number, sh: number, screens = false) => {
     await new Promise((r) => setTimeout(r, 0));   // let the page handle clicks between looks
     const { tensor, r, ox, oy } = toTensor(px, sx, sy, sw, sh, size);
-    return decode(await run(tensor), r, ox, oy, sx, sy, minScore);
+    const out = await run(tensor);
+    // Out of the same result, costing nothing: see SCREEN_ROWS.
+    if (screens && opts.onScreens) opts.onScreens(decodeScreens(out, r, ox, oy, sx, sy));
+    return decode(out, r, ox, oy, sx, sy, minScore);
   };
 
-  const whole = await pass(0, 0, px.width, px.height);
+  const whole = await pass(0, 0, px.width, px.height, true);
   const grid = tileGrid(px, opts.tiles ?? "auto", size);
   const finish = (list: Person[]) => (opts.tidy === false ? list : tidy(list, px.height));
   if (grid <= 1) return finish(whole);
@@ -386,6 +428,29 @@ export const HELD_BELOW_HEAD = 0.2;
  * cannot tell a pillow from a person, because a pillow is not inside
  * anybody. See the stillness check in personTracker.ts for that one.
  */
+/**
+ * How much of a person has to be inside a screen to BE the screen's picture.
+ *
+ * High on purpose. Somebody standing in front of the television is partly
+ * over it and must still be counted; somebody who is ON it is entirely
+ * within its edges, because that is where the picture is.
+ */
+export const ON_A_SCREEN = 0.8;
+
+/**
+ * People who are a picture on a screen, not people.
+ *
+ * The screen has to be able to contain them: a person box bigger than the
+ * screen it supposedly sits in is somebody standing in front of it.
+ */
+export function notOnAScreen(people: Person[], screens: Person[]): Person[] {
+  if (!screens.length) return people;
+  return people.filter((p) =>
+    !screens.some((s) =>
+      area(p.box) <= area(s.box)
+      && containedIn(s.box, p.box) >= ON_A_SCREEN));
+}
+
 export function notHeldBySomebody(people: Person[]): Person[] {
   if (people.length < 2) return people;
   const area = (b: [number, number, number, number]) => Math.max((b[2] - b[0]) * (b[3] - b[1]), 1e-6);

@@ -21,7 +21,7 @@ import {
   COUNT_WIDTH, DOOR_WIDTH,
   sendReport, sendPicture, sendPersonPicture, cropOf, rememberCameraStep, holdFocus, refocus, type Engine, type CameraReport, type Zone, type WantedPicture,
 } from "@/lib/cameraMode";
-import { SteadyCount, COUNT_CONFIDENCE, SENSITIVE_CONFIDENCE, CAREFUL_CONFIDENCE, outsideZones, notHeldBySomebody, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
+import { SteadyCount, COUNT_CONFIDENCE, SENSITIVE_CONFIDENCE, CAREFUL_CONFIDENCE, outsideZones, notHeldBySomebody, notOnAScreen, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
 import { countOrder } from "@/lib/countOrder";
 import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
@@ -721,7 +721,16 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // A doorway camera also uses the quicker AI: people cross a door in
           // a second, and looking twice as often matters far more there than
           // seeing someone at the back of a hall. See LocalEngine.fast.
-          let people = await countPeople(engine.current, px, useTiles ? undefined : 1, c.isDoor);
+          /**
+           * …and anything in the picture that is itself showing a picture.
+           *
+           * "Kyro is still counting a picture on my phone as a person."
+           *
+           * Out of the same AI run, so it costs nothing. See SCREEN_ROWS.
+           */
+          let screens: Person[] = [];
+          let people = await countPeople(engine.current, px, useTiles ? undefined : 1, c.isDoor,
+            (s) => { screens = s; });
           if (checking) {
             const whole = await countPeople(engine.current, px, 1);
             const sure = (list: Person[]) => list.filter((p) => p.score >= countConfidenceRef.current).length;
@@ -739,12 +748,12 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // notHeldBySomebody.
           // Shaped and scored like a person, not in a "don't count this"
           // area, and not a picture of people held up in front of the lens.
-          const atCutoff = (bar: number) => notHeldBySomebody(
+          const atCutoff = (bar: number) => notOnAScreen(notHeldBySomebody(
             outsideZones(
               // The width as well, so a sliver running off the side of the
               // picture can be told from somebody standing in it.
               looksLikeAPerson(people, px.height, bar, px.width),
-              zonesRef.current[c.key], px.width, px.height));
+              zonesRef.current[c.key], px.width, px.height)), screens);
           c.people = atCutoff(countConfidenceRef.current);
           /**
            * …and what it WOULD have counted at either end of the setting.

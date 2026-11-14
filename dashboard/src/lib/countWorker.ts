@@ -5,6 +5,7 @@
  * and buttons never freeze while it works.
  */
 import { startEngine, countWith, seatingWith, ensureFast, type LocalEngine } from "@/lib/countEngine";
+import type { Person } from "@/lib/peopleDetector";
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 let engine: LocalEngine | null = null;
@@ -35,10 +36,14 @@ ctx.onmessage = async (ev: MessageEvent) => {
       }
       // Chairs, benches and sofas instead of people: the same model, one look,
       // asked for every few minutes so the seats can be found automatically.
+      // Screens seen by the whole-picture look, out of the same AI run. They
+      // travel back with the people because there is one message either way,
+      // and a person inside one of them is a photograph — see SCREEN_ROWS.
+      let screens: Person[] | undefined;
       const people = m.seating
         ? await seatingWith(engine, m.px)
-        : await countWith(engine, m.px, m.tiles, m.fast);
-      ctx.postMessage({ type: "result", id: m.id, people });
+        : await countWith(engine, m.px, m.tiles, m.fast, (s) => { screens = s; });
+      ctx.postMessage({ type: "result", id: m.id, people, screens });
     } catch (e) {
       ctx.postMessage({ type: "count-error", id: m.id, message: e instanceof Error ? e.message : String(e) });
     }

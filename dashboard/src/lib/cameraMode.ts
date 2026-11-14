@@ -26,7 +26,8 @@ export interface Engine {
    * looking twice as often matters more than seeing someone at the back of a
    * hall.
    */
-  count(px: ImageData, tiles?: number, fast?: boolean): Promise<Person[]>;
+  count(px: ImageData, tiles?: number, fast?: boolean,
+        onScreens?: (screens: Person[]) => void): Promise<Person[]>;
   /** Chairs, benches and sofas, for finding the seats. One look, no tiles. */
   seating(px: ImageData): Promise<Person[]>;
 }
@@ -38,7 +39,7 @@ function engineOnPage(onProgress: (pct: number, step: string) => void): Promise<
   try { const v = localStorage.getItem(ENGINE_KEY); if (v === "accurate" || v === "light") prefer = v; } catch { /* fine without it */ }
   return startEngine(onProgress, prefer, (kind) => { try { localStorage.setItem(ENGINE_KEY, kind); } catch { /* fine */ } })
     .then((e) => ({ kind: e.kind, backend: e.backend,
-      count: (px, tiles, fast) => countWith(e, px, tiles, fast),
+      count: (px, tiles, fast, onScreens) => countWith(e, px, tiles, fast, onScreens),
       seating: (px) => seatingWith(e, px) }));
 }
 
@@ -49,7 +50,8 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
   } catch {
     return engineOnPage(onProgress);
   }
-  const waiting = new Map<number, { ok: (p: Person[]) => void; fail: (e: Error) => void }>();
+  const waiting = new Map<number, { ok: (p: Person[]) => void; fail: (e: Error) => void;
+                                   onScreens?: (s: Person[]) => void }>();
   let nextId = 1;
   return new Promise<Engine>((resolve, reject) => {
     let ready = false;
@@ -69,9 +71,12 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
             waiting.set(id, { ok, fail });
             worker.postMessage({ type: "count", id, seating: true, px: { data: px.data, width: px.width, height: px.height } });
           }),
-          count: (px, tiles, fast) => new Promise<Person[]>((ok, fail) => {
+          count: (px, tiles, fast, onScreens) => new Promise<Person[]>((ok, fail) => {
             const id = nextId++;
-            waiting.set(id, { ok, fail });
+            // The screens the whole-picture look saw, out of the same AI run
+            // — see SCREEN_ROWS. They come back with the people rather than
+            // on their own, because there is only one message either way.
+            waiting.set(id, { ok, fail, onScreens });
             // The picture is COPIED to the worker, not handed over. Handing it
             // over is faster by one copy, but it empties the caller's picture:
             // the buffer is detached the moment it is transferred. Kyro looks
@@ -89,7 +94,8 @@ export function loadEngine(onProgress: (pct: number, step: string) => void): Pro
       } else if (m.type === "result" || m.type === "count-error") {
         const w = waiting.get(m.id);
         waiting.delete(m.id);
-        if (m.type === "result") w?.ok(m.people); else w?.fail(new Error(m.message));
+        if (m.type === "result") { if (m.screens && w?.onScreens) w.onScreens(m.screens); w?.ok(m.people); }
+        else w?.fail(new Error(m.message));
       } else if (m.type === "load-error") {
         worker.terminate();
         reject(new Error(m.message));
@@ -150,8 +156,9 @@ export { COUNT_WIDTH, DOOR_WIDTH };
 
 /** `tiles` = 1 counts the whole picture in one look (five times faster, and
  *  loses nothing unless someone is too small to see without tiling). */
-export function countPeople(engine: Engine, px: ImageData, tiles?: number, fast?: boolean): Promise<Person[]> {
-  return engine.count(px, tiles, fast);
+export function countPeople(engine: Engine, px: ImageData, tiles?: number, fast?: boolean,
+                            onScreens?: (screens: Person[]) => void): Promise<Person[]> {
+  return engine.count(px, tiles, fast, onScreens);
 }
 
 /**

@@ -130,7 +130,9 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
 //    "don't split a doorway picture into tiles" quietly did nothing.
 {
   ok("the page sends how many tiles to use", /worker\.postMessage\(\{ type: "count", id, tiles, fast,/.test(cam));
-  ok("and the worker uses it", /countWith\(engine, m\.px, m\.tiles, m\.fast\)/.test(wrk));
+  // The screens seen by the same AI run travel with it now — a person
+  // inside one is a photograph. See SCREEN_ROWS.
+  ok("and the worker uses it", /countWith\(engine, m\.px, m\.tiles, m\.fast, \(s\) =>/.test(wrk));
 }
 
 // 5. A doorway camera uses the quicker AI. The accurate one looks at 1280
@@ -143,7 +145,8 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
   ok("and loaded on demand for a computer that went straight to the accurate one",
      /export async function ensureFast/.test(engine) && /ensureFast\(engine\)/.test(wrk));
   ok("counting never waits for that download", /count with what we have meanwhile/.test(wrk));
-  ok("a doorway camera asks for it", /countPeople\(engine\.current, px, useTiles \? undefined : 1, c\.isDoor\)/.test(ctx));
+  ok("a doorway camera asks for it",
+     /countPeople\(engine\.current, px, useTiles \? undefined : 1, c\.isDoor,/.test(ctx));
 }
 
 // 6. Nothing deletes a reading except being asked to, in so many words.

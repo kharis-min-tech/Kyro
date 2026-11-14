@@ -62,8 +62,11 @@ const order = fs.readFileSync(path.join(root, "dashboard/src/lib/countOrder.ts")
 //    a look — one or two counts a second, and a person crosses a door in less
 //    than that. A doorway uses the quick one.
 {
-  ok("a doorway asks for the quick AI", /countPeople\(engine\.current, px, useTiles \? undefined : 1, c\.isDoor\)/.test(ctx));
-  ok("which the counter honours", /countWith\(engine, m\.px, m\.tiles, m\.fast\)/.test(wrk));
+  // The screens seen by the same AI run travel with it now — a person
+  // inside one is a photograph. See SCREEN_ROWS.
+  ok("a doorway asks for the quick AI",
+     /countPeople\(engine\.current, px, useTiles \? undefined : 1, c\.isDoor,/.test(ctx));
+  ok("which the counter honours", /countWith\(engine, m\.px, m\.tiles, m\.fast, \(s\) =>/.test(wrk));
   ok("and loads on demand if it isn't there", /ensureFast\(engine\)/.test(wrk));
 }
 

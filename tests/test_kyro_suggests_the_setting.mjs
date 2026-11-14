@@ -164,7 +164,7 @@ function hub({ now = 40, sensitive = 40, careful = 35, setting = 0.3, seats = 0,
 {
   const ctx = read("dashboard/src/lib/CountingContext.tsx");
   ok("7. worked out from the same pictures with only the bar moved",
-     /const atCutoff = \(bar: number\) => notHeldBySomebody\(/.test(ctx)
+     /const atCutoff = \(bar: number\) => notOnAScreen\(notHeldBySomebody\(/.test(ctx)
      && /c\.people = atCutoff\(countConfidenceRef\.current\);/.test(ctx));
   ok("7. at both ends of the setting",
      /c\.atSensitive = atCutoff\(SENSITIVE_CONFIDENCE\)\.length;/.test(ctx)

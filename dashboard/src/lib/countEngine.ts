@@ -218,9 +218,10 @@ export async function startEngine(
 /** `tiles` overrides the engine's own choice — 1 means the whole picture only,
  *  which is five times faster and loses nothing when nobody is far away.
  *  `fast` asks for the lighter AI, for a doorway. See LocalEngine.fast. */
-export function countWith(engine: LocalEngine, px: Pixels, tiles?: number, fast?: boolean): Promise<Person[]> {
+export function countWith(engine: LocalEngine, px: Pixels, tiles?: number, fast?: boolean,
+                          onScreens?: (screens: Person[]) => void): Promise<Person[]> {
   const use = fast && engine.fast ? engine.fast : engine;
-  return detectPeople(px, use.run, { tiles: tiles ?? use.tiles, size: use.size });
+  return detectPeople(px, use.run, { tiles: tiles ?? use.tiles, size: use.size, onScreens });
 }
 
 /** Chairs, benches and sofas — one look, for finding the seats. */
