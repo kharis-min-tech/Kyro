@@ -119,7 +119,7 @@ export function SamePerson() {
     edgeFetch<Ask[]>("/api/live/questions")
       .then((r) => setAsks(r.filter((q) => q.review_type === "same_person_question"
         || q.review_type === "is_this_a_person" || q.review_type === "is_this_a_seat"
-        || q.review_type === "same_chair_question")))
+        || q.review_type === "same_chair_question" || q.review_type === "how_many_seats")))
       .catch(() => {});
     // The learning figures are no longer read out here — see the note by the
     // card's footer — so they are not fetched either. "How the counting is
@@ -151,6 +151,8 @@ export function SamePerson() {
           : r.action === "removed" ? `Taken off the count, and off today's figures. ${r.people} different people this service — and anything that looks like it won't be counted again.`
           : r.action === "one_chair" ? "One chair, seen by two cameras — joined, so it is no longer counted twice."
           : r.action === "two_chairs" ? "Two different chairs, then. You won't be asked about that pair again."
+          : r.action === "forgot_seats" ? "Forgotten. Kyro will work the seats out again from the picture."
+          : r.action === "kept_seats" ? "Kept — Kyro will go on using that figure as its guess."
           : "Noted.",
       );
       setAsks((prev) => prev.filter((x) => x.review_id !== q.review_id));
@@ -232,7 +234,39 @@ export function SamePerson() {
         * are the same man — and if they are, the two cameras are pointed at
         * one chair.
         */}
-      {asks.map((q) => q.review_type === "same_chair_question" ? (
+      {asks.map((q) => q.review_type === "how_many_seats" ? (
+        /**
+         * A question about a NUMBER, with no picture to crop.
+         *
+         * "you didnt give me any questions to even see if it was — just
+         * assuming and silent." Kyro worked out that a bedroom had three
+         * hundred and seven seats and never said a word, because a place
+         * the AI calls a chair goes straight to being a seat with no
+         * question possible. Asking about each of three hundred would be
+         * worse than silence; the thing worth doubting is the figure.
+         */
+        <div key={q.review_id} className="px-5 py-4 flex flex-col gap-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
+          <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
+            Does {q.where || "this room"} really have that many seats?
+          </p>
+          <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
+            {q.why}. Kyro works the seats out from the picture, and furniture that is not a seat — a bed, a sofa
+            arm, a pile of coats — can read as one. Saying no makes it forget what it found here and look again.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => answer(q, "Yes, about right")} disabled={busy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+              style={{ background: "#16a34a" }}>
+              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, about right
+            </button>
+            <button onClick={() => answer(q, "No, nothing like that")} disabled={busy !== null}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
+              style={{ background: "#b45309" }}>
+              <X size={12} /> No, nothing like that
+            </button>
+          </div>
+        </div>
+      ) : q.review_type === "same_chair_question" ? (
         <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <div className="flex gap-3">
             <Side id={q.review_id} side="a" label={q.where || "One camera"} />

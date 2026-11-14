@@ -319,6 +319,20 @@ const MOST_ASKS = 12;
  */
 const MOST_SEEN = 400;
 /**
+ * When a found seat count is wild enough to be worth doubting out loud.
+ *
+ * A church hall is mostly empty most of the week, so "more seats than
+ * people" proves nothing: 300 seats and 30 people at a midweek service is
+ * an ordinary Tuesday and must not be doubted. Her bedroom was 307 seats
+ * against a most-ever of two — a hundred and fifty times over.
+ *
+ * Twenty times, and at least thirty seats. A real hall that trips it is
+ * asked once, says "yes, about right", and is not asked again: a cheap
+ * question with a true answer is not a false alarm.
+ */
+const SEATS_WILD_TIMES = 20;
+const SEATS_WILD_AT = 30;
+/**
  * How many answers before Kyro will move the line it matches people on.
  *
  * Few enough that a church sees it happen within a service or two of
@@ -1717,6 +1731,13 @@ export class VenueHub extends DurableObject {
     if (seatAsks.length) wantPictures.push(...(await this.askAboutSeats(seatAsks, cams, now)));
     // …and "is this the same chair?", which needs a picture from each of the
     // two cameras that disagree about it.
+    try {
+      await this.askAboutSeatCount(cams, await this.get("live", {}), now);
+    } catch (e) {
+      await this.wrong("Seating",
+        "Couldn't ask whether the seat count it worked out is right",
+        e && e.message);
+    }
     try {
       wantPictures.push(...(await this.askAboutSameChair(cams, now)));
     } catch (e) {
@@ -4469,6 +4490,70 @@ export class VenueHub extends DurableObject {
    * hundred questions, so the camera offers a few at a time and this
    * remembers which have already been put.
    */
+  /**
+   * "I think this room has three hundred seats. Does that sound right?"
+   *
+   * ── Why Kyro never asked about the bedroom ─────────────────────────────
+   *
+   * "but you didnt give me any questions to even see if it was — just
+   * assuming and silent."
+   *
+   * Quite right, and the reason is one clause in the seat finder. A place
+   * becomes a question only when it is "uncertain", and the test for that
+   * ends `&& !chair` — so anything the AI called a chair twice went
+   * STRAIGHT to being a seat, with no question possible, ever. In a bedroom
+   * the bed and the pillows read as a sofa and a chair. Three hundred and
+   * seven seats, asserted, in silence.
+   *
+   * Asking about each of them is no answer either: three hundred questions
+   * is worse than none. The thing worth doubting out loud is the FIGURE —
+   * Kyro says this room seats three hundred and has never seen more than
+   * two people in it, which is a sentence anybody can settle in a second.
+   *
+   * One question per camera, and only when the claim is wild: ten times
+   * more seats than it has ever seen people, and enough of them to matter.
+   */
+  async askAboutSeatCount(cams, live, now) {
+    const asked = await this.get("seat_count_asked", {});
+    const qs = await this.get("questions", {});
+    let changed = false;
+    for (const c of Object.values(cams)) {
+      if (!c || c.hidden || c.pending) continue;
+      if (c.location === "entrance" || c.location === "queue") continue;
+      // A number somebody entered is not Kyro's to doubt.
+      if (c.capacity_from !== "found" || !(c.zone_capacity > 0)) continue;
+      const l = live[c.camera_id];
+      if (!this.isOnline(l)) continue;
+      const ever = Math.max(l?.peak || 0, l?.people || 0, 1);
+      if (c.zone_capacity < SEATS_WILD_AT || c.zone_capacity < ever * SEATS_WILD_TIMES) continue;
+      if (asked[c.camera_id] === c.zone_capacity) continue;   // already put, at this figure
+      asked[c.camera_id] = c.zone_capacity;
+      const id = `seatcount-${c.camera_id.replace(/[^\w-]/g, "")}`;
+      const where = clean(c.zone_name || c.name || "", 60);
+      qs[id] = {
+        type: "review_request", review_id: id, camera_id: c.camera_id,
+        review_type: "how_many_seats", target_role: "operator",
+        question: "Does this room really have that many seats?",
+        guess: "seats", score: null, had_face: false,
+        why: `Kyro thinks it can see about ${c.zone_capacity} seats here, and the most people it has ever seen at once is ${ever}`,
+        where, other_where: "",
+        ask: { kind: "seat_count", camera: c.camera_id, seats: c.zone_capacity },
+        track_id: null, position: [0, 0], bbox_hint: null,
+        confidence: 0, best_guess: null,
+        options: ["Yes, about right", "No, nothing like that"],
+        created_at: now / 1000,
+        // Nothing to crop: the question is about a number, and the room is
+        // on the screen already.
+        pictures: 0,
+      };
+      changed = true;
+    }
+    if (changed) {
+      await this.ctx.storage.put("questions", qs);
+      await this.ctx.storage.put("seat_count_asked", asked);
+    }
+  }
+
   async askAboutSeats(asks, cams, now) {
     const qs = await this.get("questions", {});
     await this.tidyQuestions(qs, now);
@@ -4523,6 +4608,9 @@ export class VenueHub extends DurableObject {
       .filter((q) => q.review_type !== "same_chair_question" || (q.pictures ?? 0) >= 2)
       // …and one for "is this a person?", which has only one thing to show.
       .filter((q) => !["is_this_a_person", "is_this_a_seat"].includes(q.review_type) || (q.pictures ?? 0) >= 1)
+      // "Does this room really have that many seats?" is about a FIGURE.
+      // There is nothing to crop and nothing to wait for.
+
       .sort((a, b) => a.created_at - b.created_at)
       .map(({ answer, answered_by, answered_at, ...q }) => q);
   }
@@ -4630,6 +4718,26 @@ export class VenueHub extends DurableObject {
      * and a seat somebody confirmed on another page in the meantime is not a
      * reason to throw their answer away.
      */
+    /**
+     * "No, nothing like that" — and the guess goes.
+     *
+     * The seats themselves live in the browser that found them, so the
+     * answer travels back to that camera the way a seat answer does. The
+     * number here goes at once, so the page stops repeating it.
+     */
+    if (q.review_type === "how_many_seats") {
+      const no = /^no/i.test(q.answer);
+      if (no && q.ask?.camera) {
+        await this.syncCapacity(q.ask.camera, 0, "found");
+        const pending = await this.get("answers", []);
+        pending.push({ device_id: q.ask.camera.split(":")[0],
+          key: q.ask.camera.slice(q.ask.camera.indexOf(":") + 1),
+          review_id: id, answer: q.answer, kind: "how_many_seats" });
+        await this.ctx.storage.put("answers", pending.slice(-200));
+      }
+      await this.ctx.storage.put("questions", qs);
+      return json({ ok: true, changed: no, action: no ? "forgot_seats" : "kept_seats" });
+    }
     if (q.review_type === "same_chair_question") {
       const yes = /^yes/i.test(q.answer);
       const bl = await this.theBuilding();

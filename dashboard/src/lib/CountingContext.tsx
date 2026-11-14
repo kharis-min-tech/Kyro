@@ -1352,6 +1352,19 @@ export function CountingProvider({ children }: { children: ReactNode }) {
          * asking.
          */
         for (const ans of answers ?? []) {
+          /**
+           * "No, nothing like that" to the seat count: forget what Kyro
+           * found here. The seats live in this browser, so this is the only
+           * place the answer can be carried out.
+           */
+          if (ans.kind === "how_many_seats") {
+            const cam = [...cams.current.values()].find((x) => x.key === ans.key);
+            if (cam && /^no/i.test(String(ans.answer))) {
+              cam.seatFinder.forgetFound();
+              try { localStorage.setItem(`kyro_seats_${cam.key}`, cam.seatFinder.save()); } catch { /* fine without it */ }
+            }
+            continue;
+          }
           if (ans.kind !== "is_this_a_seat" || !ans.seat) continue;
           const cam = [...cams.current.values()].find((x) => x.key === ans.key);
           if (!cam) continue;
