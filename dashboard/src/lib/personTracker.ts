@@ -77,6 +77,16 @@ const SAME_FACE = 0.4;
  */
 const SAME_LOOK = 0.78;
 /**
+ * Below this, two coats are not the same coat — whatever the position says.
+ *
+ * Well under SAME_LOOK, which is the bar for claiming somebody ON
+ * appearance. This is the opposite question: not "is this the same person"
+ * but "is this plainly NOT them". A hall of dark coats scores far above
+ * this against each other, so nobody is split for being similar; what it
+ * catches is the stranger who walks into the spot the last person left.
+ */
+const PLAINLY_SOMEBODY_ELSE = 0.5;
+/**
  * And it must be a clear winner.
  *
  * A church doorway in November is a row of dark coats. If four people in the
@@ -194,6 +204,26 @@ const DOOR_GRACE_MS = 10 * 60_000;
  * about the door.
  */
 const RETURN_BY_PLACE_MS = 15_000;
+/**
+ * …and at a DOORWAY, where "the same patch of picture" is the whole point.
+ *
+ * The note above says position is sound "over a few seconds" and warns that
+ * the next person through the same door looks exactly as convincing. Then
+ * it allows fifteen seconds of it, which is not a few — and at a church
+ * door people come through in single file every two or three.
+ *
+ * A plainly different coat now refuses the claim, which answers most of it.
+ * It cannot answer a choir in identical robes: ten of those through one
+ * door, five seconds apart, came out as two people. There is nothing in the
+ * picture to tell them apart, so the only honest signal left is time, and
+ * fifteen seconds of it is far too generous.
+ *
+ * Two seconds covers what it is actually for: the detector losing somebody
+ * for a frame or two in the middle of a crossing. Anyone genuinely stepping
+ * out and back is caught by the door's own record of who it has already
+ * counted, which is what that record is for and which lasts the morning.
+ */
+const RETURN_BY_PLACE_DOOR_MS = 2_000;
 /**
  * How long someone must be out of a doorway camera's view before their
  * departure is counted.
@@ -580,9 +610,46 @@ export class PersonTracker {
       // as long as that is believable — see RETURN_BY_PLACE_MS. A track that
       // has been missing for a minute would otherwise swallow the next person
       // to walk through the same doorway, and their departure with them.
-      if (now - t.lastSeen > RETURN_BY_PLACE_MS) return;
+      if (now - t.lastSeen > (this.inward ? RETURN_BY_PLACE_DOOR_MS : RETURN_BY_PLACE_MS)) return;
       const score = iou(t.box, b);
-      if (score >= SAME_PERSON_IOU) pairs.push({ t: ti, b: bi, score });
+      if (score < SAME_PERSON_IOU) return;
+      /**
+       * A different-looking person in the same place is a different person.
+       *
+       * ── What this was doing at a door ──────────────────────────────────
+       *
+       * "still a lot of hidden bugs even when testing people and counting
+       * in and out."
+       *
+       * This pairing was position and nothing else, for fifteen seconds
+       * after a track was last seen — and the look was written onto the
+       * track AFTER the claim, so whoever stood there next quietly
+       * inherited the last person's appearance. A doorway is precisely
+       * where a different person appears in the same spot seconds later.
+       *
+       * Measured, ten people walking in one at a time, each dressed
+       * differently:
+       *
+       *     through the same doorway, 5s apart ....  2 of 10 counted
+       *     spread across the frame ............... 10 of 10
+       *     through the same doorway, 20s apart ... 10 of 10
+       *
+       * Twenty seconds is past the fifteen below. So at a church door,
+       * where people come through every few seconds in single file, most
+       * of the congregation was read as the previous person coming back.
+       *
+       * The note above RETURN_BY_PLACE_MS says it in as many words: "the
+       * next person through the same door looks exactly as convincing".
+       *
+       * Frame to frame — a track seen in the LAST picture — position is
+       * still the whole of it: appearance jitters between two pictures and
+       * must not be allowed to break a continuous follow. It is only a
+       * re-claim after a gap that has to answer to the coat, and only when
+       * the coat plainly disagrees. Dressed alike, it says nothing, and
+       * position has it as before.
+       */
+      if (t.missing > 0 && t.look && looks?.[bi] && alikeLook(t.look, looks[bi]!) < PLAINLY_SOMEBODY_ELSE) return;
+      pairs.push({ t: ti, b: bi, score });
     }));
     pairs.sort((x, y) => y.score - x.score);
     for (const { t, b } of pairs) {
