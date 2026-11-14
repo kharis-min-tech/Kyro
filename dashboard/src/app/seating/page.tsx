@@ -888,7 +888,15 @@ function CameraSeatView({ camera }: { camera: Camera }) {
   useEffect(() => { setEdge(isEdgeLive()); }, []);
   const { venue: edgeVenue, error: edgeError } = useEdgeVenue(edge);
   const edgeZone = edgeVenue?.zones.find((z) => z.camera_id === camera.camera_id) ?? null;
-  const edgeRunning = edge ? !!edgeZone?.is_running : undefined;
+  /**
+   * Working, not merely reporting — this drives the Live / Offline badge.
+   *
+   * An unplugged camera goes on reporting through the computer it was
+   * plugged into, saying it has no picture, and is_running stays true. So
+   * this room said "Live" over a camera that had been unplugged. See
+   * is_counting in worker/venue.js.
+   */
+  const edgeRunning = edge ? !!edgeZone?.is_counting : undefined;
   // Seat-by-seat states, when this room has a seat layout (Seat Editor).
   const edgeSeats = useEdgeSeatStates(camera.camera_id, edge);
   // Questions for this room, from the same list the app-wide pop-up shows —

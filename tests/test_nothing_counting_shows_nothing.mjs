@@ -70,8 +70,13 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
      /const left   = counting && known \? Math\.max\(0, zone\.capacity - zone\.current\) : null;/.test(page)
      && /\{left === null \? "—"/.test(page));
   ok("how full is a dash too", /\{pct === null \? "—" : `\$\{pct\}%`\}/.test(page));
+  // The figure stays whether somebody set it or Kyro guessed it; what
+  // changes is whether the word "guess" is under it. It used to be written
+  // "~307?", which had to be explained in a hover — "why is there a
+  // question mark".
   ok("but a capacity somebody SET stays",
-     /\{known \? zone\.capacity\.toLocaleString\(\) : zone\.capacity > 0 \? `~\$\{zone\.capacity\.toLocaleString\(\)\}\?` : "—"\}/.test(page));
+     /\{zone\.capacity > 0 \? zone\.capacity\.toLocaleString\(\) : "—"\}/.test(page)
+     && /\{!known && zone\.capacity > 0 && \(/.test(page));
 
   // The overlap: two badges in one 5rem box.
   ok("the status column draws exactly ONE badge",

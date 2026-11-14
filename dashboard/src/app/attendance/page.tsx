@@ -271,7 +271,20 @@ function ZoneCameraCard({ camera, role }: { camera: Camera; role: string }) {
   if (edge) {
     // Edge Live: latest picture (refreshed every 20 s) + status from /api/live/venue.
     const z = zones[camera.camera_id];
-    const live = !!z?.is_running || !!isBrowserCam; // browser cams are always "live" on this device
+    /**
+     * Working, not merely reporting.
+     *
+     * An unplugged camera goes on reporting through the computer it was
+     * plugged into, and says it has no picture — is_running stays true, so
+     * this tile sat there with a green LIVE and a people count over a
+     * frozen frame. is_counting is reporting AND producing a picture. See
+     * test_an_unplugged_camera_shows_nothing.mjs.
+     *
+     * A browser camera on THIS device still says live: the picture comes
+     * straight from the camera here rather than through the server, and
+     * the stream component below knows when it has gone.
+     */
+    const live = !!z?.is_counting || !!isBrowserCam;
     const err = live && z?.status === "error" && !isBrowserCam;
     return (
       <div className="relative overflow-hidden rounded-xl" style={{ aspectRatio: "16/9", background: "#0f1222" }}>

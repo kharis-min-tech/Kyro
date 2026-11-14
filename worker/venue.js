@@ -330,6 +330,16 @@ const MOST_SEEN = 400;
  * asked once, says "yes, about right", and is not asked again: a cheap
  * question with a true answer is not a false alarm.
  */
+/**
+ * The most "we have already asked about this" marks kept, per list.
+ *
+ * A chair-pair key is two camera-and-seat names, about 59 bytes with its
+ * timestamp. Twelve hundred is 71 KB — a little over half of the 128 KB a
+ * stored value holds, which is the room to leave for a key longer than the
+ * one measured. Two thousand was 115 KB, and a tenth of the limit is not
+ * headroom. Past the cap the oldest go — see trimMarks.
+ */
+const MOST_ASKED_MARKS = 1200;
 const SEATS_WILD_TIMES = 20;
 const SEATS_WILD_AT = 30;
 /**
@@ -524,6 +534,21 @@ function packFace(v) {
 }
 const SEAT_STATES = ["occupied", "temporarily_vacant", "likely_available", "available", "reserved", "rota_hold", "unknown"];
 /** A seat drawn on the camera's picture (1280×720 coordinates). */
+/**
+ * Keep the newest marks and let the oldest go.
+ *
+ * For the "already asked about this" lists, which are kept on purpose and
+ * must still not grow for ever: a map that only ever gains entries is a
+ * write that one day exceeds what a stored value holds, and that write is
+ * inside the report.
+ */
+function trimMarks(marks, most) {
+  const keys = Object.keys(marks);
+  if (keys.length <= most) return marks;
+  const newest = keys.sort((a, b) => (marks[b] || 0) - (marks[a] || 0)).slice(0, most);
+  return Object.fromEntries(newest.map((k) => [k, marks[k]]));
+}
+
 function cleanSeatDef(s) {
   if (!s || !Array.isArray(s.bbox) || s.bbox.length !== 4) return null;
   const b = s.bbox.map((v, i) => Math.min(i % 2 ? 720 : 1280, Math.max(0, Math.round(Number(v) * 10) / 10 || 0)));
@@ -1727,8 +1752,20 @@ export class VenueHub extends DurableObject {
     // questions somebody can answer from two pictures. See askAbout in
     // worker/identity.js and makeAsks below.
     const wantPictures = await this.makeAsks(cams, now);
-    // …and the chairs, which ask the same way and want the same picture.
-    if (seatAsks.length) wantPictures.push(...(await this.askAboutSeats(seatAsks, cams, now)));
+    /**
+     * …and the chairs, which ask the same way and want the same picture.
+     *
+     * Inside a try, like the two below it. Asking a question is worth
+     * nothing beside counting people: the worst a failure here can do on
+     * its own is leave a chair unasked about, and that is a far smaller
+     * thing than a report failing and a whole computer's cameras going
+     * uncounted — which is exactly what the doorway's memory did.
+     */
+    try {
+      if (seatAsks.length) wantPictures.push(...(await this.askAboutSeats(seatAsks, cams, now)));
+    } catch (e) {
+      await this.wrong("Seating", "Couldn't ask about a chair it isn't sure of", e && e.message);
+    }
     // …and "is this the same chair?", which needs a picture from each of the
     // two cameras that disagree about it.
     try {
@@ -4399,7 +4436,7 @@ export class VenueHub extends DurableObject {
       }
       if (dropped) {
         await this.ctx.storage.put("questions", qs);
-        await this.ctx.storage.put("chairs_asked", asked);
+        await this.ctx.storage.put("chairs_asked", trimMarks(asked, MOST_ASKED_MARKS));
       }
     }
     const qs = await this.get("questions", {});
@@ -4465,7 +4502,7 @@ export class VenueHub extends DurableObject {
     }
     if (want.length) {
       await this.ctx.storage.put("questions", qs);
-      await this.ctx.storage.put("chairs_asked", asked);
+      await this.ctx.storage.put("chairs_asked", trimMarks(asked, MOST_ASKED_MARKS));
       // Added to, not replacing: a pair still waiting for somebody to sit
       // for somebody must not lose its request because another came up.
       this.chairWants = [...(this.chairWants ?? []), ...want];
@@ -4586,9 +4623,20 @@ export class VenueHub extends DurableObject {
     }
     if (!want.length) return [];
     await this.ctx.storage.put("questions", qs);
-    // Kept for good: a seat asked about once has been asked about, and a
-    // hall of a hundred chairs must not become a hundred questions a week.
-    await this.ctx.storage.put("seats_asked", asked);
+    /**
+     * A seat asked about once has been asked about — a hall of a hundred
+     * chairs must not become a hundred questions a week.
+     *
+     * But "for good" cannot mean "without end". One entry per camera-seat,
+     * never cleaned, is 130 KB at nine hundred seats on four cameras —
+     * past what a stored value holds, so the write throws, inside the
+     * report, and takes every camera on that computer down with it. The
+     * same shape that broke the doorway's memory at three hundred people.
+     *
+     * The oldest marks go first. The worst that costs is a chair asked
+     * about a second time, years later.
+     */
+    await this.ctx.storage.put("seats_asked", trimMarks(asked, MOST_ASKED_MARKS));
     return want;
   }
 

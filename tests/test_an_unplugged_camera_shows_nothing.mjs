@@ -107,6 +107,27 @@ const served = async (live) => {
   ok("4. reports are two seconds apart", /report_every_s: 2/.test(worker));
 }
 
+// ── 5. Every page asks the same question ─────────────────────────────────
+//
+// Found by sweeping for the shape rather than by being told: the Live
+// badge on the attendance page and the Live / Offline badge on the seating
+// page both read is_running, so both said LIVE — one of them over a people
+// count — for a camera that had been unplugged.
+{
+  const att = read("dashboard/src/app/attendance/page.tsx");
+  ok("5. the attendance tile's LIVE badge means working",
+     /const live = !!z\?\.is_counting \|\| !!isBrowserCam;/.test(att));
+  const seat = read("dashboard/src/app/seating/page.tsx");
+  ok("5. and so does the seating page's",
+     /const edgeRunning = edge \? !!edgeZone\?\.is_counting : undefined;/.test(seat));
+  // Where "is it being counted at all, by anybody" is the question,
+  // is_running is still the right one — a camera counted on another
+  // computer is running, whatever this device can see of it.
+  const page = read("dashboard/src/app/live-cameras/page.tsx");
+  ok("5. …while \"counted somewhere else\" still asks whether it is running",
+     /const countedElsewhere = !!\(cameraId && zonesHere\?\.\[cameraId\]\?\.is_running\);/.test(page));
+}
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log(fails ? `\n${fails} failed` : "\nAll good");
 process.exit(fails ? 1 : 0);

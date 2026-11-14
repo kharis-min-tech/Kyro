@@ -92,8 +92,11 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
   ok("the table knows which capacities are real", /const known = zone\.capacity_from === "admin";/.test(live));
   ok("space left and how full need one", /const left   = counting && known \?/.test(live)
      && /const pct    = counting && known \?/.test(live));
-  ok("a guess is shown with a tilde and a question mark, not as a number",
-     /\$\{zone\.capacity\.toLocaleString\(\)\}\?`/.test(live));
+  // It WAS a tilde and a question mark — "~307?" — and what those meant
+  // lived in a hover. "why is there a question mark." A mark that has to be
+  // explained has not said anything, so it says the word.
+  ok("a guess is marked as a guess, in a word rather than a squiggle",
+     /\}\}>guess<\/span>/.test(live) && !/\$\{zone\.capacity\.toLocaleString\(\)\}\?`/.test(live));
   ok("with a note saying what that means", /is Kyro&apos;s own guess from the picture/.test(live));
 }
 
@@ -165,6 +168,23 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
      && /people_seen/.test(svc));
   ok("and a missing seat count says where to set it",
      /set it on Cameras/.test(svc));
+}
+
+// ── A guess says it is a guess, in a word ─────────────────────────────────
+//
+// "why is there a question mark."
+//
+// It was written "~307?", and what the squiggle and the question mark meant
+// lived in a hover — which does not exist on a phone and which nobody hunts
+// for. A mark that has to be explained has not said anything.
+{
+  const page = fs.readFileSync(path.join(root, "dashboard/src/app/live-cameras/page.tsx"), "utf8");
+  ok("the rooms table no longer writes ~307?",
+     !/`~\$\{zone\.capacity\.toLocaleString\(\)\}\?`/.test(page));
+  ok("it says the word instead", /\}\}>guess<\/span>/.test(page));
+  ok("and only when nobody has set the real number", /\{!known && zone\.capacity > 0 && \(/.test(page));
+  ok("the figure itself is still shown",
+     /\{zone\.capacity > 0 \? zone\.capacity\.toLocaleString\(\) : "—"\}/.test(page));
 }
 
 console.log(fails ? `\n${fails} failed` : "\nAll good. A guess is offered, never assumed.");

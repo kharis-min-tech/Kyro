@@ -653,17 +653,36 @@ function RoomSeatTable({ zones }: { zones: ZoneLive[] }) {
                 {/* Room name */}
                 <div className="flex items-center gap-2 flex-1 min-w-0">
                   <span className="w-2 h-2 rounded-full shrink-0"
-                    style={{ background: zone.status === "error" ? "#f59e0b" : zone.is_running ? "#22c55e" : "#4b5563" }}
+                    // Green means working, not merely reporting: an unplugged
+                    // camera reports for a while and says it has no picture.
+                    style={{ background: zone.status === "error" ? "#f59e0b" : counting ? "#22c55e" : "#4b5563" }}
                     title={zone.status === "error" ? `Camera error: ${zone.error_reason ?? "unknown"}` : undefined} />
                   <span className="text-sm text-white font-medium truncate">{zone.zone_name}</span>
                 </div>
 
-                {/* Capacity — only when somebody set it. A guess is shown
-                    as a guess, in brackets, so it cannot be read as one. */}
-                <span className="w-20 text-right text-sm tabular-nums shrink-0"
-                  style={{ color: known ? "var(--text-tertiary)" : "var(--text-faint)" }}
+                {/**
+                  * Seats — and whether anybody said so.
+                  *
+                  * "why is there a question mark."
+                  *
+                  * Because it was a guess, written "~307?" — and what that
+                  * squiggle and that question mark meant lived in a hover,
+                  * which does not exist on a phone and which nobody hunts
+                  * for anyway. A mark that has to be explained has not
+                  * said anything.
+                  *
+                  * The figure is still shown as a guess, because it is
+                  * one and it drives nothing. It just says so in a word.
+                  */}
+                <span className="w-20 text-right shrink-0 flex flex-col items-end leading-tight"
                   title={known ? undefined : "Kyro's guess from the picture — set the real seat count with the pencil on the Cameras page"}>
-                  {known ? zone.capacity.toLocaleString() : zone.capacity > 0 ? `~${zone.capacity.toLocaleString()}?` : "—"}
+                  <span className="text-sm tabular-nums"
+                    style={{ color: known ? "var(--text-tertiary)" : "var(--text-faint)" }}>
+                    {zone.capacity > 0 ? zone.capacity.toLocaleString() : "—"}
+                  </span>
+                  {!known && zone.capacity > 0 && (
+                    <span style={{ fontSize: 9, color: "var(--text-faint)" }}>guess</span>
+                  )}
                 </span>
 
                 {/* People in */}
