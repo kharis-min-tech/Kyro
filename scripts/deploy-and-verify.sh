@@ -23,6 +23,61 @@ cd "$(dirname "$0")/.."
 SITE="https://kyro.kharischurch.com"
 OUT="dashboard/out"
 
+# ── Nothing broken goes out ──────────────────────────────────────────────────
+#
+# "when you make fixes, make it permanent, dont forget and i need to repeat
+# the hidden bugs im telling you."
+#
+# Every fix in this repo is held down by a test. That only means anything if
+# the tests actually stand between a change and the church's site — and they
+# did not: this script built and deployed whatever was in the working tree.
+# A fix could be undone by the next change and nobody would know until she
+# found it again and told me again.
+#
+# So the suite runs first, and a failure stops the deploy. It costs a couple
+# of minutes on a thing that already takes minutes, and it is the difference
+# between "we have tests" and "the tests are enforced".
+#
+# SKIP_TESTS=1 exists because a gate nobody can ever open gets deleted
+# instead. It says so, loudly, every time.
+if [ "${SKIP_TESTS:-0}" = "1" ]; then
+  echo "⚠ SKIP_TESTS=1 — deploying WITHOUT running the tests. Nothing is being checked."
+else
+  echo "→ Checking everything still works ($(ls tests/*.mjs | wc -l | tr -d ' ') tests)"
+  failed=0
+  for t in tests/*.mjs; do
+    if ! out=$(node "$t" 2>&1); then
+      failed=1
+      echo "   ✗ $t"
+      echo "$out" | grep "✗" | sed 's/^/     /' | head -6
+    fi
+  done
+  if ! ( cd dashboard && npx tsc --noEmit ) >/dev/null 2>&1; then
+    failed=1
+    echo "   ✗ the website does not typecheck"
+    ( cd dashboard && npx tsc --noEmit 2>&1 | head -6 | sed 's/^/     /' )
+  fi
+  names=$(npx tsc --allowJs --checkJs --noEmit --target es2022 --module esnext \
+            --moduleResolution bundler worker/*.js 2>&1 | grep -E "TS2304|TS2552" | head -6)
+  if [ -n "$names" ]; then
+    failed=1
+    echo "   ✗ the worker uses names that do not exist"
+    echo "$names" | sed 's/^/     /'
+  fi
+  if [ "$failed" = "1" ]; then
+    echo "✗ Something that used to work is broken. Nothing has been deployed."
+    echo "  The site is still serving the build before this one."
+    exit 1
+  fi
+  echo "   all passing"
+fi
+# Run the checks and stop — for seeing whether anything is broken without
+# putting anything live.
+if [ "${CHECK_ONLY:-0}" = "1" ]; then
+  echo "✓ Everything passes. Nothing deployed (CHECK_ONLY=1)."
+  exit 0
+fi
+
 # A stamp for worker/venue.js that doesn't change when the stamp itself does.
 # The line matches whether or not it is exported. It became `export const`
 # the day the worker started importing it — and this pattern did not follow,
