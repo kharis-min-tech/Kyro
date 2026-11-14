@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-88b89dde0f39";
+export const VENUE_CODE = "venue-06decd3b8c98";
 /**
  * A fixed seat count for this church used to live here.
  *

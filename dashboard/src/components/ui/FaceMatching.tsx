@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, ScanFace, ShieldCheck } from "lucide-react";
 import { edgeFetch } from "@/lib/edgeAuth";
 import { useEdgeVenue } from "@/lib/edgeVenue";
+import { useCameras } from "@/hooks/useCameras";
 
 interface Privacy {
   face_matching: boolean;
@@ -23,6 +24,24 @@ export function FaceMatching() {
   const [notices, setNotices] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  /**
+   * Two cameras watching one room, with this switched off.
+   *
+   * "i also put my face on both cameras, and its counting me twice, error-
+   * big error."
+   *
+   * Measured, on one person standing in front of two cameras on one
+   * computer: face matching OFF counts them as two, ON counts them as one.
+   * Every time, whatever the rooms are called.
+   *
+   * It is not a bug in the matching — it is what the matching is FOR. Two
+   * cameras see the same coat from two angles and read it differently, and
+   * a coat is the only thing left to go on. But the card said "Off" and
+   * nothing anywhere said what Off costs, so the figure was quietly double
+   * and looked like a fault in the counting.
+   */
+  const { cameras } = useCameras();
+  const watchingRooms = cameras.filter((c) => c.location !== "entrance" && c.location !== "queue").length;
   const { venue } = useEdgeVenue(!!p?.face_matching);
   // Face matching only actually runs while a service is being recorded (face
   // data belongs to the service and is wiped when it ends). Switched on with
@@ -82,6 +101,13 @@ export function FaceMatching() {
                 the codes go when the service ends — is on the service card
                 itself while face matching is on, which is where anybody
                 would look for it. See AutoServices.tsx. */}
+            {!p.face_matching && watchingRooms > 1 && (
+              <p className="text-xs mt-1.5 leading-relaxed" style={{ color: "var(--accent-amber)" }}>
+                You have {watchingRooms} cameras watching rooms. Without this, somebody who walks in front of
+                two of them is counted as <strong>two different people</strong> — the two cameras see the same
+                coat from two angles and read it differently, and a coat is all Kyro has to go on.
+              </p>
+            )}
             {p.face_matching && (
               <p className="text-xs text-gray-500 mt-1.5">
                 Switched on by {p.switched_on_by} · {when(p.switched_on_at)} · right now {twice} {twice === 1 ? "person is" : "people are"} seen

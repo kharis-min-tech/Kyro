@@ -107,10 +107,10 @@ const box = (x, y, w, h, score) => ({ box: [x, y, x + w, y + h], score });
   // argument — so the camera can also say what it WOULD have counted at
   // either end of the setting. See suggestSensitivity.
   ok("the counting browser uses it",
-     /looksLikeAPerson\(people, px\.height, bar\)/.test(ctx)
+     /looksLikeAPerson\(people, px\.height, bar, px\.width\)/.test(ctx)
      && /c\.people = atCutoff\(countConfidenceRef\.current\);/.test(ctx));
   ok("alongside the ignore areas and the held-up photograph",
-     /notHeldBySomebody\(\s*\n?\s*outsideZones\(\s*\n?\s*looksLikeAPerson/.test(ctx));
+     /notHeldBySomebody\(\s*\n\s*outsideZones\(\s*\n(?:\s*\/\/.*\n)*\s*looksLikeAPerson/.test(ctx));
 }
 
 fs.rmSync(tmp, { recursive: true, force: true });

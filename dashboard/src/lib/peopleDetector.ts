@@ -406,6 +406,31 @@ export const SMALL = 0.08;
 export const SMALL_NEEDS = 0.5;
 /** A person is taller than they are wide. Much wider than tall is furniture. */
 export const TALLEST_WIDE = 0.8;
+/**
+ * A box running off the side of the picture, this narrow for its height,
+ * is a sliver of something rather than a person.
+ *
+ * ── Why the edge needs its own rule ────────────────────────────────────────
+ *
+ * "kyro needs to have the ability to know which is an object and human [...]
+ * i dont know why it would count that."
+ *
+ * A standing person's box is roughly a third as wide as it is tall. The
+ * rules below only ever asked whether a box was TALLER than it is wide,
+ * which a forty-pixel strip at the edge of the frame passes easily — and
+ * once past it, a strip of curtain, a door frame or the edge of a coat is
+ * judged on the same confidence as somebody standing in the middle of the
+ * room.
+ *
+ * The model has far less to go on at the edge, because most of whatever it
+ * is lies outside the picture. So a clipped sliver has to be more
+ * convincing, exactly as a small box does. A person genuinely half in shot
+ * is wider than this, and a doorway counts people as they cross rather than
+ * from one frame, so nobody walking in is lost by it.
+ */
+export const EDGE_SLIVER = 0.22;
+/** What one has to score instead. Between the plain bar and a small box's. */
+export const EDGE_NEEDS = 0.45;
 
 /**
  * Is this shaped and scored like a person, or like a corner of a wall?
@@ -438,12 +463,25 @@ export const TALLEST_WIDE = 0.8;
  * check in personTracker.ts for the pillow, which is person-shaped and
  * convincing and simply never moves.
  */
-export function looksLikeAPerson(people: Person[], frameH: number, minScore: number): Person[] {
+export function looksLikeAPerson(people: Person[], frameH: number, minScore: number, frameW = 0): Person[] {
   const h = Math.max(frameH, 1);
   return people.filter(({ box: [x1, y1, x2, y2], score }) => {
     const tall = (y2 - y1) / h;
     const wide = x2 - x1;
     if ((y2 - y1) / Math.max(wide, 1) < TALLEST_WIDE) return false;
+    /**
+     * Mostly outside the picture: judged harder. See EDGE_SLIVER.
+     *
+     * Only when the width of the frame is known — some callers measure a
+     * crop rather than the picture, and guessing an edge there would reject
+     * people standing perfectly in shot.
+     */
+    if (frameW > 0) {
+      const touchesSide = x1 <= 2 || x2 >= frameW - 2;
+      if (touchesSide && wide / Math.max(y2 - y1, 1) < EDGE_SLIVER) {
+        return score >= Math.max(minScore, EDGE_NEEDS);
+      }
+    }
     if (tall >= BIG_ENOUGH) return score >= minScore;
     // Between SMALL and BIG_ENOUGH the bar slides from SMALL_NEEDS down to
     // the plain threshold, so nothing changes abruptly at one pixel of height.

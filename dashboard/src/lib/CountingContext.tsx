@@ -741,7 +741,9 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           // area, and not a picture of people held up in front of the lens.
           const atCutoff = (bar: number) => notHeldBySomebody(
             outsideZones(
-              looksLikeAPerson(people, px.height, bar),
+              // The width as well, so a sliver running off the side of the
+              // picture can be told from somebody standing in it.
+              looksLikeAPerson(people, px.height, bar, px.width),
               zonesRef.current[c.key], px.width, px.height));
           c.people = atCutoff(countConfidenceRef.current);
           /**
