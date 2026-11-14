@@ -13,8 +13,17 @@
  *
  * Asking about each of three hundred would be worse than silence. The
  * thing worth doubting is the FIGURE: Kyro says this room seats three
- * hundred and has never seen more than two people in it. That is one
- * sentence, and anybody can settle it in a second.
+ * hundred. That is one sentence, and anybody can settle it in a second.
+ *
+ * It used to doubt only WILD figures — thirty or more seats, and twenty or
+ * more times the most people ever seen at once. So a room showing "307,
+ * guess" that had held twenty people was never asked about at all, and the
+ * word "guess" sat under the figure for ever. Reported as: "why guess when
+ * you can just ask". Every guess is asked about now, once per figure.
+ *
+ * And it asks for the NUMBER. Yes and no could not tell Kyro what the room
+ * holds: "no" deleted the guess and left the room with no capacity, which
+ * is honest but useless. A typed figure stops being a guess at all.
  *
  *   node tests/test_kyro_doubts_its_own_seat_count.mjs
  */
@@ -62,25 +71,37 @@ async function ask(h, { seats, peak, from = "found", location = "indoor", online
   const qs = await ask(h, { seats: 307, peak: 2 });
   ok("1. Kyro doubts it out loud", qs.length === 1, `${qs.length}`);
   ok("1. saying both figures it is doubting",
-     /307 seats/.test(qs[0].why) && /is 2$/.test(qs[0].why), qs[0]?.why);
-  ok("1. with an answer a person can give", qs[0].options.length === 2
-     && /yes/i.test(qs[0].options[0]) && /no/i.test(qs[0].options[1]));
+     /about 307/.test(qs[0].why) && /at once is 2\b/.test(qs[0].why), qs[0]?.why);
+  ok("1. and asks for the figure, which is the only answer that helps",
+     /How many seats are there in Room\?/.test(qs[0].question)
+     && qs[0].answer_kind === "number" && qs[0].answer_suggest === 307, qs[0]?.question);
+  ok("1. with its own guess as one tap, and an honest way out",
+     qs[0].options.length === 2 && /^307 is about right$/.test(qs[0].options[0])
+     && /don't know/i.test(qs[0].options[1]), String(qs[0]?.options));
   ok("1. and nothing to wait for — it is a question about a number",
      qs[0].pictures === 0);
 }
 
-// ── 2. A real hall on a quiet day is not doubted ──────────────────────────
+// ── 2. Every guess is asked about, however sensible it looks ──────────────
 //
-// A church is mostly empty most of the week. "More seats than people"
-// proves nothing, and a Tuesday must not become a question.
+// This used to be the other way round: a guess was only doubted when it was
+// wild compared with the most people ever seen. But "more seats than
+// people" proves nothing either way — a church is mostly empty most of the
+// week — so that test was never evidence about the SEATS. It only ever
+// decided which guesses got to stay on the screen unchallenged.
+//
+// A guess is a guess. Each of these is one question, once.
 {
   for (const [seats, peak, what] of [
+    [307, 20, "the 307 on her screen"],
+    [75, 12, "the 75 on her screen"],
     [300, 30, "a 300-seat hall, 30 came"],
-    [300, 16, "a quiet service"],
     [114, 40, "her own hall, a normal Sunday"],
     [20, 1, "a small room"],
   ]) {
-    ok(`2. ${what} is left alone`, (await ask(hub(), { seats, peak })).length === 0);
+    const qs = await ask(hub(), { seats, peak });
+    ok(`2. ${what} is asked about`, qs.length === 1 && qs[0].answer_suggest === seats,
+       `${qs.length} question(s)`);
   }
 }
 
@@ -110,14 +131,19 @@ async function ask(h, { seats, peak, from = "found", location = "indoor", online
   ok("5. and a new figure is a new question", again.length === 1 && /512/.test(again[0].why));
 }
 
-// ── 6. Saying no actually forgets them ────────────────────────────────────
+// ── 6. The answer is used ─────────────────────────────────────────────────
 {
   const worker = read("worker/venue.js");
-  ok("6. the guess is dropped at once", /await this\.syncCapacity\(q\.ask\.camera, 0, "found"\);/.test(worker));
+  ok("6. a figure becomes one somebody entered, so the word guess goes",
+     /syncCapacity\(q\.ask\.camera, seats, seats > 0 \? "admin" : "found"\)/.test(worker));
   ok("6. and the camera is told, since the seats live there",
      /kind: "how_many_seats" \}\);/.test(worker));
   const ctx = read("dashboard/src/lib/CountingContext.tsx");
   ok("6. which forgets what it found", /cam\.seatFinder\.forgetFound\(\);/.test(ctx));
+  // …but only when the room was left with no capacity. A figure that was
+  // confirmed or corrected must not wipe the seats already found.
+  ok("6. and only when the answer left no figure",
+     /const forget = ans\.seats !== undefined\n\s*\? Number\(ans\.seats\) === 0/.test(ctx));
   ok("6. and writes that down", /localStorage\.setItem\(`kyro_seats_\$\{cam\.key\}`/.test(ctx));
 }
 
@@ -125,9 +151,14 @@ async function ask(h, { seats, peak, from = "found", location = "indoor", online
 {
   const panel = read("dashboard/src/components/ui/SamePerson.tsx");
   ok("7. the panel shows it", /q\.review_type === "how_many_seats"/.test(panel));
-  ok("7. with the two answers", /Yes, about right/.test(panel) && /No, nothing like that/.test(panel));
-  ok("7. and says what saying no will do",
-     /makes it forget what it found here and look again/.test(panel));
+  ok("7. with a box to type the figure into",
+     /How many seats are there in \{q\.where \|\| "this room"\}\?/.test(panel)
+     && /type="number" min=\{1\}/.test(panel));
+  ok("7. Kyro's own guess as one tap",
+     /\{q\.answer_suggest\} is about right/.test(panel));
+  ok("7. and an honest way out", /I don&apos;t know/.test(panel));
+  ok("7. and says what typing a figure will do",
+     /Type the real figure and it stops being a guess/.test(panel));
   ok("7. and what it did afterwards",
      /Forgotten\. Kyro will work the seats out again from the picture\./.test(panel));
 }

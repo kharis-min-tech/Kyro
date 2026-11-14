@@ -73,6 +73,18 @@ export interface ReviewRequest {
   confidence: number;
   best_guess: string | null;
   options: string[];
+  /**
+   * A question whose answer is a number somebody types, not one of the
+   * options — "how many seats are there in this room?".
+   *
+   * The options are still sent and still work, so a tab that has not picked
+   * up this version of the page can answer it too.
+   */
+  answer_kind?: "number";
+  /** What Kyro guessed, filled into the box so a good guess is one tap. */
+  answer_suggest?: number;
+  /** What the number is, shown beside the box: "seats". */
+  answer_label?: string;
   created_at: number;
 }
 

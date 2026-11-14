@@ -45,6 +45,8 @@ interface Ask {
   why?: string;
   where?: string;
   other_where?: string;
+  /** What Kyro guessed, for a question whose answer is a number it types. */
+  answer_suggest?: number;
 }
 interface Learning {
   answered: number; agreed: number;
@@ -112,6 +114,8 @@ export function SamePerson() {
   const [asks, setAsks] = useState<Ask[]>([]);
 
   const [busy, setBusy] = useState<string | null>(null);
+  /** What has been typed into a "how many seats" question, kept per question. */
+  const [seatCount, setSeatCount] = useState<Record<string, string>>({});
   const [said, setSaid] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
@@ -247,24 +251,52 @@ export function SamePerson() {
          */
         <div key={q.review_id} className="px-5 py-4 flex flex-col gap-2" style={{ borderBottom: `1px solid ${BORDER}` }}>
           <p className="text-sm font-semibold" style={{ color: "var(--text-primary)" }}>
-            Does {q.where || "this room"} really have that many seats?
+            How many seats are there in {q.where || "this room"}?
           </p>
           <p style={{ fontSize: 11, color: "var(--text-tertiary)", lineHeight: 1.5 }}>
-            {q.why}. Kyro works the seats out from the picture, and furniture that is not a seat — a bed, a sofa
-            arm, a pile of coats — can read as one. Saying no makes it forget what it found here and look again.
+            {q.why} Kyro works the seats out from the picture, and furniture that is not a seat — a bed, a sofa
+            arm, a pile of coats — can read as one. Type the real figure and it stops being a guess.
           </p>
-          <div className="flex flex-wrap gap-2">
-            <button onClick={() => answer(q, "Yes, about right")} disabled={busy !== null}
+          {/*
+            * Reported as "why guess when you can just ask". The figure showed
+            * on the screen with the word "guess" under it, and the only
+            * answers on offer were yes and no — neither of which tells Kyro
+            * what the room actually holds.
+            */}
+          <form className="flex flex-wrap items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const v = (seatCount[q.review_id] || "").trim();
+              if (v) answer(q, v);
+            }}>
+            <input
+              type="number" min={1} inputMode="numeric"
+              value={seatCount[q.review_id] || ""}
+              onChange={(e) => setSeatCount((t) => ({ ...t, [q.review_id]: e.target.value }))}
+              placeholder={q.answer_suggest ? String(q.answer_suggest) : "seats"}
+              aria-label="How many seats"
+              disabled={busy !== null}
+              className="w-28 px-3 py-1.5 rounded-lg text-xs disabled:opacity-50"
+              style={{ background: "var(--border-subtle)", color: "var(--text-primary)",
+                       border: `1px solid ${BORDER}` }} />
+            <button type="submit" disabled={busy !== null || !(seatCount[q.review_id] || "").trim()}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
               style={{ background: "#16a34a" }}>
-              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Yes, about right
+              {busy === q.review_id ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} Save
             </button>
-            <button onClick={() => answer(q, "No, nothing like that")} disabled={busy !== null}
+            {q.answer_suggest ? (
+              <button type="button" onClick={() => answer(q, String(q.answer_suggest))} disabled={busy !== null}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold disabled:opacity-50"
+                style={{ background: "var(--border-subtle)", color: "var(--text-primary)" }}>
+                {q.answer_suggest} is about right
+              </button>
+            ) : null}
+            <button type="button" onClick={() => answer(q, "I don't know")} disabled={busy !== null}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50"
               style={{ background: "#b45309" }}>
-              <X size={12} /> No, nothing like that
+              <X size={12} /> I don&apos;t know
             </button>
-          </div>
+          </form>
         </div>
       ) : q.review_type === "same_chair_question" ? (
         <div key={q.review_id} className="px-5 py-4 flex flex-col gap-3" style={{ borderBottom: `1px solid ${BORDER}` }}>

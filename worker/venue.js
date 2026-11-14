@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-c45569cda251";
+export const VENUE_CODE = "venue-439e265e8733";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -340,6 +340,8 @@ const MOST_SEEN = 400;
  * headroom. Past the cap the oldest go — see trimMarks.
  */
 const MOST_ASKED_MARKS = 1200;
+/** Past this, a typed seat count is a typing slip rather than a room. */
+const MOST_SEATS_IN_A_ROOM = 100000;
 const SEATS_WILD_TIMES = 20;
 const SEATS_WILD_AT = 30;
 /**
@@ -4584,7 +4586,24 @@ export class VenueHub extends DurableObject {
       const l = live[c.camera_id];
       if (!this.isOnline(l)) continue;
       const ever = Math.max(l?.peak || 0, l?.people || 0, 1);
-      if (c.zone_capacity < SEATS_WILD_AT || c.zone_capacity < ever * SEATS_WILD_TIMES) continue;
+      /**
+       * Every guess is asked about, not only the wild ones.
+       *
+       * This used to wait until the guess was at least thirty AND at least
+       * twenty times the most people ever seen — so a room showing "307,
+       * guess" or "75, guess" was never asked about at all. The figure sat
+       * on the screen with the word "guess" under it for ever, which is
+       * exactly what was reported: "why guess when you can just ask".
+       *
+       * A guess IS the case a question is for. Counting a seat from a
+       * picture is the one thing Kyro cannot check for itself, and the
+       * person reading the screen can answer it in three seconds.
+       *
+       * Asked once per figure, so it is one question, not a nag: answer it
+       * and the number becomes a number somebody entered, and nothing asks
+       * again. If Kyro's guess later changes a lot, that is a new figure
+       * and worth one more question.
+       */
       if (asked[c.camera_id] === c.zone_capacity) continue;   // already put, at this figure
       asked[c.camera_id] = c.zone_capacity;
       const id = `seatcount-${c.camera_id.replace(/[^\w-]/g, "")}`;
@@ -4592,14 +4611,20 @@ export class VenueHub extends DurableObject {
       qs[id] = {
         type: "review_request", review_id: id, camera_id: c.camera_id,
         review_type: "how_many_seats", target_role: "operator",
-        question: "Does this room really have that many seats?",
+        question: `How many seats are there in ${where || "this room"}?`,
         guess: "seats", score: null, had_face: false,
-        why: `Kyro thinks it can see about ${c.zone_capacity} seats here, and the most people it has ever seen at once is ${ever}`,
+        why: `Kyro counted about ${c.zone_capacity} from the picture, and the most people it has seen in here at once is ${ever}. Counting seats from a picture is a guess — your figure replaces it.`,
         where, other_where: "",
         ask: { kind: "seat_count", camera: c.camera_id, seats: c.zone_capacity },
         track_id: null, position: [0, 0], bbox_hint: null,
         confidence: 0, best_guess: null,
-        options: ["Yes, about right", "No, nothing like that"],
+        // A number, typed. The options stay as well, so the question still
+        // works on an older tab that has not picked up the new page yet —
+        // and "that's about right" saves typing when the guess is good.
+        answer_kind: "number",
+        answer_suggest: c.zone_capacity,
+        answer_label: "seats",
+        options: [`${c.zone_capacity} is about right`, "I don't know"],
         created_at: now / 1000,
         // Nothing to crop: the question is about a number, and the room is
         // on the screen already.
@@ -4795,18 +4820,37 @@ export class VenueHub extends DurableObject {
      * answer travels back to that camera the way a seat answer does. The
      * number here goes at once, so the page stops repeating it.
      */
+    /**
+     * How many seats are in this room.
+     *
+     * Three answers are possible and all three are useful:
+     *
+     *   a number    — the room really holds that many. It stops being a
+     *                 guess and becomes a figure somebody entered, which is
+     *                 what the word "guess" on the screen was asking for.
+     *   about right — the same thing, using Kyro's own figure.
+     *   don't know  — the guess goes, and the room shows no capacity rather
+     *                 than a made-up one. Nothing counting, nothing claimed.
+     */
     if (q.review_type === "how_many_seats") {
-      const no = /^no/i.test(q.answer);
-      if (no && q.ask?.camera) {
-        await this.syncCapacity(q.ask.camera, 0, "found");
+      const typed = Number(String(q.answer).replace(/[^0-9]/g, ""));
+      const seats = Number.isFinite(typed) && typed > 0 && typed <= MOST_SEATS_IN_A_ROOM ? typed
+        : /right|^yes/i.test(q.answer) ? Number(q.ask?.seats) || 0
+        : 0;
+      if (q.ask?.camera) {
+        // A figure from the person reading the screen is theirs, not Kyro's:
+        // "admin" is what stops the word "guess" appearing under it and what
+        // stops Kyro quietly overwriting it later. See syncCapacity.
+        await this.syncCapacity(q.ask.camera, seats, seats > 0 ? "admin" : "found");
         const pending = await this.get("answers", []);
         pending.push({ device_id: q.ask.camera.split(":")[0],
           key: q.ask.camera.slice(q.ask.camera.indexOf(":") + 1),
-          review_id: id, answer: q.answer, kind: "how_many_seats" });
+          review_id: id, answer: q.answer, seats, kind: "how_many_seats" });
         await this.ctx.storage.put("answers", pending.slice(-200));
       }
       await this.ctx.storage.put("questions", qs);
-      return json({ ok: true, changed: no, action: no ? "forgot_seats" : "kept_seats" });
+      return json({ ok: true, changed: true, seats,
+                    action: seats > 0 ? "set_seats" : "forgot_seats" });
     }
     if (q.review_type === "same_chair_question") {
       const yes = /^yes/i.test(q.answer);

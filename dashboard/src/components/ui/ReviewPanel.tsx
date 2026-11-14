@@ -316,6 +316,7 @@ function ReviewCard({
   onTimeout: (r: ReviewRequest) => void;
 }) {
   const [answering, setAnswering] = useState(false);
+  const [typed, setTyped]         = useState("");
   const [timeLeft, setTimeLeft]   = useState(90); // 90 seconds to answer
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { theme } = useTheme();
@@ -399,6 +400,34 @@ function ReviewCard({
           : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
       </div>
       <div className="px-4 pb-3 flex flex-col gap-1.5">
+        {/*
+          * A question that wants a number wants a box to type it in.
+          *
+          * Reported as "why guess when you can just ask": a room's capacity
+          * showed the word "guess" underneath it and there was no way to
+          * tell Kyro the real figure without going and finding the setting.
+          * The options are still drawn underneath, so a good guess is one
+          * tap and "I don't know" is still an honest answer.
+          */}
+        {review.answer_kind === "number" && (
+          <form className="flex gap-1.5 pb-1"
+            onSubmit={(e) => { e.preventDefault(); if (typed.trim()) answer(typed.trim()); }}>
+            <input
+              type="number" min={1} inputMode="numeric" autoFocus
+              value={typed} onChange={(e) => setTyped(e.target.value)}
+              placeholder={review.answer_suggest ? String(review.answer_suggest) : ""}
+              aria-label={review.answer_label || "answer"}
+              disabled={answering}
+              className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm disabled:opacity-50"
+              style={{ background: "var(--border-subtle)", color: "var(--text-primary)",
+                       border: `1px solid ${colours.border}` }} />
+            <button type="submit" disabled={answering || !typed.trim()}
+              className="px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40"
+              style={{ background: colours.badge, color: colours.text }}>
+              {answering ? "Saving…" : "Save"}
+            </button>
+          </form>
+        )}
         {review.options.map((opt) => (
           <button key={opt} onClick={() => answer(opt)} disabled={answering}
             className="w-full text-left px-3 py-2 rounded-lg text-sm transition-all disabled:opacity-50"
@@ -457,6 +486,9 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [answering, setAnswering] = useState<string | null>(null);
   const [answered, setAnswered]   = useState<string | null>(null); // brief success flash
+  // What has been typed into a number question, kept per question so two of
+  // them open at once don't share a box.
+  const [typed, setTyped]         = useState<Record<string, string>>({});
   const [position, setPosition]   = useState<PanelPos | null>(null);
   const [dragging, setDragging]   = useState(false);
   const dragOffsetRef             = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
@@ -675,6 +707,33 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
                   <div className="px-3 pb-3 flex flex-col gap-1 border-t"
                     style={{ borderColor: colours.border + "30" }}>
                     <p className="text-xs pt-2 pb-1 leading-relaxed text-white">{r.question}</p>
+                    {/* A number question gets a box here too. See the panel above. */}
+                    {r.answer_kind === "number" && (
+                      <form className="flex gap-1 pb-1"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const v = (typed[r.review_id] || "").trim();
+                          if (v) answer(r, v);
+                        }}>
+                        <input
+                          type="number" min={1} inputMode="numeric"
+                          value={typed[r.review_id] || ""}
+                          onChange={(e) => setTyped((t) => ({ ...t, [r.review_id]: e.target.value }))}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder={r.answer_suggest ? String(r.answer_suggest) : ""}
+                          aria-label={r.answer_label || "answer"}
+                          disabled={!!answering}
+                          className="flex-1 min-w-0 px-3 py-2 rounded-lg text-xs disabled:opacity-40"
+                          style={{ background: "var(--border-subtle)", color: "var(--text-primary)",
+                                   border: `1px solid ${colours.border}` }} />
+                        <button type="submit"
+                          disabled={!!answering || !(typed[r.review_id] || "").trim()}
+                          className="px-3 py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-40"
+                          style={{ background: colours.badge, color: colours.text }}>
+                          {answering === r.review_id ? "Saving…" : "Save"}
+                        </button>
+                      </form>
+                    )}
                     {r.options.map((opt) => (
                       <button key={opt} onClick={() => answer(r, opt)}
                         disabled={!!answering}

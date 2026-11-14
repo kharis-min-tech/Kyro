@@ -529,7 +529,9 @@ export async function sendReport(
    * thing that knows where its seats are — so the answer has to travel back
    * or the seat map never changes.
    */
-  answers: { key: string; review_id: string; answer: string; kind: string; seat?: number }[] }> {
+  answers: { key: string; review_id: string; answer: string; kind: string; seat?: number;
+    /** For "how many seats": the figure the website settled on, nought if none. */
+    seats?: number }[] }> {
   let dev = savedDevice() ?? await registerDevice();
   const post = (d: DeviceCred) => fetch("/api/devices/report", {
     method: "POST",

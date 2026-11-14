@@ -1359,7 +1359,22 @@ export function CountingProvider({ children }: { children: ReactNode }) {
            */
           if (ans.kind === "how_many_seats") {
             const cam = [...cams.current.values()].find((x) => x.key === ans.key);
-            if (cam && /^no/i.test(String(ans.answer))) {
+            /**
+             * Only when the room is left with NO capacity — "I don't know".
+             *
+             * This used to read the words of the answer, looking for one
+             * beginning "no". The question now asks for a number, so the
+             * answers are "250", "307 is about right" and "I don't know",
+             * and none of them begins with no. The website works out the
+             * figure and sends it, so that is what to go by: nought means
+             * the guess was wrong and the seats here are worth finding
+             * again. A figure means it was right or has been corrected, and
+             * the seats already found stay exactly where they are.
+             */
+            const forget = ans.seats !== undefined
+              ? Number(ans.seats) === 0
+              : /^no/i.test(String(ans.answer));   // answers queued before this
+            if (cam && forget) {
               cam.seatFinder.forgetFound();
               try { localStorage.setItem(`kyro_seats_${cam.key}`, cam.seatFinder.save()); } catch { /* fine without it */ }
             }
