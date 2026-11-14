@@ -2141,6 +2141,37 @@ export class VenueHub extends DurableObject {
         // Said plainly: with no register, the attendance figure is each
         // camera's own tally, which counts the same people over and over.
         attendance_is_from_register: !!this.register?.size,
+        /**
+         * Why Kyro has nothing to ask, when it has nothing to ask.
+         *
+         * "no questions are asked though, or kyro dosent need help, like
+         * whats going on."
+         *
+         * The question panel appears only when there is something to
+         * answer, which is right — a standing panel saying "nothing here"
+         * was taken off for good reason. But that leaves silence, and
+         * silence is the same shape whether Kyro is sure of everybody or
+         * the asking is broken. It has been broken three times this week,
+         * so there is no reason to assume.
+         *
+         * Said here, on the card that exists to say whether things are
+         * working, rather than as a panel in the way.
+         */
+        questions: await (async () => {
+          const qs = await this.get("questions", {});
+          const waiting = Object.values(qs).filter((q) => !q.answer).length;
+          if (waiting) return { waiting, why: null };
+          if (!this.register) {
+            return { waiting: 0, why: "no_service",
+                     detail: `Nothing is being recorded, so nobody is in the register and there is nothing to be unsure about. A service starts by itself once ${SERVICE_START_PEOPLE} people have been in shot for a couple of minutes, or straight away if the rota says one is on.` };
+          }
+          if (!this.register.size) {
+            return { waiting: 0, why: "nobody_yet",
+                     detail: "A service is being recorded, but nobody is in the register yet." };
+          }
+          return { waiting: 0, why: "sure",
+                   detail: `Kyro is sure about all ${this.register.size} of them. It asks when it is not.` };
+        })(),
       },
       problems,
       problems_now: live_problems.length,

@@ -50,6 +50,8 @@ interface Health {
   counting: {
     register_running: boolean; people_in_register: number; building_seats: number;
     attendance_is_from_register: boolean;
+    /** What Kyro is asking, or why it has nothing to ask. */
+    questions?: { waiting: number; why: "no_service" | "nobody_yet" | "sure" | null; detail?: string };
   };
   problems: Problem[]; problems_now: number;
 }
@@ -372,6 +374,23 @@ export function SystemHealth() {
               <li style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                 {h.service ? `✓ Recording “${h.service.name}” since ${when(h.service.since)}` : "· No service being recorded"}
               </li>
+              {/**
+                * What Kyro is asking about, or why it is asking nothing.
+                *
+                * "no questions are asked though, or kyro dosent need help,
+                * like whats going on." The panel of questions appears only
+                * when there is something to answer — which is right, and
+                * leaves silence that looks the same whether Kyro is sure of
+                * everybody or the asking has jammed. It has jammed three
+                * times this week. So the state is said here.
+                */}
+              {h.counting.questions && (
+                <li style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                  {h.counting.questions.waiting > 0
+                    ? `✓ ${h.counting.questions.waiting} ${h.counting.questions.waiting === 1 ? "question is" : "questions are"} waiting for an answer`
+                    : `· Nothing to ask — ${h.counting.questions.detail ?? ""}`}
+                </li>
+              )}
             </ul>
           </div>
 
