@@ -154,6 +154,21 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
 //     arriving, and the morning's figure climbed all day on one person doing
 //     their job — which is exactly what was reported: "you could just be
 //     counting them the whole time, that's why the number keeps increasing".
+//
+//     The figure that was climbing is the ATTENDANCE, and it is the one held
+//     to one here. The arrivals and departures are a different thing: they
+//     are a flow, and how many people are in the hall is the difference
+//     between them. Holding THOSE to one as well was wrong, and quietly:
+//     somebody who stepped out during the notices was counted out, and their
+//     coming back was refused because they had already been counted in once.
+//     The hall was a person short for the rest of the morning, every time.
+//     Twenty people in, five of them nipping out and back, and the hall read
+//     fifteen.
+//
+//     So a crossing is counted whenever it REVERSES the last one. The usher
+//     pacing in, in, in still adds one, because nothing said they went out
+//     in between — and in, out, in is three real crossings of a doorway and
+//     counts as three, which is the only way the hall adds up.
 {
   const tr = new PersonTracker();
   tr.watchesDoorway("closer");
@@ -168,22 +183,46 @@ const face = (n) => { const v = new Float32Array(8); v[n % 8] = 1; return v; };
     see(tr, [trip[1]], (t += 400), [usher], [theirFace]);
     see(tr, [], (t += GONE_LONG_ENOUGH));
   }
-  ok("the usher is counted in once, not three times", tr.entries === 1, `in ${tr.entries}`);
-  ok("and out once, not twice", tr.exits === 1, `out ${tr.exits}`);
+  // The morning's figure — the one that was climbing all day. One usher.
+  ok("the usher is one person, however many times they cross",
+     tr.people === 1, `people ${tr.people}`);
+  // Five trips: in, out, in, out, in. Every one of them reverses the last,
+  // so every one is real and every one counts.
+  ok("their five trips are counted as five crossings, not one",
+     tr.entries === 3 && tr.exits === 2, `in ${tr.entries} out ${tr.exits}`);
+  // Which is the whole point: they walked in last, so they are inside.
+  ok("and the hall adds up — they went in last, so the hall holds one",
+     tr.entries - tr.exits === 1, `net ${tr.entries - tr.exits}`);
 
-  // Half an hour later, still the same service, still the same usher: still
-  // once. Remembering them for three minutes only moved the problem.
+  // Half an hour later, still the same service, still the same usher. They
+  // step back out, and that is a real departure: the hall is empty again.
   see(tr, [box(100, 60, 70, 200)], (t += 1_800_000), [usher], [theirFace]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
   see(tr, [], (t += GONE_LONG_ENOUGH));
-  ok("and still once half an hour into the service", tr.exits === 1, `out ${tr.exits}`);
+  ok("stepping out half an hour later empties the hall again",
+     tr.exits === 3 && tr.entries - tr.exits === 0, `in ${tr.entries} out ${tr.exits}`);
+  ok("and they are still only one person all morning",
+     tr.people === 1, `people ${tr.people}`);
+
+  // Going out AGAIN without having come back in is not a second departure —
+  // it is the same person being seen near the door. Nothing reversed.
+  see(tr, [box(100, 60, 70, 200)], (t += 20_000), [usher], [theirFace]);
+  see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
+  see(tr, [], (t += GONE_LONG_ENOUGH));
+  ok("out twice over with no return in between is still one departure",
+     tr.exits === 3, `out ${tr.exits}`);
 
   // The service ends. Everybody is forgotten, and the next one starts clean.
   tr.forgetPeople();
   see(tr, [box(100, 60, 70, 200)], (t += 5000), [usher], [theirFace]);
   see(tr, [box(100, 120, 48, 124)], (t += 400), [usher], [theirFace]);
   see(tr, [], (t += GONE_LONG_ENOUGH));
-  ok("after the service ends they are somebody new again", tr.exits === 2, `out ${tr.exits}`);
+  // The new service's attendance starts at nobody and they are its first
+  // person. (The crossings themselves are not zeroed here — the website
+  // handles the service boundary for those — so the fourth departure is
+  // still the fourth this tracker has seen.)
+  ok("after the service ends they are somebody new again",
+     tr.exits === 4 && tr.people === 1, `out ${tr.exits} people ${tr.people}`);
 }
 
 // 6c. Everyone else is still counted. The cooling-off only ever applies to

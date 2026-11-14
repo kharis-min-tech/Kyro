@@ -331,6 +331,26 @@ interface Track {
   /** Already counted walking in, and already counted walking out. */
   countedIn: boolean;
   countedOut: boolean;
+  /**
+   * Which way they were last counted, so the NEXT crossing is only counted
+   * when it reverses it.
+   *
+   * Somebody who steps out during the notices and comes back used to be
+   * counted out and then never counted back in — their walking out was a
+   * new direction, their walking in was not. The hall was one person short
+   * for the rest of the morning, every time, and it never came back.
+   * Twenty people in, five of them nipping out and returning, and the hall
+   * read fifteen.
+   *
+   * Counting only a reversal gives the honest flow both ways and still
+   * refuses to count the same crossing twice: an usher pacing in, in, in
+   * adds one, because nothing in between said they ever went out.
+   *
+   * The morning's attendance is a different figure and is protected
+   * somewhere else — see countPerson, which asks `returning` and so counts
+   * the usher once however many times they cross.
+   */
+  lastWay: "in" | "out" | null;
   /** Somebody Kyro had seen before — not a new person for the unique count. */
   returning: boolean;
   /** Already added to the count of different people seen. */
@@ -450,6 +470,16 @@ export interface Known {
   face: Float32Array | null;
   countedIn: boolean;
   countedOut: boolean;
+  /**
+   * Which way they were last counted. See Track.lastWay.
+   *
+   * Optional: people handed back by the website after a reload are stored
+   * without it, and the store has no room to spare. Where it is missing it
+   * is worked out from which ways they have been counted — which is right
+   * whenever somebody has only gone one way so far, and that is everybody
+   * the suppression is there to protect.
+   */
+  lastWay?: "in" | "out" | null;
   /** Already one of the different people seen, so coming back adds nobody. */
   uniqued: boolean;
   at: number;
@@ -743,7 +773,13 @@ export class PersonTracker {
         // then in — which nets to the truth, rather than to a departure that
         // never ended.
         if (t.tallied) { t.tallied = false; t.firstBox = b; }
-        t.returning = true;   // recognised, so never a new person
+        // Recognised, so never a new person — as long as they have already
+        // been counted as one. After a fresh start they have not: the usher
+        // standing in the doorway is the same body, but this is a new
+        // service and nobody in it has been counted yet. countPerson refuses
+        // a second count on its own (it asks `uniqued`), so this only ever
+        // needed to say "already counted", never "never count".
+        if (t.uniqued) t.returning = true;
         t.score = Math.min(confirmAt + 2, t.score + 1);
         if (!t.counted && t.score >= confirmAt) { t.counted = true; this.cameInRoom(t); }
         this.countPerson(t);
@@ -768,11 +804,13 @@ export class PersonTracker {
           // Counted, unless this is somebody Kyro already counted this way —
           // the usher holding the door. See MOST_REMEMBERED.
           if (went === true) {
-            if (!t.countedIn) { this.entries++; t.countedIn = true; this.note(now, "in"); }
-            else this.note(now, "again-in");
+            if (t.lastWay !== "in") {
+              this.entries++; t.countedIn = true; t.lastWay = "in"; this.note(now, "in");
+            } else this.note(now, "again-in");
           } else if (went === false) {
-            if (!t.countedOut) { this.exits++; t.countedOut = true; this.note(now, "out"); }
-            else this.note(now, "again-out");
+            if (t.lastWay !== "out") {
+              this.exits++; t.countedOut = true; t.lastWay = "out"; this.note(now, "out");
+            } else this.note(now, "again-out");
           } else {
             // They stood by the door and went back the way they came.
             this.note(now, "unclear");
@@ -794,7 +832,7 @@ export class PersonTracker {
           if (!t.kept && (t.countedIn || t.countedOut || t.uniqued) && (t.look || t.face)) {
             t.kept = true;
             this.freshlyKnown.push({ look: t.look, face: t.face, countedIn: t.countedIn,
-              countedOut: t.countedOut, uniqued: t.uniqued, at: t.lastSeen });
+              countedOut: t.countedOut, lastWay: t.lastWay, uniqued: t.uniqued, at: t.lastSeen });
             if (this.freshlyKnown.length > MOST_REMEMBERED) this.freshlyKnown.shift();
           }
         }
@@ -962,7 +1000,7 @@ export class PersonTracker {
     // the different people seen — otherwise there is nothing to protect.
     if (!t.countedIn && !t.countedOut && !t.uniqued) return;
     const k: Known = { look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut,
-      uniqued: t.uniqued, at: t.lastSeen };
+      lastWay: t.lastWay, uniqued: t.uniqued, at: t.lastSeen };
     this.known.push(k);
     // …and queued to be kept somewhere a reload cannot reach, unless it was
     // already sent the moment they were counted. See takeNewlyRemembered.
@@ -981,8 +1019,8 @@ export class PersonTracker {
    * only when one person fits clearly better than everyone else — in a hall of
    * dark coats the honest answer is no, and a stranger is counted.
    */
-  private recall(face: Float32Array | null, look: Look | null, now: number): { countedIn: boolean; countedOut: boolean; returning: boolean } {
-    const no = { countedIn: false, countedOut: false, returning: false };
+  private recall(face: Float32Array | null, look: Look | null, now: number): { countedIn: boolean; countedOut: boolean; lastWay: "in" | "out" | null; returning: boolean } {
+    const no = { countedIn: false, countedOut: false, lastWay: null, returning: false };
     // Everybody who might be this person: those whose track has been let go,
     // and those whose track is still here but too old to carry on — a track
     // isn't tidied away until the end of this count, and the usher coming back
@@ -990,7 +1028,7 @@ export class PersonTracker {
     // again.
     const stale = this.tracks.filter((t) => now - t.lastSeen > RETURN_BY_LOOK_MS && (t.countedIn || t.countedOut || t.uniqued));
     const pool: Known[] = [...this.known,
-      ...stale.map((t) => ({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, uniqued: t.uniqued, at: t.lastSeen }))];
+      ...stale.map((t) => ({ look: t.look, face: t.face, countedIn: t.countedIn, countedOut: t.countedOut, lastWay: t.lastWay, uniqued: t.uniqued, at: t.lastSeen }))];
     let at = -1;
     if (face) {
       let best = SAME_FACE;
@@ -1023,7 +1061,12 @@ export class PersonTracker {
     // They are a live person again; they go back into the remembered list when
     // their track is next let go.
     if (at < this.known.length) this.known.splice(at, 1);
-    return { countedIn: pool[at].countedIn, countedOut: pool[at].countedOut, returning: pool[at].uniqued };
+    const was = pool[at];
+    const lastWay = was.lastWay !== undefined ? was.lastWay
+      : was.countedIn && !was.countedOut ? "in"
+      : was.countedOut && !was.countedIn ? "out"
+      : null;
+    return { countedIn: was.countedIn, countedOut: was.countedOut, lastWay, returning: was.uniqued };
   }
 
   /**
@@ -1039,7 +1082,17 @@ export class PersonTracker {
     this.people = 0;
     // Including the people still standing in the doorway: in the next service
     // they are new again, and their first crossing counts.
-    for (const t of this.tracks) { t.countedIn = false; t.countedOut = false; }
+    //
+    // ALL of what makes them an old face, not just the crossing flags. The
+    // direction they were last counted has to go too, or their first
+    // crossing of the new service reverses nothing and is swallowed. So does
+    // their place in the attendance: an usher standing in the door when the
+    // next service starts was never added to it, because they had already
+    // been counted — in the service that just ended.
+    for (const t of this.tracks) {
+      t.countedIn = false; t.countedOut = false; t.lastWay = null;
+      t.uniqued = false; t.returning = false;
+    }
   }
 
   /** New day, or counting restarted. */
