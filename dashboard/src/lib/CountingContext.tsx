@@ -319,6 +319,14 @@ interface CountingValue {
   stop: () => void;
   /** The camera's live picture, for a preview. Straight from the camera, so no lag. */
   streamFor: (key: string) => MediaStream | null;
+  /**
+   * Forget the seats Kyro found by itself, on this camera.
+   *
+   * For a camera that has been moved, or a room that has been changed
+   * about. Anything somebody confirmed or rejected by hand is kept — that
+   * is their answer, not Kyro's guess. Returns how many were let go.
+   */
+  forgetFoundSeats: (key: string) => number;
 }
 
 const Ctx = createContext<CountingValue | null>(null);
@@ -1516,6 +1524,17 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   }, [phase]);
 
   const streamFor = useCallback((key: string) => cams.current.get(key)?.stream ?? null, []);
+  /** See forgetFoundSeats on the context. */
+  const forgetFoundSeats = useCallback((key: string) => {
+    const c = cams.current.get(key);
+    if (!c) return 0;
+    const gone = c.seatFinder.forgetFound();
+    // Written down at once: the page may be closed before the next report,
+    // and a "forget" that comes back after a reload is not a forget.
+    try { localStorage.setItem(`kyro_seats_${c.key}`, c.seatFinder.save()); } catch { /* fine without it */ }
+    refreshViews();
+    return gone;
+  }, [refreshViews]);
   // What this computer can see, with nobody counted twice.
   //
   // Adding the cameras up is the one thing a camera cannot do for itself: it
@@ -1529,7 +1548,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
   const secondsPerCount = views.reduce((m, v) => Math.max(m, v.secondsPerCount), 0);
 
   return (
-    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, seenTwice, secondsPerCount, start, stop, streamFor }}>
+    <Ctx.Provider value={{ allowed, demo, phase, step, progress, error, sendError, lastSent, engineInfo, needsPermission, views, total, seenTwice, secondsPerCount, start, stop, streamFor, forgetFoundSeats }}>
       {children}
       {/* The cameras' own video elements: on the page everywhere, visible nowhere. */}
       <div ref={holder} aria-hidden style={{ position: "fixed", width: 1, height: 1, overflow: "hidden", opacity: 0, pointerEvents: "none" }} />

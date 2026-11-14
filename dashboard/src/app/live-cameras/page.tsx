@@ -773,6 +773,19 @@ function CameraTile({
   const capacityKnown = (edgeLive?.capacityFrom ?? (camera.zone_capacity ? "admin" : null)) === "admin";
   const capacity = capacityKnown ? (camera.zone_capacity ?? 0) : 0;
   const guessedSeats = !capacityKnown ? (edgeLive?.capacity ?? camera.zone_capacity ?? 0) : 0;
+  /**
+   * Is THIS browser the one that found those seats?
+   *
+   * They live in the counting browser, so only it can forget them. On a
+   * phone, or a second computer, the button is not offered rather than
+   * offered and doing nothing.
+   */
+  const counting = useCounting();
+  // tileCount already knows how to match a camera to the view counting it —
+  // by name, by id, and allowing for another computer doing the counting.
+  const forgetKey = tileCount(counting?.phase ?? null, counting?.views ?? [],
+    camera.zone_name ?? camera.name, camera.camera_id).key;
+  const [forgot, setForgot] = useState<number | null>(null);
   const isQueue  = camera.location === "queue";
   /**
    * Nothing is counting, so there is nothing to report but the capacity.
@@ -979,12 +992,40 @@ function CameraTile({
             alert. Set the seat count with the pencil on the Cameras page and
             all of those come back. */}
         {guessedSeats > 0 && !isQueue && (
-          <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
-            No seat count set for this room. Kyro thinks it can see about{" "}
-            <strong style={{ color: "var(--text-tertiary)" }}>{guessedSeats.toLocaleString()}</strong> seats, which is a
-            guess from the picture — so &ldquo;spaces left&rdquo; and the filling-up alerts stay off until somebody sets
-            the real number with the pencil on the Cameras page.
-          </p>
+          <div className="flex flex-col gap-1.5">
+            <p className="text-xs leading-relaxed" style={{ color: "var(--text-faint)" }}>
+              No seat count set for this room. Kyro thinks it can see about{" "}
+              <strong style={{ color: "var(--text-tertiary)" }}>{guessedSeats.toLocaleString()}</strong> seats, which is a
+              guess from the picture — so &ldquo;spaces left&rdquo; and the filling-up alerts stay off until somebody sets
+              the real number with the pencil on the Cameras page.
+            </p>
+            {/**
+              * …and a way to tell it that guess is nonsense.
+              *
+              * "there was no seats in my bedroom what are you talking about,
+              * i was just sitting on my bed." Three hundred and seven of
+              * them, because a spot that once qualified as a seat was kept
+              * for ever and the camera had been moved around a room for
+              * days. There was no way at all to clear them.
+              *
+              * Only on the computer doing the counting: the seats Kyro has
+              * found live in that browser, and no other device can reach
+              * them.
+              */}
+            {forgetKey && (
+              <button type="button"
+                onClick={() => {
+                  const gone = counting?.forgetFoundSeats(forgetKey) ?? 0;
+                  setForgot(gone);
+                }}
+                className="self-start px-2.5 py-1 rounded-lg text-xs font-medium"
+                style={{ background: "var(--bg-hover)", color: "var(--text-secondary)" }}>
+                {forgot === null ? "Forget the seats Kyro found here"
+                  : forgot > 0 ? `Forgotten ${forgot.toLocaleString()} — it will look again`
+                  : "Nothing of Kyro's own to forget"}
+              </button>
+            )}
+          </div>
         )}
 
         {/* Occupancy bar */}

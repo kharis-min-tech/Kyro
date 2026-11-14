@@ -46,6 +46,15 @@ export const CHAIR_EVERY_MS = 300_000; // look for empty chairs this often
 export const CHAIR_CHECKS = 2;         // a chair seen this many times = a seat
 export const STANDING_RATIO = 2.6;     // taller than this × wider = standing, so ask
 export const MAX_SEATS = 800;          // what a stored seat list can hold
+/**
+ * A seat nothing has been seen in for this long is not a seat any more.
+ *
+ * Long on purpose: the seat finder only runs while counting, so for a
+ * church that counts on Sundays this clock advances about an hour a week.
+ * Three weeks is three missed Sundays — a room that has genuinely changed,
+ * not a quiet fortnight.
+ */
+export const SEAT_FORGET_MS = 21 * 86_400_000;
 const ROWS = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 // ── Occupancy ──────────────────────────────────────────────────────────────
@@ -73,6 +82,8 @@ export interface Place {
   seen: number;
   /** An administrator said so, and nothing automatic may overrule it. */
   decided?: boolean;
+  /** When anything — a person or a chair — was last seen here. */
+  at?: number;
 }
 
 export interface Seat {
@@ -156,6 +167,7 @@ export class SeatFinder {
       best = { id: this.nextId++, box, checks: [], chairs: 0, status: "maybe", tall: 0, seen: 0 };
       this.places.push(best);
     }
+    best.at = now;
     if (how === "chair") { best.chairs++; return; }
     best.seen++;
     const w = box[2] - box[0], h = box[3] - box[1];
@@ -188,6 +200,42 @@ export class SeatFinder {
     // Forget places nobody has been in for days that never became seats.
     this.places = this.places.filter((p) => p.status !== "maybe" || !p.checks.length
       || now - p.checks[p.checks.length - 1] < 3 * 86_400_000);
+    /**
+     * …and seats nothing has been seen in for weeks.
+     *
+     * "there was no seats in my bedroom what are you talking about, i was
+     * just sitting on my bed."
+     *
+     * Three hundred and seven of them, found in a bedroom. Not from one
+     * reading going wrong — measured, a wobbling bed and a person moving
+     * about all afternoon make nine or fifteen, not three hundred. They
+     * are the accumulation of EVERY spot that ever qualified, over every
+     * session, kept in that browser for ever: a place that became a seat
+     * was never forgotten, whatever happened afterwards, and the camera
+     * had been moved around a room for days.
+     *
+     * Chairs are moved, rooms are rearranged, and a camera gets pointed
+     * somewhere else entirely. A seat nothing has been seen in for three
+     * weeks is not a seat any more.
+     *
+     * Never one somebody DECIDED. That is a person's answer, and the whole
+     * point of asking was that it sticks.
+     */
+    this.places = this.places.filter((p) =>
+      p.decided || p.status === "maybe" || now - (p.at ?? now) < SEAT_FORGET_MS);
+  }
+
+  /**
+   * Forget every seat Kyro found by itself.
+   *
+   * For a camera that has been moved, or a room that has been changed
+   * about. Anything a person confirmed or rejected is kept — that is their
+   * answer, not Kyro's guess. Returns how many were let go.
+   */
+  forgetFound(): number {
+    const before = this.places.length;
+    this.places = this.places.filter((p) => p.decided);
+    return before - this.places.length;
   }
 
   /** No other seat anywhere near — unusual in a hall full of chairs or pews. */
@@ -449,7 +497,12 @@ export class SeatFinder {
     if (!text) return;
     try {
       const d = JSON.parse(text);
-      if (Array.isArray(d.places)) this.places = d.places;
+      if (Array.isArray(d.places)) {
+        // Saved before places remembered when they were last seen: start
+        // their clock now rather than forgetting them all at once.
+        const now = Date.now();
+        this.places = d.places.map((p: Place) => (p.at ? p : { ...p, at: now }));
+      }
       if (typeof d.nextId === "number") this.nextId = Math.max(1, d.nextId);
       if (d.stage === "bottom" || d.stage === "top") this.stage = d.stage;
     } catch { /* a corrupt note is no note */ }
