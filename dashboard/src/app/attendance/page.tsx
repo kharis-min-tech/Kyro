@@ -1265,6 +1265,19 @@ export default function AttendancePage() {
   });
   // Suffix for the big number (e.g. "%" for occupancy)
   const metricSuffix = metric === "occupancy" ? "%" : "";
+  /**
+   * How full the building is, with nobody having said how big it is.
+   *
+   * Occupancy is the count against the seats, and the seats are only ever
+   * a number somebody entered — a guess from the picture drives nothing,
+   * which is why "spaces left" and the filling-up alerts stay off without
+   * one. The server therefore sends 0, and this printed it: a 56-pixel
+   * "0%" that reads as an empty room, when what is true is that nobody has
+   * told Kyro how many seats there are.
+   *
+   * The same dash the Seats figure uses, for the same reason.
+   */
+  const noSeatCount = metric === "occupancy" && !((venueTotal?.total_capacity ?? 0) > 0);
   // Edge Live: "Live" only while at least one camera is actually reporting.
   const edgeLiveNow = (venueTotal?.cameras_running ?? 0) > 0;
   const edgeZones: Record<string, ZoneLive> = {};
@@ -1419,9 +1432,15 @@ export default function AttendancePage() {
                   <p style={{ fontSize: 11, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.08em" }}>
                     {metricTitle}
                   </p>
-                  <p style={{ fontSize: 56, fontWeight: 900, color: "#818cf8", lineHeight: 1, marginTop: 4 }}>
-                    {displayTotal.toLocaleString()}{metricSuffix}
+                  <p style={{ fontSize: 56, fontWeight: 900, color: noSeatCount ? "var(--text-faint)" : "#818cf8", lineHeight: 1, marginTop: 4 }}>
+                    {noSeatCount ? "—" : `${displayTotal.toLocaleString()}${metricSuffix}`}
                   </p>
+                  {noSeatCount && (
+                    <p style={{ fontSize: 12, color: "var(--accent-amber)", marginTop: 4, lineHeight: 1.45 }}>
+                      Nobody has told Kyro how many seats this building has, so there is nothing to be a percentage
+                      of. Set it with the pencil on the Cameras page.
+                    </p>
+                  )}
                   {/* Where the number came from, in its own words. A figure
                       built from arrivals and departures can drift — anyone
                       missed at the door is missed all day — so it never

@@ -187,5 +187,25 @@ const seating = fs.readFileSync(path.join(root, "dashboard/src/app/seating/page.
      /\{zone\.capacity > 0 \? zone\.capacity\.toLocaleString\(\) : "—"\}/.test(page));
 }
 
+// ── "How full" needs something to be full OF ──────────────────────────────
+//
+// Occupancy is the count against the seats, and the seats are only ever a
+// number somebody entered. With none, the server sends 0 — and the page
+// printed it: a fifty-six pixel "0%" under the words "Venue occupancy",
+// which reads as an empty room when what is true is that nobody has said
+// how many seats there are. Found by sweeping, not by being told.
+{
+  const page = fs.readFileSync(path.join(root, "dashboard/src/app/attendance/page.tsx"), "utf8");
+  ok("the page knows when there is nothing to be a percentage of",
+     /const noSeatCount = metric === "occupancy" && !\(\(venueTotal\?\.total_capacity \?\? 0\) > 0\);/.test(page));
+  ok("and shows a dash rather than nought per cent",
+     /\{noSeatCount \? "—" : `\$\{displayTotal\.toLocaleString\(\)\}\$\{metricSuffix\}`\}/.test(page));
+  ok("saying what is missing and where to set it",
+     /Nobody has told Kyro how many seats this building has/.test(page)
+     && /pencil on the Cameras page/.test(page));
+  // …and only for that metric: the people count needs no capacity.
+  ok("the other figures are untouched", /metric === "occupancy" && !\(\(venueTotal/.test(page));
+}
+
 console.log(fails ? `\n${fails} failed` : "\nAll good. A guess is offered, never assumed.");
 process.exit(fails ? 1 : 0);
