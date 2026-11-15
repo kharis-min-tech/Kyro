@@ -790,7 +790,31 @@ export class IdentityRegistry {
       const pair = `${cameraId}#${o.track}|${other.id}`;
       if (this.ruled.has(pair)) return;              // already settled
       if (this.asks.some((a) => a.pair === pair)) return;
+      /**
+       * …and the same question about the same two PEOPLE, whatever number
+       * the camera is calling them this time.
+       *
+       * "you also keep giving me the same person — questions are being
+       * repeated."
+       *
+       * The key above names a camera's track number, and a track number is
+       * not a person: it changes every time the detector loses somebody for
+       * a moment, which at a door is every crossing and in a hall is all
+       * morning. So the same two faces came up again and again under a new
+       * key each time, and answering did nothing for the next one. The note
+       * on answerAsk even says "the same two are never asked about again
+       * for the rest of the service" — it was describing what it meant to
+       * do, not what it did.
+       *
+       * This key names the two people. It only exists once this sighting
+       * has an identity, which is not always — a brand new sighting has
+       * none, and that question is worth asking. But by the time it is
+       * asked a second time it usually does, and that is the repeat.
+       */
+      const peoplePair = this.pairOfPeople(cameraId, o.track, other.id);
+      if (peoplePair && this.ruled.has(peoplePair)) return;
       this.ruled.set(pair, null);                    // asked, not yet answered
+      if (peoplePair) this.ruled.set(peoplePair, null);
       this.asks.push({
         pair, at: now, guess,
         camera: cameraId, track: o.track,
@@ -1705,6 +1729,20 @@ export class IdentityRegistry {
    * Drained rather than read, because the hub stores them and must not end up
    * asking the same thing twice.
    */
+  /**
+   * A key naming two PEOPLE, so a ruling about them outlives a track number.
+   *
+   * Null when this sighting has no identity yet — a question about somebody
+   * Kyro has never placed is worth asking, and there is nothing to key it
+   * on. The smaller id first, so the same two always make the same key
+   * whichever way round they are asked about.
+   */
+  pairOfPeople(cameraId, track, otherId) {
+    const mine = this.byTrack.get(`${cameraId}#${track}`)?.id ?? null;
+    if (!mine || !otherId || mine === otherId) return null;
+    return `p${Math.min(mine, otherId)}|p${Math.max(mine, otherId)}`;
+  }
+
   takeAsks() {
     const out = this.asks;
     this.asks = [];
@@ -1760,6 +1798,19 @@ export class IdentityRegistry {
   answerAsk(ask, same, now = Date.now()) {
     if (!ask || !ask.pair) return { changed: false };
     this.ruled.set(ask.pair, !!same);
+    /**
+     * …under the two PEOPLE as well, which is what makes the answer last.
+     *
+     * The pair above names a camera's track number, which is gone the next
+     * time the detector loses sight of them for a second. Recorded against
+     * the people, the answer holds for the rest of the service — which is
+     * what this method's own note has always claimed it did.
+     *
+     * Only useful for "different people": answering "same" merges the two,
+     * so there is no longer a pair to ask about.
+     */
+    const peoplePair = this.pairOfPeople(ask.camera, ask.track, ask.person);
+    if (peoplePair) this.ruled.set(peoplePair, !!same);
     const wasRight = (ask.guess === "same") === !!same;
     if (wasRight) return { changed: false, agreed: true };
 
