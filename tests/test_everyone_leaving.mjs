@@ -152,7 +152,11 @@ const coat = (r, g, b) => look([r, g, b], [0.33, 0.33, 0.4]);
   ok("the website takes the instruction", /p === "\/api\/live\/door-mode" && request\.method === "POST"/.test(worker));
   ok("only admins and operators may give it",
      /if \(role !== "admin" && role !== "operator"\) return json\(\{ error: "Only administrators and operators can change this" \}, 403\);\s*\n\s*const b = await request\.json/.test(worker));
-  ok("and it is sent to the counting computer with every report", /door_mode: \(await this\.get\("door_mode", null\)\)\?\.mode \?\? "auto"/.test(worker));
+  // …through doorMode(), which is where it wears off after half an hour.
+  // Left for ever it would have counted the NEXT service's arrivals as
+  // departures — see tests/test_everybody_is_leaving_wears_off.mjs.
+  ok("and it is sent to the counting computer with every report",
+     /door_mode: await this\.doorMode\(\),/.test(worker));
   const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.tsx"), "utf8");
   ok("which passes it to the counter", /c\.tracker\.watchesDoorway\(inward, inward \? doorMode : null\)/.test(ctx));
   const card = fs.readFileSync(path.join(root, "dashboard/src/components/ui/ArrivalTimes.tsx"), "utf8");

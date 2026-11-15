@@ -347,6 +347,12 @@ const MOST_ASKED_MARKS = 1200;
  * not change between services — so asking again the same morning is a nag,
  * not a question. See askAboutSeatCount.
  */
+/**
+ * How long "everybody is leaving now" holds before Kyro judges for itself.
+ *
+ * It is about the next few minutes, not for ever. See doorMode().
+ */
+const DOOR_MODE_LASTS_MS = 30 * 60_000;
 const SEAT_ASK_AGAIN_MS = 24 * 3600_000;
 /** Past this, a typed seat count is a typing slip rather than a room. */
 const MOST_SEATS_IN_A_ROOM = 100000;
@@ -1004,6 +1010,7 @@ export class VenueHub extends DurableObject {
         const b = await request.json().catch(() => ({}));
         const mode = ["auto", "in", "out"].includes(b.mode) ? b.mode : "auto";
         await this.ctx.storage.put("door_mode", { mode, by: user || "", at: Date.now() });
+        // Nothing to undo later: it wears off on its own. See doorMode().
         return json({ mode });
       }
       if (p === "/api/live/counts/fresh" && request.method === "POST") {
@@ -1975,7 +1982,7 @@ export class VenueHub extends DurableObject {
       })(),
       // "auto" = work out which way each person went. "in"/"out" = an operator
       // has said everybody crossing is arriving, or leaving.
-      door_mode: (await this.get("door_mode", null))?.mode ?? "auto",
+      door_mode: await this.doorMode(),
       // Which service is being recorded, if one is. The counting browser
       // remembers people for as long as one service runs — so the usher
       // holding the door isn't counted in forty times — and forgets every one
@@ -2719,6 +2726,38 @@ export class VenueHub extends DurableObject {
    * guess at. Answered pairs are at the front of the list, so what gets
    * dropped when it is full is always the least important thing in it.
    */
+  /**
+   * "Everybody is leaving now", and how long that stays true.
+   *
+   * ── Why it wears off ──────────────────────────────────────────────────
+   *
+   * This tells every doorway camera to stop judging which way people walked
+   * and count them all the same way, which is right at the end of a service
+   * when a hall empties through a door people also loiter in.
+   *
+   * It had no end. Set once, it stayed set — through the rest of that
+   * service, through the next one, and through every service after. A
+   * church that pressed it while the hall emptied on Sunday would have had
+   * every arrival the following Sunday counted as a departure, which looks
+   * exactly like Kyro mixing up in and out. "i also think you have replaces
+   * when somone went out from coming in."
+   *
+   * Half an hour. A hall empties in far less, and anything still going
+   * after that should be judged by watching people walk, which is what
+   * Kyro does the rest of the time and does well.
+   */
+  async doorMode() {
+    const m = await this.doorModeRaw();
+    return m?.mode ?? "auto";
+  }
+
+  async doorModeRaw() {
+    const m = await this.get("door_mode", null);
+    if (!m || !m.mode || m.mode === "auto") return null;
+    if (Date.now() - (m.at ?? 0) > DOOR_MODE_LASTS_MS) return null;
+    return m;
+  }
+
   async saveRuled() {
     if (typeof this.register?.rulings !== "function") return;
     const all = this.register.rulings();
@@ -3702,9 +3741,9 @@ export class VenueHub extends DurableObject {
       // fresh start was asked for. null means "everything the cameras have
       // counted". The page says which, so a figure is never silently partial.
       count_from: freshAt ? new Date(freshAt).toISOString() : null,
-      // What the doorway cameras have been told, if anything. See door_mode.
-      door_mode: (await this.get("door_mode", null))?.mode ?? "auto",
-      door_mode_by: (await this.get("door_mode", null))?.by ?? "",
+      // What the doorway cameras have been told, if anything. See doorMode().
+      door_mode: await this.doorMode(),
+      door_mode_by: (await this.doorModeRaw())?.by ?? "",
     };
   }
 
