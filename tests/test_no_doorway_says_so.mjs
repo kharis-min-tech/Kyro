@@ -51,8 +51,20 @@ const types  = fs.readFileSync(path.join(root, "dashboard/src/lib/edgeVenue.ts")
      /The attendance figures don&apos;t need it\./.test(cal));
   ok("the old wording is kept for the case where it IS true",
      /Kyro couldn&apos;t follow people reliably on this day/.test(cal));
-  ok("the two are chosen apart, not run together",
-     /\{data\.no_doorway\s*\n?\s*\? <>/.test(cal));
+  ok("the three are chosen apart, not run together",
+     /\{data\.no_doorway\s*\n?\s*\? <>/.test(cal)
+     && /: data\.doorway_reported === false\s*\n?\s*\? <>/.test(cal));
+  /**
+   * The third reason, and the one left after the other two were fixed: a
+   * camera IS set as an entrance, so "no doorway" is wrong, but it sent
+   * nothing that day — it was off, or added afterwards. "Kyro couldn't
+   * follow people reliably" blamed the counting for that too.
+   */
+  ok("a doorway that sent nothing that day says that, not that counting failed",
+     /Your entrance camera sent nothing on this day/.test(cal)
+     && /it was\n\s*switched off, or added afterwards/.test(cal));
+  ok("and the website works out which", /doorway_reported: doorIds\.size > 0 && rows\.some\(\(r\) => doorIds\.has\(r\.camera_id\)\),/.test(worker));
+  ok("the page is told about it", /doorway_reported\?: boolean;/.test(types));
 }
 
 // ── The reason is only ever shown when there is nothing to show ───────────

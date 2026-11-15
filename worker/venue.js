@@ -3936,6 +3936,15 @@ export class VenueHub extends DurableObject {
        * doorway figures could be trusted.
        */
       no_doorway: doorIds.size === 0,
+      /**
+       * …and whether the doorway camera was even running that day.
+       *
+       * A third reason, and the one left after the other two were fixed: a
+       * camera IS set as an entrance, so "no doorway" is wrong, but it sent
+       * nothing on this day — it was added later, or it was off. "Kyro
+       * couldn't follow people reliably" blames the counting for that too.
+       */
+      doorway_reported: doorIds.size > 0 && rows.some((r) => doorIds.has(r.camera_id)),
       hours: arrivals.map((arrived, hour) => ({ hour, arrived, left: departures[hour], most: busiest[hour] })),
     };
   }

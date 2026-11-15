@@ -112,6 +112,10 @@ export function MovementCalendar({ dates }: { dates: string[] }) {
                       ? <>No camera is watching a doorway, so Kyro can&apos;t tell who arrived from who left.
                           Set the camera on your entrance to <strong>Entrance</strong> on the Cameras page and
                           it will start counting them. The attendance figures don&apos;t need it.</>
+                      : data.doorway_reported === false
+                      ? <>Your entrance camera sent nothing on this day, so there are no arrivals to show — it was
+                          switched off, or added afterwards. Nothing is wrong with the counting, and the attendance
+                          figures don&apos;t depend on it.</>
                       : <>Kyro couldn&apos;t follow people reliably on this day, so arrivals and departures aren&apos;t
                           shown. The attendance figures are unaffected.</>}
                   </p>

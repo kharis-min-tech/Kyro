@@ -80,6 +80,8 @@ export interface DayMovement {
   in_out_known: boolean;
   /** …and when that is because no camera is set as a doorway, which is a setting. */
   no_doorway?: boolean;
+  /** …or because the doorway camera sent nothing at all on that day. */
+  doorway_reported?: boolean;
   peak: number;
   peak_hour: number | null;
   hours: { hour: number; arrived: number; left: number; most: number }[];

@@ -145,7 +145,9 @@ const NO_PICTURE_BECAUSE: Record<"never" | "offline" | "stale", string> = {
   never: "Kyro has never had a picture from this camera. The camera is probably fine — a picture only "
     + "gets sent while something is counting with it, so open the Live cameras page on the computer it is "
     + `plugged into and leave it running. ${WONT_SHOW_AN_OLD_ONE}`,
-  offline: `This camera isn't sending anything at the moment, so there is no picture of now. ${WONT_SHOW_AN_OLD_ONE}`,
+  offline: "Nothing is counting with this camera at the moment, so no picture of now is reaching Kyro. "
+    + "The camera itself may be perfectly fine — a picture only goes up while the Live cameras page is open "
+    + `and running on the computer it is plugged into. ${WONT_SHOW_AN_OLD_ONE}`,
   stale: "This camera is reporting, but its last picture is too old to draw on — counting may have stopped "
     + `on the computer it is plugged into. ${WONT_SHOW_AN_OLD_ONE}`,
 };

@@ -99,6 +99,14 @@ const reportingNow = { updated_at: now, status: "ok" };
      /NO_PICTURE_BECAUSE: Record<"never" \| "offline" \| "stale", string>/.test(ed));
   ok("the commonest one does not blame the camera",
      /Kyro has never had a picture from this camera\. The camera is probably fine/.test(ed));
+  // …and neither does the one she actually saw. "the camera is still on but
+  // its saying its off": a camera that is plugged in and working sends
+  // nothing unless something is COUNTING with it, and the message has to
+  // say that rather than leave her checking the hardware.
+  const stitched = ed.replace(/["`]\s*\n\s*\+\s*["`]/g, "");
+  ok("…and nor does the one for a camera that has stopped sending",
+     /Nothing is counting with this camera at the moment/.test(stitched)
+     && /The camera itself may be perfectly fine/.test(stitched));
   // The sentence is split across source lines, so match it on the text as
   // it will actually read rather than on how it is typed.
   // The joins are a mix of quotes and backticks — the last line of each is
