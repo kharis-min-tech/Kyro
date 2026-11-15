@@ -23,6 +23,7 @@ import {
 } from "@/lib/cameraMode";
 import { SteadyCount, COUNT_CONFIDENCE, SENSITIVE_CONFIDENCE, CAREFUL_CONFIDENCE, outsideZones, notHeldBySomebody, notOnAScreen, looksLikeAPerson, type Person } from "@/lib/peopleDetector";
 import { startLiveStream } from "@/lib/liveStream";
+import { clarityOf, worthAskingAbout } from "@/lib/pictureClarity";
 import { countOrder } from "@/lib/countOrder";
 import { STILL_ENOUGH_MS, PersonTracker } from "@/lib/personTracker";
 import { lookOf } from "@/lib/appearance";
@@ -88,6 +89,14 @@ const MOST_REFOCUS = 3;
  *  a camera that is never in focus. */
 const REFOCUS_GAP_MS = 60_000;
 const CROP_EVERY_MS = 8_000;
+/**
+ * How long the clearest picture of somebody is allowed to stand.
+ *
+ * Past this it is replaced by the newest one even if that is worse, so a
+ * question shows the person as they are rather than as they were when they
+ * first walked in. See the crop loop and pictureClarity.ts.
+ */
+const BEST_PICTURE_WITHIN_MS = 60_000;
 /** How many of those are kept per camera, oldest dropped first. */
 /**
  * How many people's pictures are kept, per camera.
@@ -200,7 +209,7 @@ interface Cam {
   stream: MediaStream | null; video: HTMLVideoElement | null; grabCanvas: HTMLCanvasElement;
   /** A recent picture of each person this camera is following, so somebody
    *  who has gone out of view can still be shown. See the report tick. */
-  crops: Map<number, { at: number; crop: HTMLCanvasElement }>;
+  crops: Map<number, { at: number; crop: HTMLCanvasElement; score: number }>;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
   /** How many this picture would have counted at either end of the
    *  Counting sensitivity setting. See suggestSensitivity. */
@@ -1050,7 +1059,27 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           const had = c.crops.get(x.track);
           if (had && now - had.at < CROP_EVERY_MS) continue;
           const crop = cropOf(c.grabCanvas, x.box as [number, number, number, number], CROP_WIDTH);
-          if (crop) c.crops.set(x.track, { at: now, crop });
+          if (!crop) continue;
+          /**
+           * The CLEAREST picture of somebody, not the latest one.
+           *
+           * "this is not even a person, well what you are showing me" — one
+           * side of a "same person?" question was a near-black frame with a
+           * dark shape in it. Nobody could answer that, and the picture had
+           * been chosen for no better reason than being the most recent.
+           *
+           * Somebody is in shot for minutes and there are dozens of
+           * pictures of them. Keeping the best one costs nothing: the crop
+           * is taken either way, and this only decides which to throw away.
+           *
+           * The clock still has a say — a picture more than a minute old is
+           * replaced even by a worse one, so the picture is of the person as
+           * they are now and not as they were when they walked in. Within
+           * that minute, the better picture wins.
+           */
+          const score = clarityOf(crop)?.score ?? 0;
+          const stale = !had || now - had.at > BEST_PICTURE_WITHIN_MS;
+          if (stale || score > had.score) c.crops.set(x.track, { at: now, crop, score });
         }
         // Oldest first, so the people most recently in shot are the ones
         // kept — and a morning's worth of tracks never piles up. The people
@@ -1116,6 +1145,8 @@ export function CountingProvider({ children }: { children: ReactNode }) {
               if (pi === null) continue;
               const kept = c.crops.get(seen[pi].track);
               if (!kept) continue;
+              // See worthAskingAbout: a black rectangle is not a question.
+              if (!worthAskingAbout(clarityOf(kept.crop))) continue;
               sendPersonPicture(want.id, want.side, kept.crop).catch(() => {});
               wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
               continue;
@@ -1127,12 +1158,23 @@ export function CountingProvider({ children }: { children: ReactNode }) {
               const shot = cropOf(c.grabCanvas,
                 [pl.box[0] * sx, pl.box[1] * sy, pl.box[2] * sx, pl.box[3] * sy], CROP_WIDTH);
               if (!shot) continue;
+              if (!worthAskingAbout(clarityOf(shot))) continue;
               sendPersonPicture(want.id, want.side, shot).catch(() => {});
               wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));
               continue;
             }
             const kept = c.crops.get(want.track);
             if (!kept) continue;     // never had a picture of them; the website asks again
+            /**
+             * A picture with nothing in it is not asked about.
+             *
+             * "this is not even a person, well what you are showing me."
+             * The question is still waiting and the website asks again, so
+             * the doubt is not lost — it is asked when there is a picture
+             * worth asking from. A question nobody can answer is worse than
+             * one asked a minute later.
+             */
+            if (!worthAskingAbout(clarityOf(kept.crop))) continue;
             sendPersonPicture(want.id, want.side, kept.crop)
               .catch(() => { /* a missing picture only means the question isn't asked */ });
             wantPics.current = wantPics.current.filter((w) => !(w.id === want.id && w.side === want.side));

@@ -168,7 +168,14 @@ const see = (r, obs, at) => r.observe("cam", obs, at);
    */
   ok("a recent picture of everybody being followed is kept",
      /const had = c\.crops\.get\(x\.track\);/.test(ctx)
-     && /if \(crop\) c\.crops\.set\(x\.track, \{ at: now, crop \}\);/.test(ctx));
+     && /c\.crops\.set\(x\.track, \{ at: now, crop, score \}\);/.test(ctx));
+  // …and it is the CLEAREST of them, not simply the latest. One side of a
+  // "same person?" question came through as a near-black rectangle: "this
+  // is not even a person, well what you are showing me". See
+  // tests/test_a_picture_worth_asking_about.mjs.
+  ok("and it is the clearest one, not just the most recent",
+     /const score = clarityOf\(crop\)\?\.score \?\? 0;/.test(ctx)
+     && /if \(stale \|\| score > had\.score\)/.test(ctx));
   ok("so somebody who has gone out of view can still be shown",
      /const kept = c\.crops\.get\(want\.track\);/.test(ctx)
      && /sendPersonPicture\(want\.id, want\.side, kept\.crop\)/.test(ctx));
