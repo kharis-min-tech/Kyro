@@ -190,20 +190,42 @@ function ArrivalChart({ data, movementDays, byDayDates, fromRegister }: { data: 
             </span>
           </div>
         </div>
-        {/* The totals. The chart is an average per hour, so these are what an
-            average day looks like end to end — which is the number most people
-            come to this card for, and it wasn't anywhere on it. */}
+        {/**
+          * The totals. The chart is an average per hour, so these are what an
+          * average day looks like end to end — which is the number most
+          * people come to this card for, and it wasn't anywhere on it.
+          *
+          * ── Why each one says "average day" ────────────────────────────
+          *
+          * "why is there two different numbers […] need to know which one is
+          * right." One screen said Entries 353, this one said Arrived 185,
+          * and nothing on either said they were measuring different things
+          * over different stretches of time.
+          *
+          * They are both right. 353 is how many DIFFERENT PEOPLE have been
+          * seen since this morning's session began. 185 is how many arrivals
+          * a TYPICAL DAY has, averaged over the days Kyro could follow
+          * people — not today, and not a running total.
+          *
+          * The card said so once, in a sentence under the chart. The figure
+          * itself said only "Arrived", in bold, beside a live-looking chart,
+          * which is where anybody reads it from. A number that is an average
+          * has to say so where the number is.
+          */}
         <div className="shrink-0 flex items-start gap-4">
           <div>
-            <p className="text-[10px]" style={{ color: "#6b7280" }}>Arrived</p>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Arrived<br />
+              <span style={{ color: "#4b5563" }}>average day</span></p>
             <p className="text-lg font-bold tabular-nums" style={{ color: "#818cf8" }}>{totalIn.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[10px]" style={{ color: "#6b7280" }}>Left</p>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Left<br />
+              <span style={{ color: "#4b5563" }}>average day</span></p>
             <p className="text-lg font-bold tabular-nums" style={{ color: "#f59e0b" }}>{totalOut.toLocaleString()}</p>
           </div>
           <div>
-            <p className="text-[10px]" style={{ color: "#6b7280" }}>Busiest</p>
+            <p className="text-[10px]" style={{ color: "#6b7280" }}>Busiest<br />
+              <span style={{ color: "#4b5563" }}>average day</span></p>
             <p className="text-lg font-bold tabular-nums text-white">{peak.hour}:00</p>
           </div>
         </div>
