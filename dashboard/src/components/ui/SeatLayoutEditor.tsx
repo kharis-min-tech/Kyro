@@ -116,6 +116,17 @@ function generateGridSeats(blocks: GridBlock[], startIndex: number): SeatDefinit
 
 // ── component ────────────────────────────────────────────────────────────────
 
+/**
+ * The empty canvas, and the writing on it.
+ *
+ * Plain colours, not CSS variables: a canvas context cannot read one, and
+ * when it refuses the assignment the previous colour stays — which is how
+ * the box came to be painted in the same colour as the text written on it.
+ * They are declared together so it is obvious if they are ever made equal.
+ */
+const EMPTY_CANVAS_BG = "#1f2433";
+const EMPTY_CANVAS_TEXT = "#c7cbd6";
+
 export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
@@ -225,17 +236,52 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
     if (bgImage) {
       ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
     } else {
-      ctx.fillStyle = "var(--bg-hover)";
+      /**
+       * A canvas cannot read a CSS variable.
+       *
+       * This filled the empty canvas with "var(--bg-hover)", which a canvas
+       * context simply refuses — the assignment does nothing and whatever
+       * colour was set last stays. The colour set last was #6b7280, so the
+       * box was painted in exactly the colour the message is written in,
+       * and the message was invisible on it.
+       *
+       * What that left on the screen was a plain grey rectangle with no
+       * text, no picture and no explanation: "seat editor is not
+       * functional". It was trying to say why the whole time.
+       *
+       * Real colours here, with the text in something that contrasts with
+       * the box whichever way round the page is.
+       */
+      ctx.fillStyle = EMPTY_CANVAS_BG;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#6b7280";
+      ctx.fillStyle = EMPTY_CANVAS_TEXT;
       ctx.font = "14px Inter, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(
-        loadingBg ? "Loading venue snapshot from camera…"
-          : bgError ? "This camera is off, so there is no picture to draw on. Kyro deliberately won't show the last one it had — drawing a seat layout over a photograph of a different day puts every seat in the wrong place. Switch the camera on, or upload a picture."
-          : "Upload a camera screenshot to begin",
-        canvas.width / 2, canvas.height / 2,
-      );
+      /**
+       * …and said in lines that fit.
+       *
+       * fillText draws one line and does not wrap, so the long explanation
+       * ran off both edges of the canvas and only its middle few words
+       * would ever have been readable. It is broken to the canvas width
+       * here and drawn centred on the middle line.
+       */
+      const words = (loadingBg
+        ? "Taking a picture from the camera…"
+        : bgError
+        ? "This camera is off, so there is no picture to draw on. Kyro deliberately won't show the last one it had — drawing a seat layout over a photograph of a different day puts every seat in the wrong place. Switch the camera on, or upload a picture."
+        : "Upload a camera screenshot to begin").split(" ");
+      const room = canvas.width - 48;
+      const lines = [];
+      let line = "";
+      for (const word of words) {
+        const next = line ? `${line} ${word}` : word;
+        if (line && ctx.measureText(next).width > room) { lines.push(line); line = word; }
+        else line = next;
+      }
+      if (line) lines.push(line);
+      const lineHeight = 21;
+      const top = canvas.height / 2 - ((lines.length - 1) * lineHeight) / 2;
+      lines.forEach((text, i) => ctx.fillText(text, canvas.width / 2, top + i * lineHeight));
     }
 
     // Zones (stage/altar/exclusion) — always visible regardless of mode,

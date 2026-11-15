@@ -203,7 +203,17 @@ function CanvasSeatMap({ seats, interactive, onSeatAction, externalOverrides, on
     if (!W || !H) return;
     canvas.width = W * dpr; canvas.height = H * dpr;
     ctx.scale(dpr, dpr);
-    ctx.fillStyle = "var(--bg-inset)";
+    /**
+     * A plain colour: a canvas cannot read a CSS variable.
+     *
+     * This said "var(--bg-inset)", which a canvas context refuses outright
+     * — the assignment does nothing and whatever colour was set last stays.
+     * On a freshly sized canvas that is black, so the map was drawn on
+     * black whatever the page's theme; after a redraw it was whatever the
+     * last seat happened to be painted in. The same mistake left the seat
+     * editor as a grey rectangle with an invisible message on it.
+     */
+    ctx.fillStyle = MAP_BG;
     ctx.fillRect(0, 0, W, H);
     const sc = scaleRef.current, ox = offsetRef.current.x, oy = offsetRef.current.y;
 
@@ -470,6 +480,9 @@ function SvgSeatMap({ seats: rawSeats, onSeatAction, interactive = true, externa
 }
 
 // ─── Export ───────────────────────────────────────────────────────────────────
+
+/** What the map is drawn on. A plain colour — see the note where it is used. */
+const MAP_BG = "#161a27";
 
 export function SeatMap(props: SeatMapProps) {
   return props.seats.length > CANVAS_THRESHOLD
