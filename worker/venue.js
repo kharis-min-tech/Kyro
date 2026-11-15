@@ -2664,7 +2664,29 @@ export class VenueHub extends DurableObject {
       // what happens at the end of a service. For the one running now, only
       // the people nobody has seen for a while.
       const gone = r.service !== live || now - r.last_at > LEFT_AFTER_MS;
-      if (gone && r.last_at) v.left[Number(hourFmt.format(new Date(r.last_at))) % 24]++;
+      /**
+       * …and the departure goes on the day they LEFT, not the day they came.
+       *
+       * "dont get confused by putting the data that is arrived and the data
+       * that is left into the wrong data."
+       *
+       * Both halves were filed under the date of the first sighting, which
+       * is right for an arrival and right for a departure on the same day —
+       * which is every ordinary service. It is wrong for anything that
+       * crosses midnight: a watchnight service, an overnight prayer. Those
+       * people arrived at eleven at night and left at one in the morning,
+       * and their leaving was written into the eleven o'clock day at hour
+       * one — a departure filed before the arrival it belongs to.
+       */
+      if (gone && r.last_at) {
+        const leftOn = fmt.format(new Date(r.last_at));
+        let w = v;
+        if (leftOn !== d) {
+          w = out.get(leftOn);
+          if (!w) { w = { people: 0, arrived: new Array(24).fill(0), left: new Array(24).fill(0) }; out.set(leftOn, w); }
+        }
+        w.left[Number(hourFmt.format(new Date(r.last_at))) % 24]++;
+      }
     }
     return out;
   }
