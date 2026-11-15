@@ -50,6 +50,10 @@ const { Building, MERGE_EVIDENCE } = await import(path.join(tmp, "building.js"))
 /** Enough of a Durable Object to run the two methods under test. */
 function hub(building) {
   const store = new Map();
+  // A service is running throughout: questions are only asked, and only
+  // handed out, while something is counting. See
+  // tests/test_questions_wait_for_a_service.mjs.
+  store.set("service_live", { id: "svc-test", name: "Sunday", started_at: Date.now() });
   const h = Object.create(VenueHub.prototype);
   h.ctx = {
     storage: {

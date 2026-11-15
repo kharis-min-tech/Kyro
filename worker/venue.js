@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-439e265e8733";
+export const VENUE_CODE = "venue-7523b49b3a96";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -1771,11 +1771,35 @@ export class VenueHub extends DurableObject {
       .filter((c) => c.device_id === device.id && c.ignore_zones?.length).map((c) => [c.key, c.ignore_zones]));
     // Requests waiting for this computer ("Find cameras", "Add this camera").
     const jobs = await this.jobsFor(device.id);
+    /**
+     * Questions are asked during a SERVICE, and at no other time.
+     *
+     * Reported as: "can you only ask questions when i actually start a
+     * session, because i just opened the website and already you asked
+     * questions like relax".
+     *
+     * Every one of these is a question about counting people — which seat
+     * is which, whether two cameras are looking at the same chair, how many
+     * seats a room has. None of it is urgent, and none of it is wanted by
+     * somebody opening the website on a Tuesday to look at last Sunday's
+     * figures. A camera left running is not a reason to be asked anything.
+     *
+     * The register already works this way and says why: "a register of
+     * people needs a reason to exist, and somebody left a camera running is
+     * not one". The questions never got the same rule.
+     *
+     * They wait. A guess that is worth asking about is still worth asking
+     * about when counting next starts, and the asking is deliberately once
+     * per thing, so nothing piles up while it waits.
+     */
+    const serviceOn = !!(await this.get("service_live", null));
+    const wantPictures = [];
+    if (serviceOn) {
     if (newQuestions.length) await this.addQuestions(newQuestions);
     // "Is this the same person?" — the register's own guesses, turned into
     // questions somebody can answer from two pictures. See askAbout in
     // worker/identity.js and makeAsks below.
-    const wantPictures = await this.makeAsks(cams, now);
+    wantPictures.push(...(await this.makeAsks(cams, now)));
     /**
      * …and the chairs, which ask the same way and want the same picture.
      *
@@ -1806,6 +1830,7 @@ export class VenueHub extends DurableObject {
         "Couldn't ask which chairs are the same chair, so one chair seen by two cameras may be counted twice",
         e && e.message);
     }
+    }   // …and nothing is asked at all outside a service. See serviceOn.
     // Answers to the AI's questions, for this computer's cameras (delivered once).
     const answers = await this.takeAnswers(device.id);
     // Rota holds and stage / ignore areas, per camera (small; sent every time).
@@ -2241,6 +2266,14 @@ export class VenueHub extends DurableObject {
          */
         questions: await (async () => {
           const qs = await this.get("questions", {});
+          // Nothing is asked when nothing is counting, so nothing is waiting
+          // either — this card and the question panel have to agree, or the
+          // card becomes the thing that says the asking is broken.
+          // See listQuestions.
+          if (!(await this.get("service_live", null))) {
+            return { waiting: 0, why: "no_service",
+                     detail: `Nothing is counting, so Kyro is not asking anything. Questions are only put during a service — a service starts by itself once ${SERVICE_START_PEOPLE} people have been in shot for a couple of minutes, or straight away if the rota says one is on.` };
+          }
           const waiting = Object.values(qs).filter((q) => !q.answer).length;
           if (waiting) return { waiting, why: null };
           if (!this.register) {
@@ -4690,6 +4723,20 @@ export class VenueHub extends DurableObject {
   async listQuestions(role) {
     const now = Date.now() / 1000;
     const qs = await this.get("questions", {});
+    /**
+     * Nothing is asked when nothing is counting.
+     *
+     * The asking itself already waits for a service (see serviceOn in
+     * report), but a question put near the end of one would otherwise sit
+     * on the screen afterwards and greet whoever next opened the website.
+     * "i just opened the website and already you asked questions like
+     * relax". A question nobody is counting for can wait.
+     *
+     * They are kept, not thrown away: the same question comes back on its
+     * own when counting next starts, because the thing it was asking about
+     * is still true.
+     */
+    if (!(await this.get("service_live", null))) return [];
     // Reading the list is the commonest thing that happens to it, so it is
     // also the surest moment to take out what is over.
     if (await this.tidyQuestions(qs)) await this.ctx.storage.put("questions", qs);
