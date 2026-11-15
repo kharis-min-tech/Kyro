@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-f81319165e69";
+export const VENUE_CODE = "venue-34b0da2da3e2";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -1987,17 +1987,35 @@ export class VenueHub extends DurableObject {
   }
 
   /**
-   * Add what the cameras have just seen to the register of people.
+   * The register of people, built if this copy of the website has not got
+   * one yet.
    *
-   * Everything that makes this safe is in identity.js; this is the plumbing:
-   * which service we are in, which camera is on a doorway (a doorway may
-   * recognise people but never invent them), and writing the register down
-   * now and then so a restart doesn't lose the congregation.
+   * ── The bug this is ───────────────────────────────────────────────────
+   *
+   * "i write questions, but its like its forgotten, like kyro forgets the
+   * anser."
+   *
+   * It did forget them. The register was only ever built while handling a
+   * CAMERA'S REPORT, and an answer is a different request. The website is
+   * put to sleep when it goes quiet and built again on the next request —
+   * and after every deploy, which is many times on a day like today. If an
+   * answer was the request that woke it, there was no register to correct,
+   * so the whole correction was skipped:
+   *
+   *     if (said !== null && this.register && q.ask) { ... }
+   *
+   * and the reply still said ok. Not even the "that was too late to act
+   * on" flag, which exists precisely so somebody is never told their answer
+   * landed when it did not. It looked exactly like success.
+   *
+   * So it is built wherever it is needed, from what is on disk, which is
+   * the same thing the report path was doing all along.
    */
-  async rememberPeople(device, body, cams, now) {
-    const live = await this.get("service_live", null);
-    const service = live?.id ?? null;
-    if (!this.register) {
+  async ensureRegister(cams, service) {
+    // Already have one: it is live, it holds this morning's congregation,
+    // and building a new one here would throw them all away.
+    if (this.register) return this.register;
+    {
       this.register = new IdentityRegistry({
         zoneOf: (id) => (cams[id]?.zone_name || cams[id]?.name || id),
         createsIdentities: (id) => cams[id]?.location !== "entrance",
@@ -2108,6 +2126,21 @@ export class VenueHub extends DurableObject {
         if (await this.facesAllowed()) this.loadFaces(service, Date.now());
       } else this.register.startService(service);
     }
+    return this.register;
+  }
+
+  /**
+   * Add what the cameras have just seen to the register of people.
+   *
+   * Everything that makes this safe is in identity.js; this is the plumbing:
+   * which service we are in, which camera is on a doorway (a doorway may
+   * recognise people but never invent them), and writing the register down
+   * now and then so a restart doesn't lose the congregation.
+   */
+  async rememberPeople(device, body, cams, now) {
+    const live = await this.get("service_live", null);
+    const service = live?.id ?? null;
+    await this.ensureRegister(cams, service);
     // A different service — or none — means a different congregation. The
     // register is destroyed, faces and all, exactly as the face data is.
     if (this.register.service !== service) {
@@ -5039,6 +5072,19 @@ export class VenueHub extends DurableObject {
     }
     if (q.review_type === "same_person_question") {
       const said = /^same/i.test(q.answer) ? true : /^different/i.test(q.answer) ? false : null;
+      /**
+       * Build the register if this copy of the website has not got one.
+       *
+       * "i write questions, but its like its forgotten." An answer is not a
+       * camera's report, and the register was only ever built while handling
+       * one of those — so an answer that arrived on a freshly woken website
+       * found nothing to correct and was dropped, with "ok" sent back. See
+       * ensureRegister.
+       */
+      if (said !== null && q.ask) {
+        await this.ensureRegister(await this.get("cameras", {}),
+                                  (await this.get("service_live", null))?.id ?? null);
+      }
       if (said !== null && this.register && q.ask) {
         result = this.register.answerAsk(q.ask, said);
         // The figures come off the screen now, not at the next save. "Put
@@ -5069,6 +5115,17 @@ export class VenueHub extends DurableObject {
        */
       if (said !== null && result && !result.changed && !result.agreed) {
         return json({ ok: true, ...result, stale: true });
+      }
+      /**
+       * …and the case that said "ok" while doing nothing at all.
+       *
+       * If there was no register to correct, or the question carried
+       * nothing to correct it WITH, `result` is undefined and every branch
+       * above falls through to a plain ok. Somebody has just answered a
+       * question and been told it landed. It did not.
+       */
+      if (said !== null && !result) {
+        return json({ ok: true, changed: false, stale: true });
       }
       return json({ ok: true, ...(result ?? {}) });
     }
