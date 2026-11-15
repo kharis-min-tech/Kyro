@@ -88,6 +88,13 @@ const MOST_REFOCUS = 3;
 /** …and how long between asks. A camera told to refocus every half minute is
  *  a camera that is never in focus. */
 const REFOCUS_GAP_MS = 60_000;
+/**
+ * How long a count must hold before it can be a camera's "busiest".
+ *
+ * The same ten seconds the website uses for the venue's own busiest
+ * figure, and for the same reason — see the note where it is used.
+ */
+const PEAK_HOLD_MS = 10_000;
 const CROP_EVERY_MS = 8_000;
 /**
  * How long the clearest picture of somebody is allowed to stand.
@@ -211,6 +218,8 @@ interface Cam {
    *  who has gone out of view can still be shown. See the report tick. */
   crops: Map<number, { at: number; crop: HTMLCanvasElement; score: number }>;
   steady: SteadyCount; count: number; peak: number; people: Person[]; rawPeople: Person[];
+  /** The last few counts, so "busiest" needs a figure to hold. See PEAK_HOLD_MS. */
+  recentCounts: { at: number; n: number }[];
   /** How many this picture would have counted at either end of the
    *  Counting sensitivity setting. See suggestSensitivity. */
   atSensitive: number; atCareful: number;
@@ -546,6 +555,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           countedAt: 0, secondsPerCount: 0, error: null, lastPicture: 0, noPictureSince: 0, tries: 0, goneSince: 0,
           needsTiles: true, sinceTileCheck: 0, tilesNoHelp: 0,
           isDoor: false, tracker: new PersonTracker(nextTrackBase(key)), faces: null, facesAt: 0,
+          recentCounts: [],
           whoIs: {},
           watch: new PictureWatch(), seatFinder: new SeatFinder(key), seatsSentAt: 0,
           crops: new Map(),
@@ -844,7 +854,31 @@ export function CountingProvider({ children }: { children: ReactNode }) {
           const looks = c.people.map((p) => lookOf(px, p.box as [number, number, number, number]));
           c.tracker.update(c.people, Date.now(), codes ?? undefined, looks);
           c.count = c.steady.add(c.people.length);
-          c.peak = Math.max(c.peak, c.count);
+          /**
+           * "Busiest" needs a figure that HELD, not one that happened once.
+           *
+           * "this data is not correct" — a camera reading 7, with 38 as its
+           * busiest, in a room that has never had more than eleven people
+           * in shot at one moment.
+           *
+           * This was the highest count ever seen in a single pass, kept for
+           * ever. One bad look at the room sets it: a reflection, a poster,
+           * somebody walking past a window, motion blur splitting one
+           * person into two. The count itself recovers on the next pass —
+           * the figure on screen is right — but the high-water mark it left
+           * behind never does.
+           *
+           * The venue's own busiest figure has required a number to hold
+           * for ten seconds since the day it was written, for exactly this
+           * reason, and said so in a comment. A camera's did not. Same rule
+           * now: keep the last ten seconds of counts and take the LOWEST,
+           * so a figure only becomes the busiest if it lasted.
+           */
+          const at = Date.now();
+          c.recentCounts = [...c.recentCounts.filter((x) => at - x.at <= PEAK_HOLD_MS), { at, n: c.count }];
+          const spanned = c.recentCounts[0].at <= at - PEAK_HOLD_MS / 2;
+          const held = spanned ? Math.min(...c.recentCounts.map((x) => x.n)) : 0;
+          c.peak = Math.max(c.peak, held);
           c.countedAt = Date.now();
           c.secondsPerCount = (performance.now() - t0) / 1000;
           c.error = null;
@@ -1508,7 +1542,7 @@ export function CountingProvider({ children }: { children: ReactNode }) {
         if (countFrom > freshApplied.current) {
           freshApplied.current = countFrom;
           try { localStorage.setItem(FRESH_KEY, String(countFrom)); } catch { /* fine without it */ }
-          for (const c of cams.current.values()) { c.tracker.resetCounts(); c.peak = c.count; }
+          for (const c of cams.current.values()) { c.tracker.resetCounts(); c.peak = c.count; c.recentCounts = []; }
         }
         // A camera on a door counts people by which way they walked, not by
         // appearing and disappearing — everyone at a door does both.
