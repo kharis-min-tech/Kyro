@@ -46,8 +46,11 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
      /This camera is off\. Nothing is being shown, because the last picture/.test(live));
 
   const editor = fs.readFileSync(path.join(root, "dashboard/src/components/ui/SeatLayoutEditor.tsx"), "utf8");
+  // Stitched, because the sentence is now split across source lines and
+  // shared by all three reasons a picture can be missing.
+  const asRead = editor.replace(/["`]\s*\n\s*\+\s*["`]/g, "");
   ok("the seat editor refuses to draw on an old picture",
-     /drawing a seat layout over a photograph of a different day puts every seat in the wrong place/.test(editor));
+     /drawing a seat layout over a photograph of a different day puts every seat in the wrong place/.test(asRead));
 }
 
 // ── The deleted service ────────────────────────────────────────────────────

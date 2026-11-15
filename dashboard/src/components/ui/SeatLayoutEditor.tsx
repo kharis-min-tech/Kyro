@@ -124,12 +124,40 @@ function generateGridSeats(blocks: GridBlock[], startIndex: number): SeatDefinit
  * the box came to be painted in the same colour as the text written on it.
  * They are declared together so it is obvious if they are ever made equal.
  */
+/**
+ * Why there is no picture to draw on — the true reason, not a guess at one.
+ *
+ * "no camera is off", said over a message reading "This camera is off".
+ * There are three ways to have no picture and the canvas said the same
+ * thing for all of them, so it sent somebody to check a camera that was
+ * working. The commonest by far is the first: the camera is plugged in and
+ * perfectly well, and nothing is COUNTING with it, so no picture has ever
+ * been sent. That is a page to open, not a camera to check.
+ *
+ * All three end the same way, because the answer is the same: Kyro will
+ * not draw a layout over an old photograph, since every seat would land in
+ * the wrong place.
+ */
+const WONT_SHOW_AN_OLD_ONE =
+  "Kyro deliberately won't show the last one it had — drawing a seat layout over a photograph of a "
+  + "different day puts every seat in the wrong place. Upload a picture instead.";
+const NO_PICTURE_BECAUSE: Record<"never" | "offline" | "stale", string> = {
+  never: "Kyro has never had a picture from this camera. The camera is probably fine — a picture only "
+    + "gets sent while something is counting with it, so open the Live cameras page on the computer it is "
+    + `plugged into and leave it running. ${WONT_SHOW_AN_OLD_ONE}`,
+  offline: `This camera isn't sending anything at the moment, so there is no picture of now. ${WONT_SHOW_AN_OLD_ONE}`,
+  stale: "This camera is reporting, but its last picture is too old to draw on — counting may have stopped "
+    + `on the computer it is plugged into. ${WONT_SHOW_AN_OLD_ONE}`,
+};
+
 const EMPTY_CANVAS_BG = "#1f2433";
 const EMPTY_CANVAS_TEXT = "#c7cbd6";
 
 export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
+  /** Why there is no picture: nothing ever sent one, it stopped, or it is old. */
+  const [bgWhy, setBgWhy] = useState<"never" | "offline" | "stale" | null>(null);
   const [seats, setSeats] = useState<SeatDefinition[]>([]);
   const [draft, setDraft] = useState<DraftBox | null>(null);
   const [drawing, setDrawing] = useState(false);
@@ -184,7 +212,14 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
       const res = await fetch(live ? `/api/live/snapshot/${encodeURIComponent(cameraId)}` : camerasApi.snapshotUrl(cameraId), {
         headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
       });
-      if (!res.ok || res.status === 204) { setBgError(true); return; }
+      if (!res.ok || res.status === 204) {
+        // Which of the three reasons it is, so the canvas can say the true
+        // one. See getSnapshot in worker/venue.js.
+        const told = res.headers.get("X-Kyro-Why");
+        setBgWhy(told === "never" || told === "offline" || told === "stale" ? told : null);
+        setBgError(true);
+        return;
+      }
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const img  = new Image();
@@ -268,7 +303,7 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
       const words = (loadingBg
         ? "Taking a picture from the camera…"
         : bgError
-        ? "This camera is off, so there is no picture to draw on. Kyro deliberately won't show the last one it had — drawing a seat layout over a photograph of a different day puts every seat in the wrong place. Switch the camera on, or upload a picture."
+        ? NO_PICTURE_BECAUSE[bgWhy ?? "offline"]
         : "Upload a camera screenshot to begin").split(" ");
       const room = canvas.width - 48;
       const lines = [];

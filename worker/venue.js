@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-34b0da2da3e2";
+export const VENUE_CODE = "venue-17a3e3f70db3";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -2946,9 +2946,31 @@ export class VenueHub extends DurableObject {
    * all. The page gets nothing and says the camera is off, which is the truth
    * and is impossible to misread.
    */
+  /**
+   * The latest picture from a camera, and WHY there isn't one.
+   *
+   * "no camera is off" — said over a message reading "This camera is off".
+   * There are three different reasons a picture can be missing and the page
+   * was given no way to tell them apart, so it said the same wrong thing
+   * for all three. A reason that cannot be true is worse than no reason:
+   * it sends somebody to check a camera that was never the problem.
+   *
+   *   never    nothing has ever sent a picture of this camera. Usually the
+   *            counting page is not open on the computer it is plugged into
+   *            — the camera itself is fine.
+   *   offline  it was sending and has stopped, or it says it has no picture
+   *            (unplugged, while the browser it was plugged into reports on).
+   *   stale    it is reporting but the last picture is too old to draw on.
+   */
   async getSnapshot(camera_id) {
+    const why = (reason, text) => new Response(text, {
+      status: 404,
+      headers: { "Cache-Control": "no-store", "X-Kyro-Why": reason },
+    });
     const s = await this.ctx.storage.get(`snap:${camera_id}`);
-    if (!s) return new Response("No picture yet", { status: 404 });
+    if (!s) {
+      return why("never", "No picture yet — nothing has sent one from this camera");
+    }
     const live = await this.get("live", {});
     const l = live[camera_id];
     /**
@@ -2971,10 +2993,10 @@ export class VenueHub extends DurableObject {
     const reporting = this.isOnline(l) && !(l?.status === "error" && l?.no_picture);
     const age = Date.now() - (s.at || 0);
     if (!reporting || age > SNAPSHOT_STALE_MS) {
-      return new Response("That camera isn't on, so there is no picture of now", {
-        status: 404,
-        headers: { "Cache-Control": "no-store", "X-Last-Picture": new Date(s.at || 0).toISOString() },
-      });
+      const res = why(reporting ? "stale" : "offline",
+        "That camera isn't on, so there is no picture of now");
+      res.headers.set("X-Last-Picture", new Date(s.at || 0).toISOString());
+      return res;
     }
     return new Response(s.data, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store", "X-Taken-At": new Date(s.at).toISOString() } });
   }

@@ -82,9 +82,12 @@ const root = path.resolve(import.meta.dirname, "..");
   ok("the message is broken into lines that fit the canvas",
      /ctx\.measureText\(next\)\.width > room/.test(ed)
      && /lines\.forEach\(\(text, i\) => ctx\.fillText\(text, canvas\.width \/ 2, top \+ i \* lineHeight\)\)/.test(ed));
+  // The middle one is no longer a single sentence: there are three reasons
+  // a picture can be missing and it now names the right one. See
+  // tests/test_why_there_is_no_picture.mjs.
   ok("and it still says the three things it can say",
      /Taking a picture from the camera…/.test(ed)
-     && /This camera is off, so there is no picture to draw on/.test(ed)
+     && /NO_PICTURE_BECAUSE\[bgWhy \?\? "offline"\]/.test(ed)
      && /Upload a camera screenshot to begin/.test(ed));
 }
 
