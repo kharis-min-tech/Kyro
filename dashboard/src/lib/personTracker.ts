@@ -722,10 +722,30 @@ export class PersonTracker {
       }
       if (revive < 0) {
         let best = RETURN_WITHIN_WIDTHS;
+        const myLookHere = looks?.[bi] ?? null;
         this.tracks.forEach((t, ti) => {
           if (takenTrack.has(ti) || t.missing === 0) return;
           // Only recently. See RETURN_BY_PLACE_MS.
           if (now - t.lastSeen > RETURN_BY_PLACE_MS) return;
+          /**
+           * …and never somebody plainly else, however right the place is.
+           *
+           * The pairing step above already refuses this. This path did not,
+           * and at a doorway that is exactly where it matters: a person
+           * walking IN finishes right in front of the lens, and the next
+           * person walking OUT starts right in front of the lens. Same
+           * place, same size, a second or two apart — so the one leaving
+           * was revived as the one who had just arrived, the arrival was
+           * un-tallied and re-judged from the wrong starting box, and
+           * three people in and three out came back as one in and three
+           * out.
+           *
+           * Only refuses on evidence. Without an appearance reading for
+           * either of them nothing changes, which is the case this path
+           * exists for — somebody lost for a moment with nothing else to
+           * go on but where they were.
+           */
+          if (t.look && myLookHere && alikeLook(t.look, myLookHere) < PLAINLY_SOMEBODY_ELSE) return;
           const d = apart(t.box, b);
           const sizes = (t.box[3] - t.box[1]) / Math.max(1, b[3] - b[1]);
           if (d < best && sizes > 0.5 && sizes < 2) { best = d; revive = ti; }
