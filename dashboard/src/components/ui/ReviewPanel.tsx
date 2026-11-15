@@ -239,11 +239,31 @@ export function needsOnePicture(type: string): boolean {
   return !TWO_PICTURES.has(type) && !NO_PICTURE.has(type);
 }
 
-function LiveSnapshot({ cameraId, reviewId, side, label }: {
+/**
+ * What to say when a picture never arrived, for the thing being asked about.
+ *
+ * It used to say "the camera had already lost sight of them" whatever the
+ * question was — including "Is this a seat?", where "them" is a chair and
+ * chairs do not go anywhere. A reason that cannot be true is worse than no
+ * reason, because it sends somebody looking for the wrong fault.
+ */
+function noPictureBecause(reviewType: string | undefined, label?: string): string {
+  if (reviewType === "is_this_a_seat")
+    return "No picture of this spot yet — the camera is still watching it";
+  if (reviewType === "same_chair_question")
+    return label ? `No picture from ${label} — nobody is at that seat just now`
+                 : "No picture — nobody is at that seat just now";
+  return label ? `No picture of ${label} — the camera had already lost sight of them`
+               : "No picture of this one — the camera had already lost sight of them";
+}
+
+function LiveSnapshot({ cameraId, reviewId, side, label, reviewType }: {
   cameraId: string; reviewId: string;
   /** "a" / "b" for a question comparing two sightings; omitted for the rest. */
   side?: "a" | "b";
   label?: string;
+  /** What is being asked about, so an absent picture says why truthfully. */
+  reviewType?: string;
 }) {
   const [src, setSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -286,7 +306,7 @@ function LiveSnapshot({ cameraId, reviewId, side, label }: {
     <div className="w-full h-24 rounded-lg flex items-center justify-center px-2 text-center"
       style={{ background: "var(--bg-inset)", border: "1px solid var(--border-strong)" }}>
       <span className="text-xs" style={{ color: "var(--text-faint)" }}>
-        {label ? `No picture of ${label}` : "No picture of this one"} — the camera had already lost sight of them
+        {noPictureBecause(reviewType, label)}
       </span>
     </div>
   );
@@ -437,12 +457,12 @@ function ReviewCard({
              it. See the note on LiveSnapshot. */
           ? (
             <div className="flex gap-2 items-start">
-              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="a" label="this one" />
-              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="b" label="and this one" />
+              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="a" label="this one" reviewType={review.review_type} />
+              <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="b" label="and this one" reviewType={review.review_type} />
             </div>
           )
           : needsOnePicture(review.review_type)
-          ? <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />
+          ? <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} reviewType={review.review_type} />
           : null}
       </div>
       <div className="px-4 pb-3 flex flex-col gap-1.5">
@@ -783,12 +803,12 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
                       */}
                     {needsTwoPictures(r.review_type) ? (
                       <div className="flex gap-2 pb-1">
-                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="a" label="this one" />
-                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="b" label="and this one" />
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="a" label="this one" reviewType={r.review_type} />
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="b" label="and this one" reviewType={r.review_type} />
                       </div>
                     ) : needsOnePicture(r.review_type) ? (
                       <div className="pb-1">
-                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} />
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} reviewType={r.review_type} />
                       </div>
                     ) : null}
                     {/* A number question gets a box here too. See the panel above. */}

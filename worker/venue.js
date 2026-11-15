@@ -4860,7 +4860,22 @@ export class VenueHub extends DurableObject {
   async getQuestionSnapshot(id, role, side = null) {
     const q = (await this.get("questions", {}))[id];
     if (q && q.target_role === "admin" && role !== "admin") return json({ error: "Only an administrator sees this one" }, 403);
-    const img = await this.ctx.storage.get(`qsnap:${id}${side ? `:${side}` : ""}`);
+    /**
+     * …and if it was put away under a side, take it from there.
+     *
+     * "Is this a seat?" and "Is this a person?" have ONE picture. The page
+     * therefore asks for it without naming a side — and the browser that
+     * sent it was told to send it as side "a", because that is what the
+     * website asked for when it wanted the picture. So it was written to
+     * `qsnap:<id>:a` and read from `qsnap:<id>`, and every one of those
+     * questions has gone up with "No picture of this one" underneath it.
+     *
+     * The page is not wrong to ask without a side — a question with one
+     * picture has no sides — so the fallback lives here, where it also
+     * covers the pictures already in store.
+     */
+    const img = await this.ctx.storage.get(`qsnap:${id}${side ? `:${side}` : ""}`)
+      ?? (side ? undefined : await this.ctx.storage.get(`qsnap:${id}:a`));
     if (!img) return new Response(null, { status: 204 });
     return new Response(img, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
   }

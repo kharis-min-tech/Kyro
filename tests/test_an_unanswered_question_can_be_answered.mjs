@@ -113,8 +113,11 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("and the unanswered list draws pictures at all, which it never did",
      /\{needsTwoPictures\(r\.review_type\) \? \(/.test(panel)
      && /<LiveSnapshot cameraId=\{r\.camera_id\} reviewId=\{r\.review_id\} side="a"/.test(panel));
+  // The LiveSnapshot now also carries the question's type, so an absent
+  // picture can say why truthfully — see
+  // tests/test_a_one_picture_question_has_its_picture.mjs.
   ok("the live panel draws nothing for a question with no picture, rather than an apology",
-     /: needsOnePicture\(review\.review_type\)\n\s*\? <LiveSnapshot cameraId=\{cameraId\} reviewId=\{review\.review_id\} \/>\n\s*: null\}/.test(panel));
+     /: needsOnePicture\(review\.review_type\)\n\s*\? <LiveSnapshot [^>]*\/>\n\s*: null\}/.test(panel));
 }
 
 // ── And a question that runs out leaves the screen on its own ─────────────
