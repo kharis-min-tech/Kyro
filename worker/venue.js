@@ -3138,8 +3138,45 @@ export class VenueHub extends DurableObject {
     const cams = await this.get("cameras", {});
     const live = await this.get("live", {});
     const devices = await this.get("devices", {});
+    /**
+     * One physical camera, one row.
+     *
+     * "this data is not correct, nor is it functional" — a zone table with
+     * three rows for two cameras: HuddleCamHD twice, one of them showing
+     * nothing now and nothing all day, the other showing 2 and a peak of 4.
+     *
+     * A camera is keyed by a hash of the deviceId the browser gives it, and
+     * a browser hands out a NEW deviceId when its site data is cleared or
+     * when permission is granted again. The same camera in the same socket
+     * then arrives as somebody new, and the record it had before stays
+     * where it is — in the list, in the table, and in anything that adds
+     * rooms together.
+     *
+     * The one left behind is recognisable: same computer, same name, never
+     * counted a single person, and not reporting while its twin is. That is
+     * not a camera, it is the ghost of one.
+     *
+     * It is hidden, not deleted — "Do not delete or rewrite historical
+     * records" — and only ever while the live twin is actually there, so
+     * unplugging the real one brings the old row back rather than losing
+     * the room entirely.
+     */
+    const livingTwin = new Set();
+    for (const c of Object.values(cams)) {
+      if (c.hidden || c.pending) continue;
+      const l = live[c.camera_id];
+      if (!this.isOnline(l)) continue;
+      livingTwin.add(`${c.device_id}|${String(c.name || "").trim().toLowerCase()}`);
+    }
+    const ghost = (c) => {
+      if (this.isOnline(live[c.camera_id])) return false;          // it is here
+      if ((live[c.camera_id]?.peak || 0) > 0) return false;        // it counted somebody once
+      if (c.capacity_from === "admin" || c.zone_capacity > 0) return false;  // somebody set it up
+      return livingTwin.has(`${c.device_id}|${String(c.name || "").trim().toLowerCase()}`);
+    };
     return Object.values(cams)
       .filter((c) => (includeHidden || (!c.hidden && !c.pending)) && devices[c.device_id])
+      .filter((c) => includeHidden || !ghost(c))
       .sort((a, b) => a.zone_order - b.zone_order)
       .map((c) => ({
         camera_id: c.camera_id, name: c.name, stream_url: c.kind === "usb" ? (/^usb-\d+$/.test(c.key) ? `USB camera ${Number(c.key.slice(4)) + 1}` : "USB camera")
