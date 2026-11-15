@@ -247,6 +247,18 @@ export const SPOT_STILL = 0.6;
 export const CO_SEEN_MS = 6_000;
 /** A camera's own track stays attached to its identity for this long. */
 export const TRACK_LINK_MS = 5 * 60_000;
+
+/**
+ * How long a sighting with no face yet waits before being called somebody new.
+ *
+ * Only when faces are being used at all. It is sized from how fast they
+ * actually arrive: the browser sends at most FACES_PER_REPORT of them per
+ * report, so a full hall takes tens of seconds to get through — and the
+ * whole hall needs one at once after a reload. Thirty seconds covers that
+ * with room to spare, and a person whose face never shows is still counted
+ * at the end of it.
+ */
+export const FACE_GRACE_MS = 30_000;
 /**
  * How many separate sightings a face Kyro cannot place has to make before it
  * is called a NEW person.
@@ -478,6 +490,15 @@ export class IdentityRegistry {
      * than the answer. See askLearning() in worker/venue.js.
      */
     this.lookSame = typeof opts.lookSame === "number" ? opts.lookSame : LOOK_SAME;
+    /**
+     * Whether faces are being used at all this service.
+     *
+     * When they are, a sighting with no face yet is worth waiting a few
+     * seconds for rather than guessing at from a coat — see FACE_GRACE_MS.
+     * When face matching is switched off there is nothing to wait for, and
+     * waiting would simply stop anybody being counted.
+     */
+    this.expectsFaces = !!opts.expectsFaces;
     this.people = new Map();      // id → identity
     this.byTrack = new Map();     // "camera#track" → { id, at }
     /**
@@ -1350,6 +1371,52 @@ export class IdentityRegistry {
         if (this.asks.length > 40) this.asks.shift();
       }
       return p.id;
+    }
+
+    /**
+     * Before inventing somebody: is their face still on its way?
+     *
+     * ── The bug this is ──────────────────────────────────────────────────
+     *
+     * "fix it, despite doing a hard refreash it will not lose the ID."
+     *
+     * A browser that reloads starts its track numbers again from a fresh
+     * block, so every person in the hall arrives here as a sighting this
+     * register has never seen. Their faces are already on file — a reload
+     * does not touch them — but the faces have to be sent UP again, and the
+     * browser rations them: twenty-five per report, so a hall of three
+     * hundred takes the best part of half a minute to get through.
+     *
+     * In the meantime every one of those sightings has a coat and no face.
+     * Matched on the coat alone, in a hall where most coats are dark, they
+     * were made into new people. Measured, on a reload:
+     *
+     *     30 people  →      1 extra invented
+     *    120 people  →     57 extra
+     *    300 people  →    254 extra
+     *
+     * So: when faces are being used, a sighting that has not had one yet
+     * does not become a new person. It waits. The evidence it gathers
+     * meanwhile is kept (that is what `waiting` is for), and the moment a
+     * face arrives it is matched against everybody properly.
+     *
+     * It waits a FEW SECONDS, not for ever. Somebody who keeps their back
+     * to the camera all morning has no face to send, and they must still be
+     * counted — so past FACE_GRACE_MS a new person is made as before.
+     *
+     * Nothing here delays the figure on the wall: how many are in the room
+     * is counted by the cameras, not by this register, which is the tally
+     * of how many DIFFERENT people have been seen. A few seconds' wait
+     * before adding somebody to that is worth not adding them twice.
+     */
+    if (this.expectsFaces && !faceReads.length) {
+      const first = w?.first ?? now;
+      if (now - first < FACE_GRACE_MS) {
+        if (!w) this.waiting.set(wkey, { first: now, last: now, seen: 1, looks: o.look ? [o.look] : [],
+                                         faces: 0, faceCodes: [], seat: o.seat ?? null });
+        this.stats.waitingForAFace = (this.stats.waitingForAFace || 0) + 1;
+        return null;
+      }
     }
 
     this.waiting.delete(wkey);

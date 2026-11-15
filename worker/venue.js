@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-b6ac8c6b7750";
+export const VENUE_CODE = "venue-f81319165e69";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -1993,6 +1993,17 @@ export class VenueHub extends DurableObject {
       this.register = new IdentityRegistry({
         zoneOf: (id) => (cams[id]?.zone_name || cams[id]?.name || id),
         createsIdentities: (id) => cams[id]?.location !== "entrance",
+        /**
+         * Faces are being used, so a sighting without one yet is worth
+         * waiting a few seconds for. See FACE_GRACE_MS in identity.js.
+         *
+         * Set from the venue's own privacy setting rather than guessed from
+         * whether faces happen to be arriving: a hall whose faces are all
+         * still queued behind the ration looks exactly like a hall with face
+         * matching switched off, and the two must not be confused — one
+         * should wait, the other must not wait at all or nobody is counted.
+         */
+        expectsFaces: (await this.privacy()).face_matching,
         /**
          * Can these two cameras see the same spot?
          *
