@@ -797,12 +797,31 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
               note={!onSetSeats && !seats && usingRegister
                 ? "Kyro has not been told how many seats this room has, so this figure has nothing to answer to. An administrator can set it on the Cameras page."
                 : undefined} />
-            <StatTile label={`${showingSession && sessionFrom ? `Went out, since ${fmtTime(sessionFrom)}` : showingSession ? "Went out, this session" : "Went out, all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
+            {/**
+              * "Went out" only when somebody actually walked out.
+              *
+              * "this shouldnt be accurate, it should be the people that
+              * actually leave, not people who you dont see."
+              *
+              * Quite right. With a camera on the door, this figure is
+              * people counted walking through it, and "Went out" is what it
+              * is. Without one it comes from the register, where somebody
+              * has "left" once nobody has seen them for five minutes — and
+              * that is not leaving. It is being behind a pillar, out of
+              * shot, or lost by a camera. The line underneath said so all
+              * along while the heading above it said they went out, and a
+              * heading is what gets read.
+              *
+              * So the heading changes with the evidence. The figure does
+              * not: it is the best Kyro has either way, and it is the same
+              * number it always was.
+              */}
+            <StatTile label={`${usingRegister && heldLeft == null ? "Not seen for a while" : "Went out"}${showingSession && sessionFrom ? `, since ${fmtTime(sessionFrom)}` : showingSession ? ", this session" : ", all day"}${unverified ? " (unverified)" : ""}`} swatch={LEAVE}
               value={(heldLeft ?? summary.totalLeft).toLocaleString()}
               sub={heldLeft != null
                 ? `Held with the figure beside it \u00b7 ${Math.max(0, summary.totalArrived - summary.totalLeft).toLocaleString()} still here`
                 : usingRegister
-                ? "People nobody has seen for five minutes"
+                ? "Nobody has seen them for five minutes. That is not the same as leaving — set a camera on your entrance and Kyro can count who actually walks out."
                 : summary.totalArrived ? `${Math.round((summary.totalLeft / summary.totalArrived) * 100)}% of those who came in` : undefined} />
             {/**
               * The window is in the label, not only in the times.

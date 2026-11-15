@@ -111,9 +111,14 @@ for (const [what, run] of [
      && /label=\{`Busiest \$\{windowName\} for leaving`\}/.test(card));
   ok("4. …which the fixed heading never did",
      !/label="Busiest arrival time"/.test(card) && !/label="Busiest exit time"/.test(card));
-  // The two that cannot change still say they are the whole day.
+  // The two that cannot change still say they are the whole day. The
+  // second of them is built from two pieces now, because its heading
+  // depends on whether anybody actually watched people walk out — see
+  // tests/test_went_out_means_went_out.mjs.
   ok("4. and the two that cannot change still say they are the whole day",
-     /Entries, all day/.test(card) && /Went out, all day/.test(card));
+     /Entries, all day/.test(card)
+     && /"Not seen for a while" : "Went out"/.test(card)
+     && /: ", all day"/.test(card));
 }
 
 // ── 5. A figure and the words under it are one decision ───────────────────
