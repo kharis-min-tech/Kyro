@@ -92,11 +92,28 @@ export function MovementCalendar({ dates }: { dates: string[] }) {
                   </div>
                 </div>
 
+                {/**
+                  * Why there are no arrivals — the reason that is actually
+                  * true, not the one that sounds like a fault.
+                  *
+                  * This said "Kyro couldn't follow people reliably on this
+                  * day" whichever reason applied, and nearly always the
+                  * reason is that no camera is set as a doorway. A room
+                  * camera's "entries" is every person it became sure of,
+                  * which is not arrivals, so it is refused on purpose.
+                  * Telling somebody the tracking failed sends them looking
+                  * for a fault that is not there, when the answer is a
+                  * setting they can change in five seconds.
+                  */}
                 {!data.in_out_known && (
                   <p className="text-xs leading-relaxed rounded-lg px-3 py-2"
                     style={{ background: "rgba(245,158,11,0.08)", color: "#fbbf24" }}>
-                    Kyro couldn&apos;t follow people reliably on this day, so arrivals and departures aren&apos;t shown.
-                    The attendance figures are unaffected.
+                    {data.no_doorway
+                      ? <>No camera is watching a doorway, so Kyro can&apos;t tell who arrived from who left.
+                          Set the camera on your entrance to <strong>Entrance</strong> on the Cameras page and
+                          it will start counting them. The attendance figures don&apos;t need it.</>
+                      : <>Kyro couldn&apos;t follow people reliably on this day, so arrivals and departures aren&apos;t
+                          shown. The attendance figures are unaffected.</>}
                   </p>
                 )}
 

@@ -340,6 +340,14 @@ const MOST_SEEN = 400;
  * headroom. Past the cap the oldest go — see trimMarks.
  */
 const MOST_ASKED_MARKS = 1200;
+/**
+ * How long before a room is asked about its seat count again.
+ *
+ * A day. The question is "how many seats are in here", and the answer does
+ * not change between services — so asking again the same morning is a nag,
+ * not a question. See askAboutSeatCount.
+ */
+const SEAT_ASK_AGAIN_MS = 24 * 3600_000;
 /** Past this, a typed seat count is a typing slip rather than a room. */
 const MOST_SEATS_IN_A_ROOM = 100000;
 const SEATS_WILD_TIMES = 20;
@@ -3806,6 +3814,22 @@ export class VenueHub extends DurableObject {
     }
     return {
       date, in_out_known: known, peak, peak_hour: peakHour,
+      /**
+       * …and WHY, when there are no arrivals to show.
+       *
+       * The page said "Kyro couldn't follow people reliably on this day",
+       * which blames the counting. Nearly always the real reason is that no
+       * camera is set as a doorway — a room camera's "entries" is not
+       * arrivals, it is every person it became sure of, so it is refused on
+       * purpose. That is a setting somebody can change in five seconds, and
+       * a message that blames the tracking sends them looking for a fault
+       * that is not there.
+       *
+       * Only the two reasons that are actually true: there is no doorway
+       * camera at all, or there is one and this day is before the day
+       * doorway figures could be trusted.
+       */
+      no_doorway: doorIds.size === 0,
       hours: arrivals.map((arrived, hour) => ({ hour, arrived, left: departures[hour], most: busiest[hour] })),
     };
   }
@@ -4705,8 +4729,25 @@ export class VenueHub extends DurableObject {
        * again. If Kyro's guess later changes a lot, that is a new figure
        * and worth one more question.
        */
-      if (asked[c.camera_id] === c.zone_capacity) continue;   // already put, at this figure
-      asked[c.camera_id] = c.zone_capacity;
+      /**
+       * Asked once per camera, not once per figure.
+       *
+       * "same questions are being found." It remembered the FIGURE it had
+       * asked about, so a guess that wobbles — two seats, then three, then
+       * two again — was a new question every time it moved. In a small room
+       * the guess wobbles constantly, and answering "I don't know" puts the
+       * capacity back to nothing, which lets the next guess come through as
+       * a new figure as well. A loop.
+       *
+       * So the camera is asked once and then left alone for a day, whatever
+       * the figure does. A figure somebody TYPES ends it for good, because
+       * that is no longer a guess and the test above lets it through only
+       * while capacity_from is "found".
+       */
+      const last = asked[c.camera_id];
+      const lastAt = typeof last === "object" ? last?.at ?? 0 : 0;
+      if (now - lastAt < SEAT_ASK_AGAIN_MS) continue;
+      asked[c.camera_id] = { at: now, seats: c.zone_capacity };
       const id = `seatcount-${c.camera_id.replace(/[^\w-]/g, "")}`;
       const where = clean(c.zone_name || c.name || "", 60);
       qs[id] = {

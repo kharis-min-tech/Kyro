@@ -78,6 +78,8 @@ export interface DayMovement {
   date: string;
   /** false when Kyro couldn't follow people that day — arrivals/departures withheld. */
   in_out_known: boolean;
+  /** …and when that is because no camera is set as a doorway, which is a setting. */
+  no_doorway?: boolean;
   peak: number;
   peak_hour: number | null;
   hours: { hour: number; arrived: number; left: number; most: number }[];

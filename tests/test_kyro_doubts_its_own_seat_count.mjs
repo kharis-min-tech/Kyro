@@ -126,9 +126,38 @@ async function ask(h, { seats, peak, from = "found", location = "indoor", online
   await ask(h, { seats: 307, peak: 2 });
   await ask(h, { seats: 307, peak: 2 });
   ok("5. the same figure is put once", (await ask(h, { seats: 307, peak: 2 })).length === 1);
-  // …but a different figure is a different claim.
+  /**
+   * …and a DIFFERENT figure is not a different question.
+   *
+   * It used to be: the camera remembered the figure it had asked about, so
+   * a guess that wobbled — two seats, then three, then two again — was a
+   * fresh question every time it moved. "same questions are being found."
+   * In a small room the guess wobbles constantly, and answering "I don't
+   * know" puts the capacity back to nothing, which lets the next guess
+   * through as a new figure as well. A loop.
+   *
+   * One question per camera per day, whatever the figure does. A figure
+   * somebody TYPES ends it for good, because it stops being a guess.
+   */
   const again = await ask(h, { seats: 512, peak: 2 });
-  ok("5. and a new figure is a new question", again.length === 1 && /512/.test(again[0].why));
+  ok("5. and a guess that wobbles does not ask again", again.length === 1,
+     `${again.length} questions after the figure changed`);
+  ok("5. …the one question still standing is the first one",
+     /307/.test(again[0].why), again[0]?.why);
+}
+
+// ── 5b. …but tomorrow is a new day ────────────────────────────────────────
+// Not asking again must not mean never asking again: a room that is still
+// a guess a day later is still worth one question.
+{
+  const h = hub();
+  await ask(h, { seats: 307, peak: 2 });
+  const asked = h.store.get("seat_count_asked");
+  asked["box:a"] = { ...asked["box:a"], at: Date.now() - 25 * 3600_000 };
+  h.store.set("seat_count_asked", asked);
+  // A fresh question store, as a new day's would be.
+  h.store.set("questions", {});
+  ok("5b. a day later it asks once more", (await ask(h, { seats: 307, peak: 2 })).length === 1);
 }
 
 // ── 6. The answer is used ─────────────────────────────────────────────────

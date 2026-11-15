@@ -46,8 +46,12 @@ const types  = fs.readFileSync(path.join(root, "dashboard/src/types/index.ts"), 
      /c\.capacity_from !== "found"/.test(body));
   ok("and a doorway is not asked how many seats it has",
      /c\.location === "entrance" \|\| c\.location === "queue"/.test(body));
-  ok("asked once per figure, so it is one question and not a nag",
-     /asked\[c\.camera_id\] === c\.zone_capacity\) continue;/.test(body));
+  // Once per CAMERA, not once per figure. Keying it on the figure meant a
+  // guess that wobbled asked again every time it moved: "same questions are
+  // being found". See tests/test_kyro_doubts_its_own_seat_count.mjs.
+  ok("asked once a day per room, so it is one question and not a nag",
+     /if \(now - lastAt < SEAT_ASK_AGAIN_MS\) continue;/.test(body)
+     && /const SEAT_ASK_AGAIN_MS = 24 \* 3600_000;/.test(worker));
   ok("it asks for the number, not for yes or no",
      /question: `How many seats are there in \$\{where \|\| "this room"\}\?`/.test(body));
   ok("with the guess offered as one tap when it is good",
