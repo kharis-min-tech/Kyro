@@ -86,7 +86,7 @@ function StatTile({ label, value, sub, swatch, action, note }: {
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce, seatsFound, facesOff }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce, seatsFound, facesOff, recording }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -169,6 +169,14 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
   attendance?: number | null;
   /** Face matching is switched off, so the attendance climbs on its own. */
   facesOff?: boolean;
+  /**
+   * Whether a service is being recorded AT THIS MOMENT.
+   *
+   * false means nothing is being added to the register, so every figure on
+   * this card is the last one counted rather than a live one. Undefined for
+   * a past day, where "right now" means nothing.
+   */
+  recording?: boolean;
   /** The most the cameras saw at one moment: a floor, never the answer. */
   seenAtOnce?: number | null;
 }) {
@@ -290,7 +298,31 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * When there is no honest figure there is no figure. A dash and a reason
    * is the truth; a large number nobody can account for is not.
    */
-  const entries: { value: string; sub: string } = held != null
+  /**
+   * Nothing is being recorded — said first, because it explains the rest.
+   *
+   * "numbers still the same despite people coming in, theres a bug."
+   *
+   * A service starts by itself when enough people have been in shot for a
+   * couple of minutes, and ends when the room has been nearly empty for a
+   * quarter of an hour. Outside one, nothing goes into the register — "a
+   * register of people needs a reason to exist, and somebody left a camera
+   * running is not one" — so the attendance figure stops moving and stays
+   * exactly where it was.
+   *
+   * That is correct, and it is indistinguishable from broken unless the
+   * card says so. Somebody watching people walk in under a figure that will
+   * not move has every reason to think the counting has failed. This is the
+   * same rule as a stopped camera showing a dash instead of its last count:
+   * a figure that has outlived the thing measuring it has to say so.
+   */
+  const stopped = recording === false;
+  const entries: { value: string; sub: string } = stopped && attendanceShown != null
+    ? { value: attendanceShown.toLocaleString(),
+        sub: "Nothing is being recorded just now, so this is the last figure counted — not a live one. "
+           + "A service starts by itself once enough people have been in shot for a couple of minutes, "
+           + "or straight away if the rota says one is on." }
+    : held != null
     ? { value: held.toLocaleString(),
         // What was MEASURED, beside what is shown. From the server's own
         // record of the hold rather than worked out again here, so the two

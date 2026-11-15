@@ -214,9 +214,13 @@ const ctx = fs.readFileSync(path.join(root, "dashboard/src/lib/CountingContext.t
   // be two, and disagreed: 7,393 over "Nobody counted yet". The order of
   // preference is unchanged; what is gone is the fall through to the
   // cameras' crossings at the end of it.
+  // The chain now begins with "is anything being recorded at all" — a
+  // figure that has stopped moving explains itself before anything else
+  // about it. See tests/test_a_figure_that_stopped_moving_says_so.mjs.
   ok("the tile takes the attendance figure every other page shows",
      /attendance\?: number \| null;/.test(card)
-     && /const entries: \{ value: string; sub: string \} = held != null/.test(card)
+     && /const entries: \{ value: string; sub: string \} = stopped && attendanceShown != null/.test(card)
+     && /\n    : held != null/.test(card)
      && /: attendanceShown != null && attendanceShown > 0/.test(card));
   ok("…then the register's own movement, then the most seen at once",
      /const attendanceShown = attendance != null && attendance > 0 \? attendance\s*\n\s*: usingRegister \? summary\.totalArrived\s*\n\s*: seenAtOnce != null && seenAtOnce > 0 \? seenAtOnce/.test(card));
