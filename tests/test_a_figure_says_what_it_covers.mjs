@@ -59,8 +59,12 @@ const arrivals  = fs.readFileSync(path.join(root, "dashboard/src/components/ui/A
      /Entries, since \$\{fmtTime\(sessionFrom\)\}/.test(arrivals));
   ok("…or says plainly that it is the whole day",
      /"Entries, all day"/.test(arrivals));
+  // …in the words it uses when Kyro can stand behind the figure. With face
+  // matching off it says something more careful instead — see
+  // tests/test_a_figure_kyro_cannot_defend.mjs.
   ok("and says underneath that people are counted once each",
-     /sub: "Different people, counted once each"/.test(arrivals));
+     /: "Different people, counted once each" \}/.test(arrivals)
+     && /\? "Counted once each — but without face matching/.test(arrivals));
   // The word itself was settled: the service card said "Came in" and the
   // sessions card said "Entries" for the same idea — "this is meant to be
   // the session structure [...] so i dont know why its like this".

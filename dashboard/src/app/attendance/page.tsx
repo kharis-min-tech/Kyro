@@ -1605,6 +1605,8 @@ export default function AttendancePage() {
                    card cannot disagree with them — and the most seen at
                    once as an honest floor when nothing can answer it. See
                    the note on the Entries tile. */
+                facesOff={!!edge && isToday
+                  && (venueTotal as unknown as { face_matching?: boolean } | null)?.face_matching === false}
                 attendance={edge && isToday
                   ? (venueTotal as unknown as { people_seen_shown?: number; people_seen?: number } | null)?.people_seen_shown
                     ?? (venueTotal as unknown as { people_seen?: number } | null)?.people_seen ?? null

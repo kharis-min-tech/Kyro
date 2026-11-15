@@ -86,7 +86,7 @@ function StatTile({ label, value, sub, swatch, action, note }: {
   );
 }
 
-export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce, seatsFound }: {
+export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample, sessionFrom, onFreshStart, byCamera, onDownload, doorMode, onDoorMode, doorModeBy, movement, overSeats, seats, onSetSeats, attendance, seenAtOnce, seatsFound, facesOff }: {
   /** One cumulative counter series per camera. */
   series: CounterPoint[][] | null;
   /**
@@ -167,6 +167,8 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
    * worker/venue.js.
    */
   attendance?: number | null;
+  /** Face matching is switched off, so the attendance climbs on its own. */
+  facesOff?: boolean;
   /** The most the cameras saw at one moment: a floor, never the answer. */
   seenAtOnce?: number | null;
 }) {
@@ -295,7 +297,25 @@ export function ArrivalTimes({ series, unverifiedSeries, emptyMessage, isSample,
         // cannot drift apart.
         sub: `Held at the ${held.toLocaleString()} seats in this room · Kyro counted ${(overSeats?.counted ?? attendance ?? 0).toLocaleString()}` }
     : attendanceShown != null && attendanceShown > 0
-    ? { value: attendanceShown.toLocaleString(), sub: "Different people, counted once each" }
+    ? { value: attendanceShown.toLocaleString(),
+        /**
+         * …and whether Kyro can stand behind it.
+         *
+         * "number is not accurate." Without face matching, somebody who is
+         * lost and found again is told apart from everyone else by the
+         * colour of their coat alone — and once a reading wobbles, one
+         * person becomes two entries, which cannot then be told apart from
+         * each other, so they become four. Measured: one person sitting
+         * still for an hour, counted as 45.
+         *
+         * The figure is still shown, because it is what was counted and
+         * nothing here rewrites what was counted. But it is not presented
+         * as a fact Kyro will defend. This is the same rule as the word
+         * "guess" under a seat count it worked out for itself.
+         */
+        sub: facesOff
+          ? "Counted once each — but without face matching this climbs on its own, so treat it as the top of the range"
+          : "Different people, counted once each" }
     : seenAtOnce != null && seenAtOnce > 0
     ? { value: seenAtOnce.toLocaleString(),
         sub: "The most seen at once — at least this many were here. Nobody is counting at a doorway, so Kyro cannot say how many different people came." }

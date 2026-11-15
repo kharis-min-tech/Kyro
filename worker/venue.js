@@ -3441,6 +3441,18 @@ export class VenueHub extends DurableObject {
     }
     return {
       seen_on_two_cameras: twice,
+      /**
+       * Whether face matching is switched on at all.
+       *
+       * Not the same as whether faces are arriving — an empty hall reads no
+       * faces and nothing is wrong. This is the setting, and the page needs
+       * it to say whether the attendance figure is one Kyro can stand
+       * behind. Without faces, one person who keeps being lost and found
+       * becomes a new person each time: measured, 45 entries from one
+       * person sitting still for an hour. See
+       * tests/test_one_person_alone_needs_a_face.mjs.
+       */
+      face_matching: (await this.privacy()).face_matching,
       // Cameras whose last report carried face readings, and how many faces
       // those readings held.
       face_cameras: faceFresh.length,
