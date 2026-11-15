@@ -76,14 +76,40 @@ function fireDesktopNotification(review: ReviewRequest) {
   } catch {}
 }
 
+/**
+ * How long a question can still be answered. The website's own figures.
+ *
+ * This list used to hold them for TWENTY-FOUR HOURS, while the website
+ * threw each question and both its pictures away after four minutes. So
+ * the list filled up with questions that no longer existed: no pictures
+ * to look at, and two buttons that did nothing when pressed. Reported as
+ * "when i go to unanswered quesrtions, i cant see the picture again".
+ *
+ * Four minutes is not meanness, it is the truth about the question. "Is
+ * this the same person?" is about a person the camera is following RIGHT
+ * NOW; the register lets a track go after five, and after that there is
+ * nothing left for an answer to correct. A question nobody can act on is
+ * better gone than sitting there looking answerable.
+ *
+ * These must match QUESTION_TTL_MS and CHAIR_QUESTION_TTL_MS in
+ * worker/venue.js, and there is a test that reads both.
+ */
+const ANSWERABLE_FOR_MS: Record<string, number> = {
+  same_chair_question: 60 * 60_000,
+};
+const ANSWERABLE_FOR_DEFAULT_MS = 4 * 60_000;
+export function stillAnswerable(r: { review_type: string; created_at: number }, now = Date.now()): boolean {
+  const life = ANSWERABLE_FOR_MS[r.review_type] ?? ANSWERABLE_FOR_DEFAULT_MS;
+  return now - r.created_at * 1000 < life;
+}
+
 // ─── Unanswered storage helpers ───────────────────────────────────────────────
 function loadUnanswered(): ReviewRequest[] {
   if (typeof window === "undefined") return [];
   try {
     const all = JSON.parse(localStorage.getItem(UNANSWERED_KEY) ?? "[]") as ReviewRequest[];
-    // Auto-prune questions older than 24 hours — they stay all day, gone tomorrow
-    const cutoff = Date.now() / 1000 - 24 * 3600;
-    const fresh = all.filter((r) => r.created_at > cutoff).slice(0, 10);
+    // Only the ones that can still be answered. See stillAnswerable.
+    const fresh = all.filter((r) => stillAnswerable(r)).slice(0, 10);
     if (fresh.length !== all.length) saveUnanswered(fresh);
     return fresh;
   } catch { return []; }
@@ -118,8 +144,9 @@ function loadArchived(): ReviewRequest[] {
   if (typeof window === "undefined") return [];
   try {
     const all = JSON.parse(localStorage.getItem(ARCHIVED_KEY) ?? "[]") as ReviewRequest[];
-    const cutoff = Date.now() / 1000 - 24 * 3600;
-    const fresh  = all.filter((r) => r.created_at > cutoff).slice(0, 20);
+    // The same rule as the unanswered list: a question that can no longer
+    // be acted on is not worth restoring. See stillAnswerable.
+    const fresh  = all.filter((r) => stillAnswerable(r)).slice(0, 20);
     if (fresh.length !== all.length) {
       try { localStorage.setItem(ARCHIVED_KEY, JSON.stringify(fresh)); } catch {}
     }
@@ -195,6 +222,23 @@ function DemoSnapshot({ review }: { review: ReviewRequest }) {
  * question and two buttons. Being asked whether two people you cannot see
  * are the same person is not a question anybody can answer.
  */
+/**
+ * Which questions come with pictures, and how many.
+ *
+ * Written down once because two different panels draw them — the one that
+ * appears while Kyro is asking, and the list of ones nobody got to at the
+ * time. The second of those drew no pictures at all: "when i go to
+ * unanswered quesrtions, i cant see the picture again". Two panels with
+ * the same rule written out twice is how that happens again.
+ */
+const TWO_PICTURES = new Set(["same_person_question", "same_chair_question"]);
+/** A question about a FIGURE. There is nothing to crop and nothing to show. */
+const NO_PICTURE = new Set(["how_many_seats"]);
+export function needsTwoPictures(type: string): boolean { return TWO_PICTURES.has(type); }
+export function needsOnePicture(type: string): boolean {
+  return !TWO_PICTURES.has(type) && !NO_PICTURE.has(type);
+}
+
 function LiveSnapshot({ cameraId, reviewId, side, label }: {
   cameraId: string; reviewId: string;
   /** "a" / "b" for a question comparing two sightings; omitted for the rest. */
@@ -387,7 +431,7 @@ function ReviewCard({
       <div className="px-4 pb-2">
         {inDemoMode() && !isEdgeLive()
           ? <DemoSnapshot review={review} />
-          : review.review_type === "same_person_question" || review.review_type === "same_chair_question"
+          : needsTwoPictures(review.review_type)
           /* Two sightings, two pictures, side by side — because the question
              is whether they are the same person, and one picture cannot ask
              it. See the note on LiveSnapshot. */
@@ -397,7 +441,9 @@ function ReviewCard({
               <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} side="b" label="and this one" />
             </div>
           )
-          : <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />}
+          : needsOnePicture(review.review_type)
+          ? <LiveSnapshot cameraId={cameraId} reviewId={review.review_id} />
+          : null}
       </div>
       <div className="px-4 pb-3 flex flex-col gap-1.5">
         {/*
@@ -497,7 +543,20 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
     const read = () => setItems(loadUnanswered());
     read();
     window.addEventListener("kyro_unanswered_changed", read);
-    return () => window.removeEventListener("kyro_unanswered_changed", read);
+    /**
+     * …and on a tick, so a question that has run out drops off a panel
+     * somebody is looking at.
+     *
+     * The list was only re-read when something changed it, so an open
+     * panel went on offering a question long after the website had thrown
+     * it away — pictures gone, buttons dead. Reading it again is cheap: it
+     * is a few entries in this browser's own storage.
+     */
+    const tick = setInterval(read, 30_000);
+    return () => {
+      window.removeEventListener("kyro_unanswered_changed", read);
+      clearInterval(tick);
+    };
   }, []);
 
   // Focus a specific review when the page is opened from a push notification
@@ -707,6 +766,31 @@ function UnansweredPanel({ cameraId }: { cameraId: string }) {
                   <div className="px-3 pb-3 flex flex-col gap-1 border-t"
                     style={{ borderColor: colours.border + "30" }}>
                     <p className="text-xs pt-2 pb-1 leading-relaxed text-white">{r.question}</p>
+                    {/**
+                      * The PICTURES, which were missing here entirely.
+                      *
+                      * "when i go to unanswered quesrtions, i cant see the
+                      * picture again, this is a bug." Quite right: "is this
+                      * the same person?" with two buttons and nothing to
+                      * look at is not a question, it is a coin toss. The
+                      * live panel has shown them all along; this list — the
+                      * one for answering a question you could not get to at
+                      * the time — never did.
+                      *
+                      * Same component, same rules about which questions have
+                      * two pictures and which have one. It says so plainly
+                      * when a picture has gone rather than drawing nothing.
+                      */}
+                    {needsTwoPictures(r.review_type) ? (
+                      <div className="flex gap-2 pb-1">
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="a" label="this one" />
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} side="b" label="and this one" />
+                      </div>
+                    ) : needsOnePicture(r.review_type) ? (
+                      <div className="pb-1">
+                        <LiveSnapshot cameraId={r.camera_id} reviewId={r.review_id} />
+                      </div>
+                    ) : null}
                     {/* A number question gets a box here too. See the panel above. */}
                     {r.answer_kind === "number" && (
                       <form className="flex gap-1 pb-1"
@@ -779,9 +863,13 @@ function ArchivedRestoreBell() {
     read();
     window.addEventListener("kyro_archived_changed",  read);
     window.addEventListener("kyro_unanswered_changed", read);
+    // …and on a tick, so the count on the bell goes down by itself as
+    // questions run out. See the same tick on the list.
+    const tick = setInterval(read, 30_000);
     return () => {
       window.removeEventListener("kyro_archived_changed",  read);
       window.removeEventListener("kyro_unanswered_changed", read);
+      clearInterval(tick);
     };
   }, []);
 
