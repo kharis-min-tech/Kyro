@@ -558,6 +558,14 @@ export class IdentityRegistry {
     this.notPeople = [];
     /**
      * Pairs an operator has already ruled on, so the same two people are not
+     *
+     * WRITTEN DOWN, since this version — see rulings() and restoreRulings().
+     * It used to live only here, in memory. The website is put to sleep
+     * whenever it goes quiet and built again on the next request, and this
+     * came back empty every time: every pair already asked about became
+     * askable again, and every pair somebody had ANSWERED became askable
+     * again too. "your showing me the same pictures constantly".
+     *
      * asked about over and over. "camera#track|camera#track" → true (same) or
      * false (different). Lives and dies with the service, like everything
      * else here.
@@ -2031,6 +2039,32 @@ export class IdentityRegistry {
       delete next.b;
     }
     return snap;
+  }
+
+  /**
+   * Every pair somebody has already been asked about, to be written down.
+   *
+   * The answered ones first, because those are the ones that must never
+   * come back: "same person, yes" is a thing a human settled, and asking
+   * it again is asking them to do their work twice. A pair that was asked
+   * but not answered is worth keeping too — it is on the screen right now
+   * — but it is the first thing dropped if there is no room.
+   */
+  rulings() {
+    const answered = [], waiting = [];
+    for (const [pair, verdict] of this.ruled) {
+      (verdict === null ? waiting : answered).push([pair, verdict]);
+    }
+    return [...answered, ...waiting];
+  }
+
+  /** …and read back, after the website has been asleep. See rulings(). */
+  restoreRulings(list) {
+    if (!Array.isArray(list)) return;
+    for (const entry of list) {
+      if (!Array.isArray(entry) || typeof entry[0] !== "string") continue;
+      if (!this.ruled.has(entry[0])) this.ruled.set(entry[0], entry[1] ?? null);
+    }
   }
 
   restore(snap) {

@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-7523b49b3a96";
+export const VENUE_CODE = "venue-b6ac8c6b7750";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -2038,6 +2038,23 @@ export class VenueHub extends DurableObject {
        * worker/identity.js.
        */
       this.register.notPeople = await this.get("not_people", []);
+      /**
+       * …and every pair somebody has already been asked about.
+       *
+       * "your showing me the same pictures constantly". This lived only in
+       * the register's memory. The website is put to sleep whenever it goes
+       * quiet and built again on the next request — several times an hour on
+       * a normal morning — and every time, the record of what had already
+       * been asked came back empty. So the same two people were put up
+       * again, and again, with the same two pictures. Answering did not
+       * help: an answer was written into that same memory.
+       *
+       * Belongs WITH the service rather than beside it, unlike not_people:
+       * a pair names two people by their number in this morning's register,
+       * and next week's register numbers somebody else the same. So it is
+       * thrown away with the register. See forgetRegister.
+       */
+      this.register.restoreRulings(await this.get("ruled", []));
       const saved = await this.loadRegister();
       if (saved && saved.service === service) {
         this.register.restore(saved);
@@ -2642,8 +2659,45 @@ export class VenueHub extends DurableObject {
    * numbered parts as they need, each comfortably inside the limit, and are
    * read back in order. Ten thousand people is about fourteen parts.
    */
+  /**
+   * Write down what has already been asked about. See rulings().
+   *
+   * Capped by BYTES, not by how many: one stored value holds 128 KB and a
+   * pair is a short string, but "short" is not a number anybody should
+   * guess at. Answered pairs are at the front of the list, so what gets
+   * dropped when it is full is always the least important thing in it.
+   */
+  async saveRuled() {
+    if (typeof this.register?.rulings !== "function") return;
+    const all = this.register.rulings();
+    const kept = [];
+    let bytes = 2;
+    for (const entry of all) {
+      const size = JSON.stringify(entry).length + 1;
+      if (bytes + size > SAFE_VALUE_BYTES) break;
+      kept.push(entry); bytes += size;
+    }
+    await this.ctx.storage.put("ruled", kept);
+  }
+
   async saveRegister() {
     if (!this.register) return;
+    /**
+     * Inside a try, and first, so it can never take the register with it.
+     *
+     * Losing the record of what has been asked costs a repeated question.
+     * Losing the REGISTER costs the morning's attendance. They are not
+     * worth the same, so the small one is never allowed to fail the big
+     * one — the same mistake the doorway's memory made, where one oversized
+     * value stopped a whole computer's cameras being counted.
+     */
+    try {
+      await this.saveRuled();
+    } catch (e) {
+      await this.wrong("Questions",
+        "Couldn't write down which questions have already been asked, so some may be asked again",
+        e && e.message);
+    }
     const snap = this.register.snapshot(0);            // no trimming: it all gets kept
     const people = snap.people ?? [];
     const head = { ...snap, people: [], parts: 0, v: snap.v ?? 2 };
@@ -2684,6 +2738,9 @@ export class VenueHub extends DurableObject {
     const head = await this.get("register", null);
     for (let i = 0; i < (head?.parts ?? 0); i++) await this.ctx.storage.delete(`register:${i}`);
     await this.ctx.storage.delete("register");
+    // A pair names two people by their number in THIS register, so it means
+    // nothing once the register is gone. See restoreRulings.
+    await this.ctx.storage.delete("ruled");
   }
 
   /** The doorway's record of who it has counted, however many that is. */
