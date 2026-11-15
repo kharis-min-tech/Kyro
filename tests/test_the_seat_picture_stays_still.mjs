@@ -43,9 +43,21 @@ const page = read("dashboard/src/app/layout-editor/page.tsx");
      /\}, \[cameraId\]\);/.test(editor.slice(editor.indexOf("const loadBackgroundFromCamera"))));
   ok("1. nothing puts it on a timer",
      !/setInterval/.test(editor), "setInterval in the editor");
-  // Only one place fetches it, so there is only one place for it to change.
+  /**
+   * Two places fetch it now, and only one of them is automatic.
+   *
+   * The second is the button that draws on the last picture Kyro has —
+   * because counting runs in a browser, so a camera sends pictures only
+   * while the Live cameras page is open, and the editor was unusable the
+   * rest of the time. It never fires by itself, which is what this checks:
+   * the picture still cannot change under a drawing unless somebody asks
+   * for a different one.
+   */
   const fetches = (editor.match(/\/api\/live\/snapshot\//g) ?? []).length;
-  ok("1. and only one place asks the camera for it", fetches === 1, `${fetches}`);
+  ok("1. and only two places ask the camera for it", fetches === 2, `${fetches}`);
+  ok("1. the second being a button, never a timer or an effect",
+     /onClick=\{useLastPicture\}/.test(editor)
+     && !/useEffect\([^)]*useLastPicture/.test(editor));
 }
 
 // ── 2. A failed poll does not throw the drawing away ──────────────────────

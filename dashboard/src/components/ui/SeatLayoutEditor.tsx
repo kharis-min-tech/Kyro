@@ -14,7 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Upload, Trash2, Grid, PenLine, MapPin, RefreshCw } from "lucide-react";
+import { Upload, Trash2, Grid, PenLine, MapPin, RefreshCw, Image as ImageIcon } from "lucide-react";
 import type { SeatDefinition } from "@/types";
 import { seatsApi, zonesApi, camerasApi, type ZoneDef, type ZoneType } from "@/lib/api";
 import { edgeToken, isEdgeLive } from "@/lib/edgeAuth";
@@ -160,6 +160,18 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
   const [bgImage, setBgImage] = useState<HTMLImageElement | null>(null);
   /** Why there is no picture: nothing ever sent one, it stopped, or it is old. */
   const [bgWhy, setBgWhy] = useState<"never" | "offline" | "stale" | null>(null);
+  /**
+   * When the last picture of this room was taken, if there is one.
+   *
+   * Kyro will not put an old picture up by itself — a layout drawn over a
+   * photograph of a different day puts every seat in the wrong place. But
+   * the chairs in a church do not move, and the person drawing on it can
+   * see whether the camera has. So it is OFFERED, with its age on it, and
+   * taking it is a decision somebody makes rather than one Kyro makes
+   * quietly. Nothing is drawn on it until they do.
+   */
+  const [lastPictureAt, setLastPictureAt] = useState<Date | null>(null);
+  const [usingOld, setUsingOld] = useState(false);
   const [seats, setSeats] = useState<SeatDefinition[]>([]);
   const [draft, setDraft] = useState<DraftBox | null>(null);
   const [drawing, setDrawing] = useState(false);
@@ -219,6 +231,10 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
         // one. See getSnapshot in worker/venue.js.
         const told = res.headers.get("X-Kyro-Why");
         setBgWhy(told === "never" || told === "offline" || told === "stale" ? told : null);
+        // When was the last one taken, if there is one at all? That is what
+        // decides whether there is anything to offer. See lastPictureAt.
+        const had = res.headers.get("X-Last-Picture");
+        setLastPictureAt(had && !Number.isNaN(Date.parse(had)) ? new Date(had) : null);
         setBgError(true);
         return;
       }
@@ -233,6 +249,38 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
     } finally {
       setLoadingBg(false);
     }
+  }, [cameraId]);
+
+  /**
+   * Draw on the last picture Kyro has, because somebody asked for it.
+   *
+   * The same request with ?last=1 — see getSnapshot in worker/venue.js.
+   * Nothing about this is automatic: the button only appears when there IS
+   * an older picture, it says how old, and the canvas keeps saying so
+   * afterwards.
+   */
+  const useLastPicture = useCallback(async () => {
+    setLoadingBg(true);
+    try {
+      const live = isEdgeLive();
+      const token = live ? edgeToken() ?? "" : typeof window !== "undefined" ? localStorage.getItem("kyro_token") ?? "" : "";
+      const url = live
+        ? `/api/live/snapshot/${encodeURIComponent(cameraId)}?last=1`
+        : camerasApi.snapshotUrl(cameraId);
+      const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      if (!res.ok) { setLoadingBg(false); return; }
+      const taken = res.headers.get("X-Taken-At");
+      const img = new Image();
+      img.onload = () => {
+        setBgImage(img);
+        setBgTakenAt(taken && !Number.isNaN(Date.parse(taken)) ? new Date(taken) : null);
+        setUsingOld(true);
+        setBgError(false);
+      };
+      img.onerror = () => setLoadingBg(false);
+      img.src = URL.createObjectURL(await res.blob());
+    } catch { /* the button simply does nothing; the message stays */ }
+    setLoadingBg(false);
   }, [cameraId]);
 
   /**
@@ -272,6 +320,25 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
     // Background image
     if (bgImage) {
       ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+      /**
+       * …and if it is an old picture, say so on the picture.
+       *
+       * Not in a caption beside it. Somebody drawing seats is looking at
+       * the canvas, and the one mistake this can lead to — the camera
+       * having moved since — is only visible to them while they look at it.
+       */
+      if (usingOld) {
+        const band = 26;
+        ctx.fillStyle = "rgba(180,83,9,0.92)";
+        ctx.fillRect(0, 0, canvas.width, band);
+        ctx.fillStyle = "#fff7ed";
+        ctx.font = "12px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.fillText(
+          `This is the last picture Kyro has${bgTakenAt ? `, from ${bgTakenAt.toLocaleString([], { dateStyle: "short", timeStyle: "short" })}` : ""} — check the camera hasn't moved`,
+          canvas.width / 2, band / 2 + 4,
+        );
+      }
     } else {
       /**
        * A canvas cannot read a CSS variable.
@@ -399,7 +466,7 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
       ctx.strokeRect(start.x, start.y, end.x - start.x, end.y - start.y);
       ctx.setLineDash([]);
     }
-  }, [bgImage, seats, draft, selectedIdx, mode, gridBlocks, gridDraft, zones, zoneDraft, loadingBg, bgError]);
+  }, [bgImage, seats, draft, selectedIdx, mode, gridBlocks, gridDraft, zones, zoneDraft, loadingBg, bgError, bgWhy, usingOld, bgTakenAt]);
 
   useEffect(() => { render(); }, [render]);
 
@@ -801,6 +868,26 @@ export function SeatLayoutEditor({ cameraId, onSaved }: SeatLayoutEditorProps) {
           className="text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gray-700 flex items-center gap-1.5 disabled:opacity-50">
           <RefreshCw size={13} className={loadingBg ? "animate-spin" : ""} /> Refresh from camera
         </button>
+        {/*
+          * The last picture Kyro has, offered rather than taken.
+          *
+          * Only when there IS one and there is nothing live — a seat editor
+          * that can only be used while the Live cameras page happens to be
+          * running on another computer is not much of an editor, and Kyro
+          * had a picture of the room the whole time.
+          *
+          * It says how old it is, because that is the one thing worth
+          * knowing: the chairs will not have moved, and whoever is drawing
+          * knows whether the camera has.
+          */}
+        {bgError && lastPictureAt && (
+          <button type="button" onClick={useLastPicture} disabled={loadingBg}
+            className="text-xs rounded-lg px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-50"
+            style={{ background: "var(--bg-hover)", color: "var(--text-primary)",
+                     border: "1px solid var(--border-strong)" }}>
+            <ImageIcon size={13} /> Draw on the last picture ({lastPictureAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })})
+          </button>
+        )}
         <label className="text-xs text-gray-400 bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 cursor-pointer hover:bg-gray-700 flex items-center gap-1.5">
           <Upload size={13} /> Upload camera frame
           <input type="file" accept="image/*" className="hidden" onChange={onImageUpload} />

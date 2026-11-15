@@ -27,7 +27,7 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
 
 // ── The picture ────────────────────────────────────────────────────────────
 {
-  const snap = worker.slice(worker.indexOf("async getSnapshot(camera_id)"), worker.indexOf("// ── Live video"));
+  const snap = worker.slice(worker.indexOf("async getSnapshot(camera_id"), worker.indexOf("// ── Live video"));
   // Reporting is not the same as having a picture: an unplugged camera
   // goes on reporting through the computer it was plugged into, saying it
   // has none. Both halves are required now.
@@ -36,6 +36,18 @@ const worker = fs.readFileSync(path.join(root, "worker/venue.js"), "utf8");
   ok("and only while it is recent", /age > SNAPSHOT_STALE_MS/.test(snap));
   ok("otherwise nothing is served at all", /status: 404/.test(snap));
   ok("but when the last one was is still said", /X-Last-Picture/.test(snap));
+  /**
+   * …and the one place an old picture may be used anyway.
+   *
+   * The seat editor, and only when somebody presses a button: the chairs
+   * in a church do not move, and a layout cannot be drawn at all unless
+   * something is counting at that moment. It is marked old on the way out
+   * so the page can keep saying so. See
+   * tests/test_the_last_picture_is_offered.mjs.
+   */
+  ok("an old one is handed over only when asked for, and marked as old",
+     /if \(lastWillDo && s\.data\) \{/.test(snap) && /"X-Kyro-Old": "1",/.test(snap));
+  ok("and that is off unless asked", /async getSnapshot\(camera_id, lastWillDo = false\)/.test(worker));
   ok("'recent' is minutes, not hours", /const SNAPSHOT_STALE_MS = 3 \* 60_000;/.test(worker));
 
   const edge = fs.readFileSync(path.join(root, "dashboard/src/lib/edgeVenue.ts"), "utf8");

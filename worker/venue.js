@@ -255,7 +255,7 @@ const IN_OUT_TRUSTED_FROM = Date.parse("2026-11-08T12:22:00Z");
  * back through /api/version, so a deploy can be checked rather than believed —
  * see the note on /internal/version.
  */
-export const VENUE_CODE = "venue-17a3e3f70db3";
+export const VENUE_CODE = "venue-c645b9a5cc0f";
 /**
  * A fixed seat count for this church used to live here.
  *
@@ -961,7 +961,10 @@ export class VenueHub extends DurableObject {
       if (p === "/api/live/venue" && request.method === "GET") return json(await this.venueTotal());
       if (p === "/api/live/history" && request.method === "GET") return json(await this.history(url));
       if (p === "/api/live/daily" && request.method === "GET") return json(await this.daily(url));
-      if (p.startsWith("/api/live/snapshot/") && request.method === "GET") return this.getSnapshot(decodeURIComponent(p.split("/").pop()));
+      // ?last=1 — the last picture even if it is old, for the seat editor.
+      // See getSnapshot.
+      if (p.startsWith("/api/live/snapshot/") && request.method === "GET")
+        return this.getSnapshot(decodeURIComponent(p.split("/").pop()), url.searchParams.get("last") === "1");
       if (p.startsWith("/api/live/watch/")) {
         if (role !== "admin" && role !== "operator") return json({ error: "Only administrators and operators can watch the live cameras" }, 403);
         return this.watch(decodeURIComponent(p.split("/").pop()), request);
@@ -2962,7 +2965,7 @@ export class VenueHub extends DurableObject {
    *            (unplugged, while the browser it was plugged into reports on).
    *   stale    it is reporting but the last picture is too old to draw on.
    */
-  async getSnapshot(camera_id) {
+  async getSnapshot(camera_id, lastWillDo = false) {
     const why = (reason, text) => new Response(text, {
       status: 404,
       headers: { "Cache-Control": "no-store", "X-Kyro-Why": reason },
@@ -2993,6 +2996,30 @@ export class VenueHub extends DurableObject {
     const reporting = this.isOnline(l) && !(l?.status === "error" && l?.no_picture);
     const age = Date.now() - (s.at || 0);
     if (!reporting || age > SNAPSHOT_STALE_MS) {
+      /**
+       * …unless the last one will do, and somebody has said so.
+       *
+       * Refusing an old picture outright is right for anything that claims to
+       * show NOW — a tile, an alert, a question. It is wrong for the seat
+       * editor, which is the one place where an old picture of a room is
+       * perfectly good: the chairs have not moved, and the person drawing on
+       * it can see whether the camera has.
+       *
+       * Counting runs in a browser, so a camera sends pictures only while the
+       * Live cameras page is open. That made the seat editor a tool you could
+       * only use while something else was running, which is most of the time
+       * not. It had a picture of the room the whole time and would not show
+       * it.
+       *
+       * So it is offered rather than taken: only when asked for explicitly,
+       * and the reply says how old it is so the page can say so too.
+       */
+      if (lastWillDo && s.data) {
+        return new Response(s.data, { headers: {
+          "Content-Type": "image/jpeg", "Cache-Control": "no-store",
+          "X-Taken-At": new Date(s.at || 0).toISOString(), "X-Kyro-Old": "1",
+        } });
+      }
       const res = why(reporting ? "stale" : "offline",
         "That camera isn't on, so there is no picture of now");
       res.headers.set("X-Last-Picture", new Date(s.at || 0).toISOString());
