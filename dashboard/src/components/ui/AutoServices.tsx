@@ -8,6 +8,8 @@ import { useAuth } from "@/hooks/useAuth";
 
 export interface Service {
   id: string; name: string; started_at: string; ended_at?: string; peak: number; peak_at?: string;
+  /** The most the cameras had in shot at once — never more than was seen. */
+  peak_seen?: number;
   average?: number; rooms: Record<string, number>; status?: "ask" | "kept"; decided_by?: string;
   face_data_deleted_at?: string; quiet_since?: string | null;
 }
@@ -215,6 +217,26 @@ export function AutoServices() {
                 <p className="text-xs text-gray-500">
                   {live.peak > 0 && live.peak_at ? `most at once, at ${time(live.peak_at)}` : "most at once"}
                 </p>
+                {/**
+                  * …and what the cameras actually had in shot at that point.
+                  *
+                  * "wrong data", under Peak 30 on a day whose fullest
+                  * moment was eleven. The figure above is the larger of
+                  * what the cameras can see and how many have been counted
+                  * in less those counted out — right, because people sit
+                  * in corners no camera covers and a doorway's arithmetic
+                  * finds them, but it is not a sighting and it inherits
+                  * whatever is wrong with the counting that feeds it.
+                  *
+                  * This one cannot be more than was in shot. Shown only
+                  * when the two disagree, because when they agree there is
+                  * nothing to explain.
+                  */}
+                {typeof live.peak_seen === "number" && live.peak_seen > 0 && live.peak_seen < live.peak && (
+                  <p className="text-[11px] mt-0.5" style={{ color: "#b45309" }}>
+                    {live.peak_seen} of them were ever in shot at once — the rest is counted in, less counted out
+                  </p>
+                )}
               </div>
               {/* Different people this service — the attendance figure, which
                   is what a church actually writes down. "the people that came

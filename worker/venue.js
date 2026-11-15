@@ -5565,6 +5565,29 @@ export class VenueHub extends DurableObject {
       this.recentTotals = [...(this.recentTotals ?? []).filter((x) => now - x.at <= PEAK_HOLD_MS), { at: now, people }];
       const held = this.recentTotals[0].at <= now - PEAK_HOLD_MS / 2 ? Math.min(...this.recentTotals.map((x) => x.people)) : 0;
       if (held > live.peak) { live.peak = held; live.peak_at = new Date(now).toISOString(); }
+      /**
+       * …and the most the cameras actually SAW at once, which is a
+       * different question and the only one of the two that is a sighting.
+       *
+       * "wrong data", under a tile reading "Peak 30 · most at once" beside
+       * a day whose fullest moment was eleven.
+       *
+       * Both figures were honest about what they are and the label was
+       * not. The one above is total_current, which is the larger of what
+       * the cameras can see and how many have been counted in less those
+       * counted out — because people can be in a room no camera covers,
+       * and a doorway's arithmetic finds them. That is right, and it is
+       * not "at once": it is a running belief about the building, and it
+       * inherits whatever is wrong with the counting that feeds it.
+       *
+       * This one cannot exceed what was in shot. When the two disagree the
+       * page can say so, and the smaller one is the one nobody can argue
+       * with.
+       */
+      this.recentSeen = [...(this.recentSeen ?? []).filter((x) => now - x.at <= PEAK_HOLD_MS), { at: now, people: seen }];
+      const heldSeen = this.recentSeen[0].at <= now - PEAK_HOLD_MS / 2
+        ? Math.min(...this.recentSeen.map((x) => x.people)) : 0;
+      if (heldSeen > (live.peak_seen ?? 0)) live.peak_seen = heldSeen;
       // Two cameras can cover one room: add them up, then keep the busiest that room has been.
       const nowByRoom = {};
       for (const z of v.zones) nowByRoom[z.zone_name] = (nowByRoom[z.zone_name] ?? 0) + (z.current || 0);
@@ -5641,7 +5664,9 @@ export class VenueHub extends DurableObject {
     for (const r of rows) { const m = Math.floor(r.ts / 60000); const o = byMin.get(m) ?? new Map(); o.set(r.camera_id, r.current || 0); byMin.set(m, o); }
     const totals = [...byMin.values()].map((o) => [...o.values()].reduce((a, b) => a + b, 0));
     const svc = { id: live.id, name: live.name, started_at: live.started_at, ended_at: new Date(endedMs).toISOString(),
-      peak: live.peak, peak_at: live.peak_at, average: totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : live.peak,
+      peak: live.peak, peak_at: live.peak_at,
+      /** The most the cameras had in shot at once. Never more than was seen. */
+      peak_seen: live.peak_seen ?? 0, average: totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : live.peak,
       rooms: live.rooms, status: "ask", face_data_deleted_at: new Date().toISOString() };
     const list = await this.get("services", []);
     list.unshift(svc);
