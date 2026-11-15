@@ -4346,6 +4346,23 @@ export class VenueHub extends DurableObject {
       /** Arrivals and departures below are each person once, not every time a
        *  camera became sure of them again. */
       movement_from_register: useRegister,
+      /**
+       * Whether face matching was on, because it decides what these are worth.
+       *
+       * Arrivals and departures here come from the REGISTER: a person
+       * arrives once, when they were first seen, and leaves once, when they
+       * were last seen. So one entry in the register is one arrival — and
+       * without face matching the register gains an entry every time
+       * somebody is lost and found again, which is measured at 45 entries
+       * from one person in an hour.
+       *
+       * The NET survives it: every spurious entry adds one arrival and one
+       * departure, so in-less-out still lands near the truth. 270 in, 258
+       * out, 12 still here, 11 ever seen at once. It is the two big numbers
+       * that cannot be trusted, not the difference between them, and the
+       * page has to be able to say exactly that.
+       */
+      face_matching: await this.privacy().then((x) => x.face_matching).catch(() => true),
       from_door: hasDoors,
       // How many of these days have movement Kyro can stand behind.
       movement_days: movementDays, movement_known_from: new Date(IN_OUT_TRUSTED_FROM).toISOString(),

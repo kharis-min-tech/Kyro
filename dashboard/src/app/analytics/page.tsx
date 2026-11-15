@@ -163,7 +163,7 @@ function TrendChart({ data }: { data: AttendancePoint[] }) {
 }
 
 // ─── Arrival chart ────────────────────────────────────────────────────────────
-function ArrivalChart({ data, movementDays, byDayDates, fromRegister }: { data: HourlyBucket[]; movementDays?: number; byDayDates?: string[]; fromRegister?: boolean }) {
+function ArrivalChart({ data, movementDays, byDayDates, fromRegister, facesOff }: { data: HourlyBucket[]; movementDays?: number; byDayDates?: string[]; fromRegister?: boolean; facesOff?: boolean }) {
   if (!data.length) return null;
   const anyMovement = data.some((d) => d.count > 0 || (d.exits ?? 0) > 0);
   const max  = Math.max(...data.map((d) => Math.max(d.count, d.exits ?? 0)), 1);
@@ -230,6 +230,28 @@ function ArrivalChart({ data, movementDays, byDayDates, fromRegister }: { data: 
           </div>
         </div>
       </div>
+      {/**
+        * …and what these two are worth without face matching.
+        *
+        * "i am highly convinced that this is the real data." They do look
+        * like real data, and the shape of them is: these come from the
+        * register, where a person arrives once when first seen and leaves
+        * once when last seen. Without face matching the register gains an
+        * entry every time somebody is lost and found again, so both
+        * figures climb together.
+        *
+        * The DIFFERENCE between them survives it, because each spurious
+        * entry adds one of each — which is why 270 in and 258 out sat
+        * beside a room that never held more than eleven. Saying that is
+        * more use than hedging both numbers: it tells her which part of
+        * what she is looking at she can rely on.
+        */}
+      {facesOff && (
+        <p className="text-[10px] leading-relaxed mt-2" style={{ color: "#b45309", maxWidth: "46ch" }}>
+          Face matching is off, so both of these climb on their own — somebody lost and found again is counted
+          as another arrival. The difference between them is the part to rely on: that is how many are still here.
+        </p>
+      )}
       {!anyMovement ? (
         <p className="text-xs leading-relaxed py-4" style={{ color: "#6b7280" }}>
           No movement Kyro can stand behind yet. Before the tracking fix it read the AI losing sight of someone as them leaving
@@ -709,6 +731,7 @@ export default function AnalyticsPage() {
             <TrendChart data={filtered}/>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
               <ArrivalChart data={arrival} movementDays={(summary as { movement_days?: number } | null)?.movement_days}
+                facesOff={(summary as { face_matching?: boolean } | null)?.face_matching === false}
                 fromRegister={(summary as { movement_from_register?: boolean } | null)?.movement_from_register}
                 byDayDates={[...history].reverse().map((h) => h.timestamp.slice(0, 10))}/>
               <WeeklyBreakdown data={filtered}/>

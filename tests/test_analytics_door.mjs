@@ -36,6 +36,7 @@ function run({ rows, cams, people }) {
   const fakeSql = { exec: () => ({ toArray: () => rows }) };
   const self = {
     ctx: { storage: { sql: fakeSql } },
+    privacy: async () => ({ face_matching: false }),
     get: async (k, d) => (k === "live" ? {} : k === "cameras" ? cams : d),
     isOnline: () => false,
     dateFmt: () => new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit" }),
