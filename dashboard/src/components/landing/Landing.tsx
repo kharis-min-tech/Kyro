@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight, Check, Radio, Video, Armchair, Hash, BellRing, Send, PlayCircle, FlaskConical, Church, BookOpen,
 } from "lucide-react";
 import { HELP_URL } from "@/lib/help";
 import { SeatField } from "./SeatField";
+import { HallScene } from "./HallScene";
 import s from "./landing.module.css";
 
 /**
@@ -29,6 +30,17 @@ const FEATURES = [
 ];
 
 export function Landing() {
+  /**
+   * How far down the page we are, 0 to 1 — the thing the hall is flown by.
+   *
+   * Kept in a ref and read by the scene on its own frames rather than put in
+   * state: scrolling fires far more often than a page can usefully redraw,
+   * and re-rendering this whole page on every scroll event would make the
+   * one thing it is for — the camera move — stutter.
+   */
+  const scrolled = useRef(0);
+  const readScroll = useCallback(() => scrolled.current, []);
+
   const [solidNav, setSolidNav] = useState(false);
   const [motion, setMotion] = useState(false);
   const [still, setStill] = useState(false);
@@ -42,7 +54,11 @@ export function Landing() {
   // Top bar turns solid once you scroll; sections fade in as they appear.
   useEffect(() => {
     setMotion(true);
-    const onScroll = () => setSolidNav(window.scrollY > 40);
+    const onScroll = () => {
+      const room = document.documentElement.scrollHeight - window.innerHeight;
+      scrolled.current = room > 0 ? window.scrollY / room : 0;
+      setSolidNav(window.scrollY > 40);
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     const io = "IntersectionObserver" in window
@@ -56,6 +72,16 @@ export function Landing() {
 
   return (
     <div className={`${s.page} ${motion ? s.motion : ""}`}>
+      {/*
+        * The hall, behind everything, flown through by scrolling.
+        *
+        * Fixed rather than scrolling with the page: the page slides over a
+        * room that stays where it is, which is the whole of the effect.
+        * Everything after it sits on top — see .over in the stylesheet.
+        */}
+      <div className={s.scene} aria-hidden="true">
+        <HallScene progress={readScroll} still={still} />
+      </div>
       {/* ── Top bar ── */}
       <header className={`${s.nav} ${solidNav ? s.navSolid : ""}`}>
         <Link href="/" className={s.brand} aria-label="Kyro home">

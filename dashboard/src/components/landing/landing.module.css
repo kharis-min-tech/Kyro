@@ -20,6 +20,40 @@
   color: var(--ivory);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  /* Everything on the page sits above the hall behind it. See .scene. */
+  position: relative;
+  isolation: isolate;
+}
+
+/* ── The hall behind the page ────────────────────────────────
+   Fixed, so the page slides over a room that stays where it is — which is
+   the whole of the effect. It is drawn on a canvas and is decoration: no
+   text, no data, nothing to click. See HallScene.tsx. */
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  contain: strict;
+}
+/* …and the page's own content over it. Each section carries its own dark
+   backing so words stay readable wherever the camera happens to be. */
+.page > *:not(.scene) { position: relative; z-index: 1; }
+
+/* Sections float over the room rather than hiding it: a wash of ink behind
+   the text, fading out at both edges, so the hall shows between them. */
+.section {
+  background:
+    radial-gradient(120% 80% at 50% 50%, rgba(10, 10, 11, 0.92) 0%, rgba(10, 10, 11, 0.86) 45%, rgba(10, 10, 11, 0) 100%);
+  border-radius: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The room is still drawn — it is a picture of a hall, which is worth
+     having — but nothing moves it, and the page is plain ink behind the
+     words. See `still` in HallScene.tsx. */
+  .scene { opacity: 0.5; }
+  .section { background: var(--ink); border-radius: 0; }
 }
 
 /* ── Top bar ─────────────────────────────────────────────── */
