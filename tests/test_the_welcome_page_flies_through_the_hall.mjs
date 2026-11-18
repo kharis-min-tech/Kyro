@@ -79,6 +79,23 @@ const pkg     = JSON.parse(fs.readFileSync(path.join(root, "dashboard/package.js
   ok("it eases rather than steps", ramp(0.5, 0, 1) === 0.5 && ramp(0.25, 0, 1) < 0.25);
 
   const back = camera(0), middle = camera(0.5), end = camera(1);
+  /**
+   * The room has people in it before anybody scrolls.
+   *
+   * The first version filled from nothing, so the top of the page — where
+   * the cards that read the count actually sit — showed an empty hall and
+   * "0 people in". It looked broken: "its count is also the same".
+   */
+  const ALREADY_IN = Number(/const ALREADY_IN = ([0-9.]+);/.exec(scene)?.[1]);
+  const FILLS_TO = Number(/const FILLS_TO = ([0-9.]+);/.exec(scene)?.[1]);
+  ok("a service is already under way when you arrive",
+     ALREADY_IN > 0.25, `${ALREADY_IN}`);
+  ok("and scrolling brings the rest in", FILLS_TO > ALREADY_IN + 0.3,
+     `${ALREADY_IN} → ${FILLS_TO}`);
+  ok("the count comes from the same fill the seats are drawn from",
+     /for \(const s of seats\) if \(full >= s\.fills\) taken\+\+;/.test(scene));
+  ok("and the room breathes without being scrolled",
+     /Math\.sin\(clock \* 0\.37\) \* 0\.045/.test(scene));
   ok("you start at the back of the hall", back.z > 40, `z ${back.z}`);
   ok("scrolling takes you towards the stage", end.z < back.z && end.z < 16,
      `${back.z} → ${end.z}`);
@@ -98,6 +115,13 @@ const pkg     = JSON.parse(fs.readFileSync(path.join(root, "dashboard/package.js
   }
   ok("the whole path is smooth, with no jump in it", worst < 1.2,
      `biggest step ${worst.toFixed(2)}m at ${at}`);
+  // …and far enough to be worth watching. "i cant even see the effect."
+  let lowest = Infinity, highest = -Infinity;
+  for (let i = 0; i <= 200; i++) { const c = camera(i / 200); lowest = Math.min(lowest, c.y); highest = Math.max(highest, c.y); }
+  ok("and it is a journey, not a nod — it climbs properly", highest - lowest > 20,
+     `${lowest.toFixed(1)}m to ${highest.toFixed(1)}m`);
+  ok("the camera is never still, even at rest",
+     camera(0, 0).x !== camera(0, 3).x, "no drift without scrolling");
 }
 
 // ── …without re-rendering the page on every scroll event ──────────────────
@@ -150,10 +174,36 @@ const pkg     = JSON.parse(fs.readFileSync(path.join(root, "dashboard/package.js
      !/SeatField/.test(landing) || !/<SeatField/.test(landing));
 }
 
+// ── A phone is a different shape, and a smaller computer ──────────────────
+{
+  ok("the view widens on a narrow screen rather than staying a long lens",
+     /const near = Math\.min\(W, H\);/.test(scene)
+     && /const focal = near \* mix\(0\.82, 0\.46, wide\);/.test(scene));
+  ok("and how narrow is worked out from the width",
+     /const wide = Math\.min\(1, Math\.max\(0, \(560 - W\) \/ 360\)\);/.test(scene));
+  ok("a phone draws a smaller hall, so it stays smooth",
+     /const small = Math\.min\(window\.innerWidth, window\.innerHeight\) < 560;/.test(scene)
+     && /const rows = small \? 11 : ROWS;/.test(scene)
+     && /const perRow = small \? 14 : PER_ROW;/.test(scene));
+  ok("…and the rows it draws follow that, not the full-size figure",
+     /\(row \/ rows\) \* 0\.5/.test(scene) && /for \(let row = 0; row <= rows; row\+\+\)/.test(scene));
+}
+
+// ── There is light in the room ────────────────────────────────────────────
+// "its very boring" — a dark hall full of small dots is a diagram.
+{
+  ok("the stage throws beams across the congregation",
+     /Three beams sweeping out over the congregation/.test(scene)
+     && /ctx\.globalCompositeOperation = "lighter";/.test(scene));
+  ok("they sweep rather than sitting still", /Math\.sin\(clock \* 0\.23 \+ i \* 2\.1\)/.test(scene));
+  ok("and a seat flares as somebody sits in it",
+     /const justNow = taken > 0\.04 && taken < 0\.96 \? Math\.sin\(taken \* Math\.PI\) : 0;/.test(scene));
+}
+
 // ── The cards over the room still have their figures ──────────────────────
 {
   ok("the scene counts the seats it has drawn",
-     /for \(const s of seats\) if \(ramp\(t, s\.fills, s\.fills \+ 0\.06\) > 0\.5\) taken\+\+;/.test(scene));
+     /for \(const s of seats\) if \(full >= s\.fills\) taken\+\+;/.test(scene));
   ok("and tells the page, once per change rather than every frame",
      /if \(taken !== told\) \{ told = taken; onCount\(taken, seats\.length\); \}/.test(scene));
   ok("the page takes it", /onCount=\{onCount\}/.test(landing));
