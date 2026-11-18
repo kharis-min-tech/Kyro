@@ -126,6 +126,39 @@ const pkg     = JSON.parse(fs.readFileSync(path.join(root, "dashboard/package.js
   ok("the stylesheet quietens it too", /@media \(prefers-reduced-motion: reduce\)/.test(css));
 }
 
+// ── …and is actually VISIBLE ──────────────────────────────────────────────
+/**
+ * The first version of this was deployed and invisible: "i see no change".
+ *
+ * The hall was put behind a page whose hero already had an opaque backdrop
+ * of its own — `var(--ink)` at the end of a gradient stack, covering the
+ * whole first screen. Everything worked; nothing could be seen. A fixed
+ * layer behind an opaque one is not a background, it is a waste of a
+ * frame, and nothing in the first test would have caught it.
+ */
+{
+  const hero = css.slice(css.indexOf(".heroMedia {"), css.indexOf(".heroShade"));
+  ok("the hero is a window onto the hall, not a backdrop of its own",
+     !/var\(--ink\)/.test(hero) && !/#0a0a0b/i.test(hero), hero.trim().split("\n").pop());
+  ok("and nothing else paints over the whole of the first screen",
+     !/\.heroMedia[^}]*background:[^}]*(var\(--ink\)|#0a0a0b)/i.test(css));
+  // The sections let the room through rather than sitting on a solid slab.
+  const section = css.slice(css.indexOf("\n.section {"), css.indexOf("\n.sectionHead"));
+  const solid = /rgba\(10, 10, 11, (0\.9[1-9]|1)\)/.test(section);
+  ok("the sections are a wash, not a wall", !solid, section.trim());
+  ok("the hall is the only thing drawing the room now",
+     !/SeatField/.test(landing) || !/<SeatField/.test(landing));
+}
+
+// ── The cards over the room still have their figures ──────────────────────
+{
+  ok("the scene counts the seats it has drawn",
+     /for \(const s of seats\) if \(ramp\(t, s\.fills, s\.fills \+ 0\.06\) > 0\.5\) taken\+\+;/.test(scene));
+  ok("and tells the page, once per change rather than every frame",
+     /if \(taken !== told\) \{ told = taken; onCount\(taken, seats\.length\); \}/.test(scene));
+  ok("the page takes it", /onCount=\{onCount\}/.test(landing));
+}
+
 // ── It stays out of the way of the page ───────────────────────────────────
 {
   ok("the hall is decoration, not content",
@@ -133,8 +166,11 @@ const pkg     = JSON.parse(fs.readFileSync(path.join(root, "dashboard/package.js
   ok("nothing on it can be clicked", /pointer-events: none;/.test(css));
   ok("and everything else sits above it",
      /\.page > \*:not\(\.scene\) \{ position: relative; z-index: 1; \}/.test(css));
+  // Dark enough to read against, light enough to see the room through —
+  // the first version was 0.92 and hid it. See "a wash, not a wall".
   ok("the words keep a dark backing so they stay readable",
-     /rgba\(10, 10, 11, 0\.92\)/.test(css));
+     /\.section \{[\s\S]{0,240}rgba\(10, 10, 11, 0\.8[0-9]\)/.test(css)
+     && /backdrop-filter: blur\(3px\)/.test(css));
   // The page is still a page: the thing it is for is explaining Kyro.
   for (const bit of ["Demo or Live", "What it does", "Get ready", "Every seat."]) {
     ok(`"${bit}" is still on it`, landing.includes(bit));

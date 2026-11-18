@@ -44,8 +44,10 @@
    the text, fading out at both edges, so the hall shows between them. */
 .section {
   background:
-    radial-gradient(120% 80% at 50% 50%, rgba(10, 10, 11, 0.92) 0%, rgba(10, 10, 11, 0.86) 45%, rgba(10, 10, 11, 0) 100%);
+    radial-gradient(120% 80% at 50% 50%, rgba(10, 10, 11, 0.86) 0%, rgba(10, 10, 11, 0.74) 45%, rgba(10, 10, 11, 0) 100%);
   border-radius: 48px;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -91,11 +93,14 @@
 
 /* ── Hero ────────────────────────────────────────────────── */
 .hero { position: relative; min-height: 100svh; display: flex; align-items: center; justify-content: center; text-align: center; padding: 120px clamp(16px, 5vw, 48px) 140px; isolation: isolate; }
+/* A window onto the hall, not a backdrop of its own.
+   This used to end in `var(--ink)` — opaque — which covered the room for the
+   whole of the first screen. The scene was deployed and invisible. What is
+   left is the dust in the air and a wash of purple light. */
 .heroMedia { position: absolute; inset: 0; z-index: -2; overflow: hidden;
   background:
-    radial-gradient(ellipse 60% 40% at 50% 58%, rgba(107, 79, 224, 0.18), transparent 70%),
-    radial-gradient(circle at 1px 1px, rgba(244, 239, 230, 0.06) 1px, transparent 0) 0 0 / 28px 28px,
-    var(--ink); }
+    radial-gradient(ellipse 60% 40% at 50% 58%, rgba(107, 79, 224, 0.12), transparent 70%),
+    radial-gradient(circle at 1px 1px, rgba(244, 239, 230, 0.05) 1px, transparent 0) 0 0 / 28px 28px; }
 .heroShade {
   position: absolute; inset: 0; z-index: -1;
   background:

@@ -79,7 +79,12 @@ function camera(t: number) {
   return { x, y, z, atX: 0, atY, atZ, over };
 }
 
-export function HallScene({ progress, still = false }: { progress: () => number; still?: boolean }) {
+export function HallScene({ progress, still = false, onCount }: {
+  progress: () => number;
+  still?: boolean;
+  /** How many seats are taken, for the cards floating over the room. */
+  onCount?: (occupied: number, total: number) => void;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -113,7 +118,7 @@ export function HallScene({ progress, still = false }: { progress: () => number;
       }
     }
 
-    let W = 0, H = 0, dpr = 1, raf = 0, shown = 0, visible = true;
+    let W = 0, H = 0, dpr = 1, raf = 0, shown = 0, visible = true, told = -1;
 
     const size = () => {
       const r = canvas.getBoundingClientRect();
@@ -210,6 +215,19 @@ export function HallScene({ progress, still = false }: { progress: () => number;
         ctx.fill();
       }
 
+      /**
+       * …and how full the room is, for the cards floating over it.
+       *
+       * Counted from the same seats being drawn, so the figure on the card
+       * and the gold in the room can never disagree — which is the whole
+       * reason the card is believable.
+       */
+      if (onCount) {
+        let taken = 0;
+        for (const s of seats) if (ramp(t, s.fills, s.fills + 0.06) > 0.5) taken++;
+        if (taken !== told) { told = taken; onCount(taken, seats.length); }
+      }
+
       // ── A haze over the far end, so the room has no visible edge ──────
       const haze = ctx.createLinearGradient(0, 0, 0, H);
       haze.addColorStop(0, "rgba(5,6,10,0.72)");
@@ -243,7 +261,7 @@ export function HallScene({ progress, still = false }: { progress: () => number;
       window.removeEventListener("resize", onResize);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [progress, still]);
+  }, [progress, still, onCount]);
 
   return <canvas ref={ref} aria-hidden="true" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }} />;
 }

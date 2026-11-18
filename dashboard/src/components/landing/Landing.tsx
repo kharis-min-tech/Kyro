@@ -6,7 +6,6 @@ import {
   ArrowUpRight, Check, Radio, Video, Armchair, Hash, BellRing, Send, PlayCircle, FlaskConical, Church, BookOpen,
 } from "lucide-react";
 import { HELP_URL } from "@/lib/help";
-import { SeatField } from "./SeatField";
 import { HallScene } from "./HallScene";
 import s from "./landing.module.css";
 
@@ -15,8 +14,9 @@ import s from "./landing.module.css";
  * the difference between Demo mode and Live mode, so nobody arrives at the
  * sign-in screen unsure which to pick.
  *
- * Background: Kyro's Seat Map brought to life — an auditorium filling up seat
- * by seat (SeatField), with floating cards showing what Kyro tells the team.
+ * Background: the hall itself, in three dimensions, flown through by
+ * scrolling (HallScene) — it fills up seat by seat as you go down the page,
+ * with floating cards showing what Kyro tells the team.
  * The small photo card is Kyro's real AI on a photo from a Kharis service.
  */
 
@@ -80,7 +80,7 @@ export function Landing() {
         * Everything after it sits on top — see .over in the stylesheet.
         */}
       <div className={s.scene} aria-hidden="true">
-        <HallScene progress={readScroll} still={still} />
+        <HallScene progress={readScroll} still={still} onCount={onCount} />
       </div>
       {/* ── Top bar ── */}
       <header className={`${s.nav} ${solidNav ? s.navSolid : ""}`}>
@@ -102,9 +102,13 @@ export function Landing() {
 
       {/* ── Hero ── */}
       <section className={s.hero}>
-        <div className={s.heroMedia}>
-          <SeatField onCount={onCount} still={still} />
-        </div>
+        {/*
+          * No art of its own here any more: the hero is a window onto the
+          * hall behind the whole page. It used to have an opaque backdrop
+          * of its own, which covered the room completely — the effect was
+          * deployed and invisible. See .heroMedia.
+          */}
+        <div className={s.heroMedia} />
         <div className={s.heroShade} />
 
         <div className={s.heroInner}>
